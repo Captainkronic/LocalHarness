@@ -287,6 +287,12 @@ export class Orchestrator {
             if (name) call.name = name
             call.arguments += argsDelta
             call.origin = this.originOf(call.name)
+            // Tool-call arguments ARE generated tokens. Not counting them made
+            // the decode rate read "—" for the entire time the model was writing
+            // a tool call — and writing a whole file into a write_file argument
+            // is the longest generation in the app. The UI looked frozen at
+            // exactly the moment it most needed to show progress.
+            meter.countCompletionToken()
             assistant.toolCalls = [...pendingCalls.values()]
             this.persist(conv, false)
           },

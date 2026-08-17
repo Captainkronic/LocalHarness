@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, ToolCall } from '@shared/types'
-import { basename, formatMs } from '@renderer/lib/format'
+import { basename, formatBytes, formatMs } from '@renderer/lib/format'
 import './chat.css'
 
 export interface ToolCallCardProps {
@@ -64,7 +64,11 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
         </span>
         <span className="tool-name">{bare}</span>
         <span className="tool-precis">{precis(parsed, call.arguments)}</span>
-        <StatusBadge status={call.status} duration={duration} />
+        <StatusBadge
+          status={call.status}
+          duration={duration}
+          writtenChars={call.arguments.length}
+        />
       </button>
 
       {open ? (
@@ -114,10 +118,15 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
 
 function StatusBadge({
   status,
-  duration
+  duration,
+  writtenChars
 }: {
   status: ToolCall['status']
   duration: string | null
+  /** Argument characters received so far, while the model is still composing
+   *  the call. A write_file argument can be a whole file, so this is the only
+   *  progress there is during the longest generation the app does. */
+  writtenChars: number
 }) {
   switch (status) {
     case 'awaiting_approval':
@@ -135,10 +144,12 @@ function StatusBadge({
         </span>
       )
     case 'pending':
+      // "queued" was a lie: the model is writing this call RIGHT NOW, and for a
+      // file-sized argument that is tens of seconds of apparent nothing.
       return (
         <span className="tool-state">
-          <span className="dot" />
-          queued
+          <span className="dot dot-busy" />
+          {writtenChars > 0 ? `writing… ${formatBytes(writtenChars)}` : 'writing…'}
         </span>
       )
     case 'error':
