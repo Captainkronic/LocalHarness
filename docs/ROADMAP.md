@@ -75,22 +75,28 @@ Each workflow carries `preferredModel` and swaps to it on the first turn.
 
 ## Open work, in priority order
 
-### 1. Retest gemma-4-e4b when the 8-bit quant finishes downloading  ← NEXT
-Adam is installing an 8-bit e4b, on the theory that quantisation damage is what
-broke its tool calling. That is a good hypothesis and worth one command:
+### 1. Live's model is settled — do not re-litigate without the battery
+Both e4b quants were measured against `scripts/live-probe.mjs` and both fell
+short, differently. Live stays on `google/gemma-4-26b-a4b-qat`, which scored
+**70/70**.
+
+| | result |
+|---|---|
+| e4b 4-bit (MLX) | skipped the mail search, spoke **invented** messages aloud |
+| e4b 8-bit (GGUF) | fabrication fixed; **zero-argument calls** break — `get_weather{}` as literal text |
+| 26b-a4b-qat (MLX) | 70/70: every zero-arg call, both refusals, no tool for small talk |
 
 ```bash
-node scripts/live-tools-test.mjs google/gemma-4-e4b
+node scripts/live-probe.mjs <model> 5      # 14 cases; grades the CALL, not the prose
+node scripts/live-tools-test.mjs <model>   # payload measurement + 2 quick turns
 ```
 
-If it calls `search_emails` instead of inventing senders, switch `live`'s
-`preferredModel` back to e4b — it is faster and it already got the weather
-right. If it still fabricates, leave Live on 26b and say so.
-**Pass condition is the tool call, not the answer.** A fluent, confident,
-entirely invented list of emails is exactly the failure being tested for, and
-it reads as a pass if you only look at the prose.
+**Use 5 repeats, not 3.** e4b's rate swings between 30% and 90% on identical
+input, and two prompt edits were made chasing what turned out to be noise.
+Bisecting the prompt block by block (`scripts/prompt-bisect.mjs`) found no
+culprit block, because there isn't one.
 
-### 2. Finish the overnight UI review — STARTED, NOT FINISHED
+### 2. Finish the overnight UI review### 2. Finish the overnight UI review — STARTED, NOT FINISHED
 Drive real scenarios per workflow against the testbed at
 `~/Documents/AI/CaptainLlama-testbed`, screenshot every state, fix what is
 found, commit separately. Only Code and Live have had real use.
@@ -136,6 +142,12 @@ never animating a number that is not measured.
   headphones.
 - **A python `str.replace` that does not match fails silently.** Assert every
   anchor, or a change looks applied and is not.
+- **Never put the forbidden literal INSIDE a prohibition.** "Never type
+  get_news() into your reply" made the model type `get_news()` more often, not
+  less. Third instance of the same failure. Describe the shape, never exhibit it.
+- **Judge tool use on whether the tool was CALLED**, never on whether the answer
+  reads well. The dangerous failure is fluent and confident and completely
+  invented, and it looks like a pass to anyone reading the prose.
 - **A model copies the example instead of reading the instruction.** Asked for
   the weather with no city named, it passed `"Austin, Texas"` — the literal
   example in `get_weather`'s schema. Pushed to omit the field it sent
