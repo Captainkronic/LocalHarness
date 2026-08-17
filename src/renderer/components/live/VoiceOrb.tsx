@@ -11,7 +11,7 @@
  * swell in here has been switched off.
  */
 
-import type { CSSProperties, JSX } from 'react'
+import { useEffect, useState, type CSSProperties, type JSX } from 'react'
 
 import type { LiveSessionState } from '@shared/types'
 import { clamp01 } from '@renderer/lib/format'
@@ -70,7 +70,34 @@ const LABELS: Record<LiveSessionState, string> = {
   error: 'Something went wrong'
 }
 
+/**
+ * Whether the user has asked for reduced motion.
+ *
+ * Needed in JS, not CSS, because the speaking equaliser's bar heights are SVG
+ * presentation attributes computed from the live playback level — no media
+ * query can reach them, so `prefers-reduced-motion` was silently ignored by the
+ * one element in here that moves the most.
+ */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  )
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (!mq) return
+    const onChange = (e: MediaQueryListEvent): void => setReduced(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return reduced
+}
+
 export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
+  const reduced = useReducedMotion()
+  // NOT reduced. The arc meter is this component's honest reading of the
+  // microphone, and it survives reduced motion precisely because it is static
+  // geometry rather than an animation. Damping it here would turn an
+  // accessibility preference into a lie about the input level.
   const lvl = clamp01(level)
   // The arc reads as a meter, so it never fully empties while a call is up —
   // an empty ring would be indistinguishable from a dead session. Off, it is
@@ -177,7 +204,7 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
           />
         )}
 
-        <StateGlyph state={state} level={lvl} />
+        <StateGlyph state={state} level={lvl} reduced={reduced} />
       </svg>
 
       <span className="orb-label">{LABELS[state]}</span>
@@ -189,10 +216,12 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
  *  glanced at from across the desk. */
 function StateGlyph({
   state,
-  level
+  level,
+  reduced
 }: {
   state: LiveSessionState
   level: number
+  reduced: boolean
 }): JSX.Element | null {
   switch (state) {
     case 'listening':
@@ -247,7 +276,12 @@ function StateGlyph({
         <g className="orb-glyph orb-bars">
           {BAR_OFFSETS.map((dx, i) => {
             const falloff = 1 - Math.abs(dx) / 34
-            const h = 6 + level * 30 * falloff * BAR_WEIGHTS[i]
+            // Held at a representative level under reduced motion, so the shape
+            // still reads as "speaking" without the bars dancing. Frozen at
+            // zero would read as broken; the arc meter beside it keeps
+            // reporting the real level either way.
+            const amp = reduced ? 0.45 : level
+            const h = 6 + amp * 30 * falloff * BAR_WEIGHTS[i]
             return (
               <rect
                 key={dx}

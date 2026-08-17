@@ -390,9 +390,10 @@ export function LiveWorkspace(): JSX.Element {
 
         {speechDown ? (
           <Note kind="warn" title="No speech service">
-            The local voice server did not answer, so nothing can be transcribed or
-            spoken. Replies still appear here as text. Start it and reopen this
-            workflow to get the call back.
+            The local voice server did not answer, so nothing can be heard or
+            spoken — and this workflow has no way to type, so there is nothing
+            it can do until that server is up. Start voice-mcp and reopen Live,
+            or use Chat in the meantime.
           </Note>
         ) : null}
 
@@ -957,18 +958,28 @@ function Toggle({
 }
 
 function Timings({ timings }: { timings: LiveTurnTimings }): JSX.Element {
+  // Audio was actually produced. Both are zero only when nothing was spoken.
+  const spoke = timings.firstAudioMs > 0 || timings.ttsMs > 0
   return (
     <div className="lv-timing">
+      {/* With Speak switched off no audio is ever queued, so firstAudioMs and
+          ttsMs stay 0 — and "0ms to first audio" headlined as the number that
+          decides whether this feels like a conversation is a lie by omission.
+          The turn still has real timings; they just do not include speech. */}
       <div className="lv-t-hero">
-        <span className="lv-t-value tnum">{formatMs(timings.firstAudioMs)}</span>
+        <span className="lv-t-value tnum">
+          {spoke ? formatMs(timings.firstAudioMs) : formatMs(timings.ttftMs)}
+        </span>
         <span className="lv-t-label">
-          to first audio — from you stopping speaking to hearing anything
+          {spoke
+            ? 'to first audio — from you stopping speaking to hearing anything'
+            : 'to first token — nothing was spoken this turn, so there is no audio to time'}
         </span>
       </div>
       <dl className="lv-t-rest">
         <Cell name="transcribe" value={timings.sttMs} />
         <Cell name="first token" value={timings.ttftMs} />
-        <Cell name="synthesise" value={timings.ttsMs} />
+        {spoke ? <Cell name="synthesise" value={timings.ttsMs} /> : null}
         <Cell name="whole turn" value={timings.totalMs} />
       </dl>
     </div>
