@@ -510,7 +510,10 @@ export class LiveSession {
 
       await streamChat(
         {
-          baseUrl: settings.baseUrl,
+          // The model's OWN endpoint. Ids collide across servers — the same
+          // qwen name exists on LM Studio and on the MLX server — so routing by
+          // the default base URL would silently send a turn to the wrong build.
+          baseUrl: model.baseUrl || settings.baseUrl,
           apiKey: settings.apiKey,
           model: model.id,
           messages,

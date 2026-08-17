@@ -11,7 +11,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { REASONING_EFFORTS } from '@shared/types'
-import type { ApprovalMode, ReasoningEffort, Settings, WorkflowId } from '@shared/types'
+import type { ApprovalMode, LlmEndpoint, ReasoningEffort, Settings, WorkflowId } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { atomicWriteSync, expandTilde } from './paths'
@@ -35,6 +35,11 @@ export const DEFAULT_SETTINGS: Settings = {
   contextWarnFraction: 0.75,
   theme: 'dark',
   modelPollMs: 15000,
+  // Adam's MLX server with multi-token prediction, alongside LM Studio's own.
+  // Model ids collide between the two, which is why endpoints are first-class.
+  extraEndpoints: [
+    { id: 'mtp', label: 'MTP MLX', baseUrl: 'http://127.0.0.1:1236/v1' }
+  ],
   workflowReasoning: {},
   workflowMcpOverrides: {}
 }
@@ -102,6 +107,19 @@ function asWorkflowOverrides(v: unknown): Partial<Record<WorkflowId, string[]>> 
   return out
 }
 
+function asEndpoints(v: unknown): LlmEndpoint[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: LlmEndpoint[] = []
+  for (const raw of v) {
+    if (!isRecord(raw)) continue
+    const id = asNonEmptyString(raw.id)
+    const baseUrl = asNonEmptyString(raw.baseUrl)
+    if (!id || !baseUrl) continue
+    out.push({ id, label: asNonEmptyString(raw.label) ?? id, baseUrl })
+  }
+  return out
+}
+
 function asWorkflowReasoning(v: unknown): Partial<Record<WorkflowId, ReasoningEffort>> | undefined {
   if (!isRecord(v)) return undefined
   const out: Partial<Record<WorkflowId, ReasoningEffort>> = {}
@@ -153,6 +171,7 @@ function mergeSettings(base: Settings, raw: unknown): Settings {
         ? (theme as Settings['theme'])
         : base.theme,
     modelPollMs: asClampedNumber(src.modelPollMs, MIN_POLL_MS, MAX_POLL_MS) ?? base.modelPollMs,
+    extraEndpoints: asEndpoints(src.extraEndpoints) ?? base.extraEndpoints,
     workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
     workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides
   }

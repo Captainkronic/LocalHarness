@@ -174,6 +174,7 @@ const INITIAL_SETTINGS: Settings = {
   contextWarnFraction: 0.8,
   theme: 'system',
   modelPollMs: 15_000,
+  extraEndpoints: [],
   workflowReasoning: {},
   workflowMcpOverrides: {}
 }

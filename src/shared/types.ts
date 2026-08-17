@@ -350,8 +350,30 @@ export interface ConversationSummary {
 /* Models                                                              */
 /* ------------------------------------------------------------------ */
 
+/** One OpenAI-compatible server the app can send turns to. */
+export interface LlmEndpoint {
+  /** Stable key; also the prefix that disambiguates duplicate model ids. */
+  id: string
+  /** Shown in the picker so two builds of one model are tellable apart. */
+  label: string
+  /** Root including /v1. */
+  baseUrl: string
+}
+
 export interface ModelInfo {
   id: string
+  /**
+   * Which server this model came from, and where to send its turns.
+   *
+   * Required because ids are NOT unique across endpoints — a Mac Studio running
+   * LM Studio on one port and a separate MLX server on another will happily
+   * offer `qwen/qwen3.8-27b` from both, and they are different builds with
+   * different speeds. Everything that resolves or routes a model has to carry
+   * the endpoint with it.
+   */
+  endpointId: string
+  endpointLabel: string
+  baseUrl: string
   publisher: string
   /** 'llm' | 'vlm' | 'embeddings' as reported by LM Studio. */
   type: string
@@ -912,6 +934,14 @@ export interface Settings {
    * all after eleven minutes. How hard a model should think is a judgement the
    * user makes per task, not something to bury in a profile.
    */
+  /**
+   * Extra OpenAI-compatible servers alongside `baseUrl`.
+   *
+   * `baseUrl` remains the primary — model control, the Lab feed and health all
+   * point at it. These are additional sources of models to talk to, for a
+   * separate MLX or llama.cpp server on another port.
+   */
+  extraEndpoints: LlmEndpoint[]
   workflowReasoning: Partial<Record<WorkflowId, ReasoningEffort>>
   workflowMcpOverrides: Partial<Record<WorkflowId, string[]>>
 }

@@ -324,7 +324,7 @@ function ModelPicker({
             <div className="model-list scroll-y">
               {chatModels.map((m) => (
                 <button
-                  key={m.id}
+                  key={`${m.endpointId}:${m.id}`}
                   type="button"
                   role="option"
                   aria-selected={pinnedId === m.id}
@@ -334,12 +334,16 @@ function ModelPicker({
                     onSelect(m.id)
                     onOpenChange(false)
                   }}
-                  title={m.id}
+                  title={`${m.id}\n${m.endpointLabel} — ${m.baseUrl}`}
                 >
                   <span className={`dot ${stateDot(m.state)}`} />
                   <span className="model-option-name">{basename(m.id)}</span>
                   <span className="model-option-meta tnum">
                     {[
+                      // Which server it came from, first. The same model id can
+                      // exist on two endpoints as different builds, and without
+                      // this the picker offers two identical-looking rows.
+                      m.endpointLabel,
                       m.compatibilityType,
                       m.quantization,
                       // Only the real loaded window is ever shown; an idle model

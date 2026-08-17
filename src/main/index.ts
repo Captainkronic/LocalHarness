@@ -147,7 +147,8 @@ app.whenReady().then(async () => {
   const models = new ModelRegistry({
     getSettings: () => settings.get(),
     onModels: (m: ModelInfo[]) => emit('event:models', m),
-    onHealth: (h: ServerHealth) => emit('event:health', h)
+    onHealth: (h: ServerHealth) => emit('event:health', h),
+    onLog: (level, scope, message) => log(level, scope, message)
   })
 
   const lab = new LabFeed({

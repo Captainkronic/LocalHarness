@@ -23,12 +23,15 @@
  * activity: at `settings.modelPollMs` while active, 120s while idle.
  */
 
-import type { LabStatus, ModelInfo, ServerHealth, Settings } from '@shared/types'
+import type {
+  LlmEndpoint, LabStatus, ModelInfo, ServerHealth, Settings } from '@shared/types'
 
 export interface ModelRegistryOptions {
   getSettings: () => Settings
   onModels: (models: ModelInfo[]) => void
   onHealth: (health: ServerHealth) => void
+  /** Optional: an extra endpoint failing is worth a line, not a health change. */
+  onLog?: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
 }
 
 /** Idle poll interval. Nothing is happening; once every two minutes is plenty. */
@@ -109,6 +112,43 @@ export class ModelRegistry {
     })
     this.inFlight = run
     return run
+  }
+
+  /**
+   * Models from any additional servers.
+   *
+   * Best effort and deliberately quiet: an extra endpoint being down must not
+   * make the primary look unreachable, so a failure here logs and yields
+   * nothing rather than throwing into the health state.
+   *
+   * These are plain OpenAI `/v1/models`, which reports id and nothing else —
+   * no state, no context length, no capabilities. So the fields LM Studio fills
+   * in stay at their unknown defaults rather than being invented, and the
+   * context meter will show a dash for them until a turn reveals more.
+   */
+  private async pollExtras(settings: Settings): Promise<ModelInfo[]> {
+    const out: ModelInfo[] = []
+    for (const endpoint of settings.extraEndpoints) {
+      try {
+        const url = `${trimTrailingSlash(endpoint.baseUrl)}/models`
+        const headers: Record<string, string> = { Accept: 'application/json' }
+        if (settings.apiKey.trim().length > 0) {
+          headers.Authorization = `Bearer ${settings.apiKey.trim()}`
+        }
+        const res = await this.timedFetch(url, { headers }, LIST_TIMEOUT_MS)
+        if (!res.ok) continue
+        out.push(...parseModels(await res.json(), endpoint))
+      } catch (err) {
+        this.opts.onLog?.(
+          'warn',
+          'models',
+          `extra endpoint "${endpoint.label}" (${endpoint.baseUrl}) did not answer: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      }
+    }
+    return out
   }
 
   residentModelId(): string | null {
@@ -235,10 +275,17 @@ export class ModelRegistry {
         throw new Error(`${res.status} ${res.statusText}: ${detail}`)
       }
       const payload: unknown = await res.json()
-      const models = parseModels(payload)
+      // The primary endpoint keeps LM Studio's richer /api/v0 shape — state,
+      // quantization, the real loaded window. Extras are plain OpenAI /v1.
+      const models = parseModels(payload, {
+        id: 'lmstudio',
+        label: 'LM Studio',
+        baseUrl: settings.baseUrl
+      })
+      const extra = await this.pollExtras(settings)
       const now = Date.now()
 
-      this.models = models
+      this.models = [...models, ...extra]
       for (const model of models) {
         if (model.loadedContextLength !== null) {
           this.windows.set(model.id, {
@@ -257,8 +304,8 @@ export class ModelRegistry {
         labStatus: this.labStatus,
         lastCheckedAt: now
       })
-      this.opts.onModels(models)
-      return models
+      this.opts.onModels(this.models)
+      return this.models
     } catch (err) {
       // Keep the last known model list — it is still the best thing to show —
       // but stop claiming anything is resident on a box we cannot reach.
@@ -301,7 +348,7 @@ export class ModelRegistry {
 /* parsing                                                             */
 /* ------------------------------------------------------------------ */
 
-function parseModels(payload: unknown): ModelInfo[] {
+function parseModels(payload: unknown, endpoint: LlmEndpoint): ModelInfo[] {
   const root = asRecord(payload)
   if (root === null) return []
   const data = root.data
@@ -319,6 +366,9 @@ function parseModels(payload: unknown): ModelInfo[] {
 
     models.push({
       id,
+      endpointId: endpoint.id,
+      endpointLabel: endpoint.label,
+      baseUrl: endpoint.baseUrl,
       publisher: asString(rec.publisher) ?? '',
       type,
       arch: asString(rec.arch) ?? '',
