@@ -132,10 +132,17 @@ async function main() {
       resident ? `${resident.id} @ ${loadedWindow?.toLocaleString()} ctx (ceiling ${resident.max_context_length.toLocaleString()})` : 'nothing loaded'
     )
     if (resident && loadedWindow) {
+      // The invariant is that the REAL window is read and never substituted,
+      // not that it differs from the ceiling. Those two coincide legitimately:
+      // a small model like gemma-4-e4b fits its full 131,072. Asserting they
+      // differ was a property of whichever model happened to be resident.
+      const sane = loadedWindow > 0 && loadedWindow <= resident.max_context_length
       check(
-        'real window differs from architectural ceiling',
-        loadedWindow !== resident.max_context_length,
-        'this is exactly why the meter must never fall back to max_context_length'
+        'the real window is reported and within the ceiling',
+        sane,
+        loadedWindow === resident.max_context_length
+          ? 'loaded at its full ceiling — legitimate for a model this size'
+          : `loaded ${loadedWindow.toLocaleString()} of a possible ${resident.max_context_length.toLocaleString()} — the meter must use the former`
       )
     }
   } catch (err) {

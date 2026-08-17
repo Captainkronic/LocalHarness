@@ -12,6 +12,9 @@ import type {
   ControlState,
   EditJob,
   LabRecord,
+  LiveAudioChunk,
+  LiveExchange,
+  LiveSessionStatus,
   LabStatus,
   LoadProgress,
   McpServerState,
@@ -25,6 +28,8 @@ import { McpManager } from './mcp/manager'
 import { ModelRegistry } from './llm/models'
 import { LabFeed } from './telemetry/lab'
 import { LmStudioControl } from './llm/control'
+import { LiveSession } from './live/session'
+import { SpeechServices } from './live/speech'
 import { EditPipeline } from './edit/pipeline'
 import { EditJobStore } from './edit/store'
 import { ToolExecutor } from './agent/executor'
@@ -74,6 +79,15 @@ function createWindow(): BrowserWindow {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // The Live workflow needs the mic and camera. Electron denies media requests
+  // by default, and a denial surfaces in the renderer as a generic
+  // NotAllowedError that looks identical to the user refusing — so grant these
+  // two explicitly and refuse everything else rather than passing through.
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media')
+  })
+  win.webContents.session.setPermissionCheckHandler((_wc, permission) => permission === 'media')
 
   // Never navigate the app window itself; open real links in the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -171,6 +185,23 @@ app.whenReady().then(async () => {
     onLog: (level, scope, message) => log(level, scope, message)
   })
 
+  // Speech runs on THIS Mac, not the Studio: LM Studio's API rejects audio
+  // content parts, so hearing has to happen locally and arrive as text.
+  const speech = new SpeechServices({
+    onLog: (level, scope, message) => log(level, scope, message)
+  })
+
+  const live = new LiveSession({
+    speech,
+    models,
+    conversations,
+    getSettings: () => settings.get(),
+    onStatus: (s: LiveSessionStatus) => emit('event:liveStatus', s),
+    onAudio: (c: LiveAudioChunk) => emit('event:liveAudio', c),
+    onExchange: (e: LiveExchange) => emit('event:liveExchange', e),
+    onLog: (level, scope, message) => log(level, scope, message)
+  })
+
   const orchestrator = new Orchestrator({
     settings,
     conversations,
@@ -191,6 +222,7 @@ app.whenReady().then(async () => {
     control,
     edit,
     activity,
+    live,
     orchestrator,
     getWindow: () => mainWindow,
     emit
@@ -240,6 +272,9 @@ app.whenReady().then(async () => {
     models.stop()
     lab.stop()
     control.stop()
+    // Releases the microphone-adjacent speech server too; a live session must
+    // not survive the window that owns it.
+    await live.stop().catch(() => undefined)
     await mcp.shutdown().catch(() => undefined)
   }
 

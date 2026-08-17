@@ -37,6 +37,7 @@ import type { LmStudioControl } from './llm/control'
 import type { EditPipeline } from './edit/pipeline'
 import { MAX_IMAGE_BYTES } from './edit/pipeline'
 import type { ActivityTracker } from './agent/activity'
+import type { LiveSession } from './live/session'
 import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
 import { NATIVE_TOOLS } from './agent/tools'
@@ -53,6 +54,7 @@ export interface IpcDeps {
   control: LmStudioControl
   edit: EditPipeline
   activity: ActivityTracker
+  live: LiveSession
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
   emit: <K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]) => void
@@ -324,7 +326,19 @@ export function registerIpc(d: IpcDeps): void {
       return info.size > MAX
         ? { content: buf.slice(0, MAX), truncated: true }
         : { content: buf, truncated: false }
-    }
+    },
+
+    /* ---- live voice/video ---- */
+    'live:start': (conversationId: string) => d.live.start(conversationId),
+    'live:stop': () => d.live.stop(),
+    'live:status': () => d.live.status(),
+    'live:settings': () => d.live.settings(),
+    'live:updateSettings': (patch) => d.live.updateSettings(patch),
+    'live:utterance': (pcm: ArrayBuffer, sampleRate: number, frameDataUrl?: string) =>
+      d.live.utterance(pcm, sampleRate, frameDataUrl),
+    'live:interrupt': () => d.live.interrupt(),
+    'live:exchanges': () => d.live.exchanges(),
+    'live:voices': () => d.live.voices()
   }
 
   for (const [channel, handler] of Object.entries(handlers)) {

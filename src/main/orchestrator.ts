@@ -251,6 +251,7 @@ export class Orchestrator {
           temperature: wf.sampling.temperature,
           topP: wf.sampling.topP,
           maxTokens: wf.sampling.maxTokens,
+          reasoningEffort: wf.sampling.reasoningEffort,
           signal: controller.signal
         },
         {

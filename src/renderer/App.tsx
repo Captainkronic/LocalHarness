@@ -32,6 +32,7 @@ import ContextPanel from '@renderer/components/panels/ContextPanel'
 import ModelManager from '@renderer/components/models/ModelManager'
 import EditWorkspace from '@renderer/components/edit/EditWorkspace'
 import CodeWorkspace from '@renderer/components/code/CodeWorkspace'
+import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
 
 /** Traffic-light inset is macOS-only; everywhere else the brand sits at the edge. */
 const PLATFORM: string = typeof window !== 'undefined' && window.harness
@@ -202,6 +203,8 @@ export default function App(): ReactElement {
             <EditWorkspace />
           ) : workflow.id === 'code' ? (
             <CodeWorkspace />
+          ) : workflow.id === 'live' ? (
+            <LiveWorkspace />
           ) : (
             <ChatView />
           )}

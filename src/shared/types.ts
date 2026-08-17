@@ -17,6 +17,7 @@
  *  native tool availability and which MCP servers are spawned. */
 export type WorkflowId =
   | 'chat'
+  | 'live'
   | 'code'
   | 'image'
   | 'edit'
@@ -28,6 +29,7 @@ export type WorkflowId =
 /** Which optional right-hand panel a workflow shows. */
 export type PanelKind =
   | 'none'
+  | 'transcript'
   | 'files'
   | 'gallery'
   | 'edits'
@@ -66,6 +68,18 @@ export interface SamplingDefaults {
   /** Cap on generated tokens. Reasoning models burn budget on reasoning_content,
    *  so this is deliberately generous — see maxTokens notes in ARCHITECTURE.md. */
   maxTokens: number
+  /**
+   * Passed through as OpenAI `reasoning_effort`. Omit to leave the model's own
+   * default alone.
+   *
+   * `'none'` matters enormously for anything latency-sensitive. Measured on
+   * gemma-4-e4b: with reasoning at its default the first SPEAKABLE word arrives
+   * at 3,946ms; with `reasoning_effort: 'none'` it arrives at 312ms — the same
+   * answer, 12.6x sooner. In a spoken conversation the difference is between
+   * natural and unusable. (`chat_template_kwargs: {reasoning: 'off'}` does NOT
+   * work — it still reasoned. Only `reasoning_effort` took effect.)
+   */
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,6 +296,103 @@ export interface ModelInfo {
   capabilities: string[]
   supportsVision: boolean
   supportsTools: boolean
+}
+
+/* ------------------------------------------------------------------ */
+/* Live voice/video conversation (Live workflow)                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A spoken turn is a pipeline, not a chat message: capture -> transcribe ->
+ * generate -> speak. Each stage is local except generation, which runs on the
+ * Studio.
+ *
+ * Audio is transcribed here rather than sent to the model, because LM Studio's
+ * API rejects audio content parts outright ("must be either 'text' or
+ * 'image_url'"). Video is different — image parts ARE accepted — so camera
+ * frames go to the model directly when it is a VLM.
+ */
+export type LiveSessionState =
+  | 'off'
+  | 'starting'
+  | 'listening'
+  | 'capturing'
+  | 'transcribing'
+  | 'thinking'
+  | 'speaking'
+  | 'error'
+
+export interface LiveSessionStatus {
+  state: LiveSessionState
+  /** Mic level 0..1, for the meter. */
+  level: number
+  /** True while speech is detected above the threshold. */
+  userSpeaking: boolean
+  micEnabled: boolean
+  videoEnabled: boolean
+  /** What the user last said, as transcribed. */
+  lastUserText: string
+  /** The assistant's text for the current or last turn. */
+  assistantText: string
+  /** Turns completed this session. */
+  turns: number
+  error?: string
+  timings: LiveTurnTimings | null
+}
+
+/** Where the wall-clock actually goes in a spoken turn. The number that decides
+ *  whether it feels like a conversation is `firstAudioMs`. */
+export interface LiveTurnTimings {
+  /** Speech end to transcript. */
+  sttMs: number
+  /** Request sent to first token. */
+  ttftMs: number
+  /** First sentence handed to TTS to audio ready. */
+  ttsMs: number
+  /** Speech end to the first audio the user hears. */
+  firstAudioMs: number
+  totalMs: number
+}
+
+export interface LiveSettings {
+  /** Kokoro voice id. */
+  voice: string
+  speed: number
+  /** RMS above which audio counts as speech, 0..1. */
+  vadThreshold: number
+  /** Silence, in ms, that ends a turn. */
+  silenceMs: number
+  /** Ignore bursts shorter than this — a cough is not a turn. */
+  minUtteranceMs: number
+  /** Send a camera frame with each turn. */
+  video: boolean
+  /** Stop speaking as soon as the user starts. */
+  bargeIn: boolean
+  /** Speak replies at all. Off makes it a dictation loop. */
+  speak: boolean
+}
+
+/** One completed exchange, for the transcript rail. */
+export interface LiveExchange {
+  id: string
+  userText: string
+  assistantText: string
+  /** data: URL of the frame sent with this turn, when video was on. */
+  frameDataUrl?: string
+  timings: LiveTurnTimings | null
+  at: number
+}
+
+/** A chunk of synthesised speech for the renderer to play, in order. */
+export interface LiveAudioChunk {
+  turnId: string
+  seq: number
+  /** data: URL — the renderer cannot read the filesystem. */
+  dataUrl: string
+  /** The sentence this chunk speaks, for the caption. */
+  text: string
+  /** True on the final chunk of a turn. */
+  last: boolean
 }
 
 /* ------------------------------------------------------------------ */

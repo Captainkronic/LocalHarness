@@ -20,6 +20,10 @@ import type {
   EditParams,
   FileActivity,
   TouchedFile,
+  LiveAudioChunk,
+  LiveExchange,
+  LiveSessionStatus,
+  LiveSettings,
   LoadOptions,
   LoadProgress,
   ContextUsage,
@@ -135,6 +139,28 @@ export interface IpcApi {
   'code:touched': (conversationId: string) => Promise<TouchedFile[]>
   /** Read a file for the viewer, sandbox-checked like every other path. */
   'code:readFile': (path: string) => Promise<{ content: string; truncated: boolean } | null>
+
+  /* ---- live voice/video conversation ---- */
+  'live:start': (conversationId: string) => Promise<{ ok: boolean; error?: string }>
+  'live:stop': () => Promise<void>
+  'live:status': () => Promise<LiveSessionStatus>
+  'live:settings': () => Promise<LiveSettings>
+  'live:updateSettings': (patch: Partial<LiveSettings>) => Promise<LiveSettings>
+  /**
+   * A completed utterance from the renderer: 16kHz mono PCM16, plus the newest
+   * camera frame as a data: URL when video is on. The renderer owns capture and
+   * turn detection because that is where the audio graph lives; main owns
+   * everything after the speech stops.
+   */
+  'live:utterance': (
+    pcm: ArrayBuffer,
+    sampleRate: number,
+    frameDataUrl?: string
+  ) => Promise<{ ok: boolean; error?: string }>
+  /** Barge-in: abandon the reply in flight and go back to listening. */
+  'live:interrupt': () => Promise<void>
+  'live:exchanges': () => Promise<LiveExchange[]>
+  'live:voices': () => Promise<string[]>
 }
 
 export interface IpcEvents {
@@ -155,6 +181,9 @@ export interface IpcEvents {
   'event:editJob': EditJob
   'event:editJobDeleted': { jobId: string }
   'event:fileActivity': FileActivity
+  'event:liveStatus': LiveSessionStatus
+  'event:liveAudio': LiveAudioChunk
+  'event:liveExchange': LiveExchange
 }
 
 /** Everything the renderer needs on first paint, in one round trip. */
@@ -229,7 +258,16 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'edit:delete',
   'code:activity',
   'code:touched',
-  'code:readFile'
+  'code:readFile',
+  'live:start',
+  'live:stop',
+  'live:status',
+  'live:settings',
+  'live:updateSettings',
+  'live:utterance',
+  'live:interrupt',
+  'live:exchanges',
+  'live:voices'
 ]
 
 export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
@@ -249,7 +287,10 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:loadProgress',
   'event:editJob',
   'event:editJobDeleted',
-  'event:fileActivity'
+  'event:fileActivity',
+  'event:liveStatus',
+  'event:liveAudio',
+  'event:liveExchange'
 ]
 
 /** The surface the preload script exposes as `window.harness`. */

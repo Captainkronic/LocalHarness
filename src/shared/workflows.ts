@@ -39,6 +39,49 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
     ]
   },
   {
+    id: 'live',
+    label: 'Live',
+    blurb: 'Talk to the model. It hears you and can see you.',
+    glyph: '◉',
+    accent: '#e0645f',
+    mcpServers: [],
+    nativeTools: [],
+    panel: 'transcript',
+    systemPrompt: `${BASE_PROMPT}
+
+You are in a SPOKEN conversation. Everything you write is read aloud, so write
+for the ear, not the eye.
+
+- Two or three sentences. If the honest answer is longer, give the headline and
+  offer the rest — do not deliver a monologue someone has to sit through.
+- No markdown, no bullet points, no code blocks, no emoji, no headings. None of
+  it survives being spoken; it just comes out as noise.
+- Write numbers, units and abbreviations the way they are said: "about twenty
+  seconds", "one point five gigabytes", "et cetera".
+- Contractions and plain words. Read your reply back in your head — if it sounds
+  like a document, rewrite it.
+- The transcript comes from speech recognition, so it will contain mistakes. If
+  a request is garbled, ask for the one thing you need rather than guessing at
+  the whole sentence.
+- When a camera frame is attached, you are seeing the user's actual surroundings
+  in real time. Refer to what is there naturally; do not describe it exhaustively
+  unless asked.`,
+    // reasoningEffort 'none' is not a preference here, it is the feature
+    // working: it takes the first spoken word from ~3.9s to ~0.3s on
+    // gemma-4-e4b. maxTokens is small to match — this is speech, not an essay.
+    sampling: {
+      temperature: 0.6,
+      topP: 0.95,
+      maxTokens: 512,
+      reasoningEffort: 'none'
+    },
+    suggestions: [
+      'What am I holding?',
+      'Talk me through what you can see',
+      'Give me the short version'
+    ]
+  },
+  {
     id: 'code',
     label: 'Code',
     blurb: 'Agentic file editing, search and shell against a workspace.',

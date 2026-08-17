@@ -44,6 +44,10 @@ export interface ChatRequest {
   temperature: number
   topP: number
   maxTokens: number
+  /** OpenAI `reasoning_effort`. Omitted leaves the model's own default alone;
+   *  'none' suppresses reasoning entirely, which is what makes spoken replies
+   *  start in ~0.3s instead of ~3.9s. */
+  reasoningEffort?: string
   signal: AbortSignal
 }
 
@@ -121,6 +125,12 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     temperature: req.temperature,
     top_p: req.topP,
     max_tokens: req.maxTokens
+  }
+  if (req.reasoningEffort !== undefined) {
+    // Measured on gemma-4-e4b: 'none' moves the first speakable token from
+    // 3,946ms to 312ms. Note that chat_template_kwargs {reasoning:'off'} does
+    // NOT achieve this — it still reasoned; only reasoning_effort works.
+    payload.reasoning_effort = req.reasoningEffort
   }
   if (req.tools && req.tools.length > 0) {
     payload.tools = req.tools

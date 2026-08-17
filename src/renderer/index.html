@@ -8,16 +8,28 @@
       the main process and arrives over IPC. Images and audio reach the renderer
       as data: URLs (see artifacts:readDataUrl), so file: is not needed either.
       'unsafe-inline' is granted to styles only, for React's style attributes.
+
+      blob: appears in script-src and worker-src for ONE reason: the Live
+      workflow's microphone tap is an AudioWorklet, and a worklet module has to
+      be fetched from a URL. There is no separate asset pipeline for a single
+      worklet file, so it is built from an inline source string as a Blob — which
+      a bare 'self' policy blocks outright, and the failure surfaces as a generic
+      "Failed to construct 'AudioWorkletNode'" with no mention of CSP.
+
+      blob: is also in media-src so synthesised speech can be played back from a
+      Blob URL rather than re-encoding it as a data: URL for every sentence.
     -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
-               script-src 'self';
+               script-src 'self' blob:;
+               worker-src 'self' blob:;
+               child-src 'self' blob:;
                style-src 'self' 'unsafe-inline';
-               img-src 'self' data:;
-               media-src 'self' data:;
+               img-src 'self' data: blob:;
+               media-src 'self' data: blob:;
                font-src 'self' data:;
-               connect-src 'self';
+               connect-src 'self' blob:;
                object-src 'none';
                frame-src 'none';
                base-uri 'none';

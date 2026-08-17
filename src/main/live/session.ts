@@ -1,0 +1,982 @@
+/**
+ * The spoken turn pipeline.
+ *
+ * A turn arrives as PCM from the renderer (which owns the microphone, the VAD
+ * and therefore the decision that an utterance ended) and leaves as audio
+ * chunks the renderer plays. In between: whisper locally, the model on the Mac
+ * Studio, Kokoro locally.
+ *
+ * The single design decision everything else follows from is SENTENCE-WISE TTS.
+ * Waiting for the whole reply before speaking any of it turns a conversation
+ * into a kiosk: the model's own generation is several seconds, and none of that
+ * time needs to be silent. So completed sentences are handed to Kokoro as they
+ * stream, the first one eagerly however short it is, and the user hears the
+ * beginning of an answer while the end of it is still being written.
+ *
+ * `firstAudioMs` is the number that decides whether this feels like a
+ * conversation, and it is measured from the moment the utterance arrived to the
+ * moment the first chunk goes out — not summed from the stages, which would
+ * quietly hide anything that happens between them.
+ *
+ * Ordering and interruption are handled with one generation counter. Every turn
+ * takes the next value; `interrupt()` bumps it. Synthesis already in flight
+ * cannot be cancelled (voice-mcp has no cancel), so it completes and is
+ * discarded on the way out rather than being played over the next turn.
+ *
+ * One wart worth knowing about: `LiveAudioChunk.last` can only be set honestly
+ * once the model has stopped streaming, and a chunk is emitted the instant its
+ * audio exists. When the final sentence's audio is ready BEFORE the stream ends
+ * — uncommon, but possible — no chunk can carry the flag, so a terminal chunk
+ * with an empty `dataUrl` follows to close the turn. A player must skip an empty
+ * dataUrl rather than try to play it.
+ */
+
+import { randomUUID } from 'node:crypto'
+
+import type {
+  ChatMessage,
+  Conversation,
+  LiveAudioChunk,
+  LiveExchange,
+  LiveSessionState,
+  LiveSessionStatus,
+  LiveSettings,
+  LiveTurnTimings,
+  ModelInfo,
+  Settings,
+  TurnMetrics
+} from '@shared/types'
+import { WORKFLOW_BY_ID } from '@shared/workflows'
+
+import { streamChat, type WireMessage } from '../llm/client'
+import type { ModelRegistry } from '../llm/models'
+import { buildMessages } from '../llm/prompt'
+import type { LogFn } from '../mcp/manager'
+import { estimateTokens } from '../mcp/tokens'
+import type { ConversationStore } from '../store/conversations'
+
+import type { SpeechServices } from './speech'
+import { decodeWavToDataUrl, encodeWav } from './wav'
+
+const SCOPE = 'live'
+const WORKFLOW = WORKFLOW_BY_ID.live
+
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
+  voice: 'af_heart',
+  speed: 1.0,
+  vadThreshold: 0.02,
+  silenceMs: 700,
+  minUtteranceMs: 350,
+  video: false,
+  bargeIn: true,
+  speak: true
+}
+
+/** Live captions would otherwise push a status object per token. */
+const STATUS_PUSH_MS = 120
+
+/** Exchanges kept for the transcript rail. */
+const MAX_EXCHANGES = 100
+/** Frames are hundreds of KB each and every `live:exchanges` call copies them,
+ *  so only the newest few keep theirs. */
+const MAX_FRAMES_KEPT = 8
+
+/**
+ * A frame larger than this is a renderer bug (it should be downscaling before
+ * it sends), and putting it on the wire would cost more prefill than the whole
+ * conversation. Dropped with a warning rather than sent.
+ */
+const MAX_FRAME_CHARS = 6 * 1024 * 1024
+
+/**
+ * RMS below which an utterance is silence or room tone, whatever whisper claims
+ * to hear in it.
+ *
+ * This exists because whisper does NOT return an empty string for silence — it
+ * hallucinates, and measured on this machine one second of digital silence comes
+ * back as "Thank you." An unguarded pipeline answers that, so the user gets a
+ * reply to something they never said. The floor is roughly -54 dBFS, far below
+ * any usable VAD threshold, so a quiet but real sentence is never dropped here;
+ * deciding what counts as speech remains the renderer's job.
+ */
+const SILENCE_RMS = 0.002
+
+/** Sentences below this are merged with the next one, EXCEPT the first of a
+ *  turn: the first chunk sets the perceived latency, so it goes out at any
+ *  length. After that, staccato one-word chunks sound worse than waiting. */
+const MIN_CHUNK_CHARS = 60
+/** A model that never punctuates would otherwise stay silent until the stream
+ *  ended. Past this, break at a word boundary. */
+const MAX_CHUNK_CHARS = 320
+
+const SPEECH_UNAVAILABLE =
+  'Speech is unavailable — voice-mcp did not start, so nothing can be heard or spoken.'
+
+export interface LiveSessionOptions {
+  speech: SpeechServices
+  models: ModelRegistry
+  conversations: ConversationStore
+  getSettings: () => Settings
+  onStatus: (s: LiveSessionStatus) => void
+  onAudio: (c: LiveAudioChunk) => void
+  onExchange: (e: LiveExchange) => void
+  onLog: LogFn
+}
+
+/** Per-turn audio bookkeeping. Lives only as long as the turn does. */
+interface AudioTurn {
+  turnId: string
+  generation: number
+  /** Sentences handed to TTS so far. */
+  queued: number
+  /** Next `seq` to go out. */
+  seq: number
+  emitted: number
+  /** True once the model has stopped and the tail fragment has been queued. */
+  streamFinished: boolean
+  markedLast: boolean
+  firstSentenceAt: number | null
+  firstAudioAt: number | null
+  /** Synthesis runs one at a time so `seq` is emission order. */
+  chain: Promise<void>
+}
+
+export class LiveSession {
+  private readonly o: LiveSessionOptions
+
+  private live: LiveSettings = { ...DEFAULT_LIVE_SETTINGS }
+  private state: LiveSessionState = 'off'
+  private conversationId: string | null = null
+
+  private lastUserText = ''
+  private assistantText = ''
+  private turnCount = 0
+  private lastTimings: LiveTurnTimings | null = null
+  private errorText: string | undefined
+
+  private readonly exchangeLog: LiveExchange[] = []
+  private knownVoices: string[] = []
+
+  /** Bumped by every turn and by every interrupt; work tagged with an old value
+   *  is discarded rather than applied. */
+  private generation = 0
+  private turnActive = false
+  private abort: AbortController | null = null
+  private lastStatusAt = 0
+  /** So a text-only model is complained about once per session, not per turn. */
+  private warnedNoVision = false
+
+  constructor(opts: LiveSessionOptions) {
+    this.o = opts
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Lifecycle                                                        */
+  /* ---------------------------------------------------------------- */
+
+  async start(conversationId: string): Promise<{ ok: boolean; error?: string }> {
+    if (typeof conversationId !== 'string' || conversationId.length === 0) {
+      return { ok: false, error: 'A conversation id is required to start a live session' }
+    }
+    if (this.o.conversations.get(conversationId) === null) {
+      return { ok: false, error: `Conversation ${conversationId} no longer exists` }
+    }
+
+    if (this.state !== 'off') await this.stop()
+
+    this.conversationId = conversationId
+    this.errorText = undefined
+    this.lastUserText = ''
+    this.assistantText = ''
+    this.turnCount = 0
+    this.lastTimings = null
+    this.exchangeLog.length = 0
+    this.warnedNoVision = false
+    this.setState('starting')
+
+    // Never fatal: without voice-mcp the session still runs, it just cannot hear
+    // or speak, and the status carries the reason.
+    await this.o.speech.start()
+    if (this.o.speech.available()) {
+      this.knownVoices = await this.o.speech.voices()
+      if (this.knownVoices.length > 0 && !this.knownVoices.includes(this.live.voice)) {
+        const fallback = this.knownVoices[0]
+        this.o.onLog('warn', SCOPE, `voice "${this.live.voice}" is unknown; using ${fallback}`)
+        this.live.voice = fallback
+      }
+    } else {
+      this.knownVoices = []
+      this.errorText = SPEECH_UNAVAILABLE
+    }
+
+    this.warmModel()
+    // Kokoro and Whisper load lazily on first use; together that is ~7.5s of
+    // dead air on the first sentence. Warm them alongside the model.
+    void this.o.speech.prewarm(this.live.voice)
+    this.setState('listening')
+    return { ok: true }
+  }
+
+  async stop(): Promise<void> {
+    this.cancelTurn()
+    this.conversationId = null
+    this.setState('off')
+  }
+
+  /**
+   * Barge-in. Abandons the reply in flight and returns to listening at once;
+   * audio already handed to Kokoro is left to finish and then dropped, because
+   * there is nothing to cancel it with.
+   */
+  async interrupt(): Promise<void> {
+    if (this.state === 'off') return
+    this.cancelTurn()
+    this.setState('listening')
+  }
+
+  status(): LiveSessionStatus {
+    return {
+      state: this.state,
+      // The renderer owns the audio graph and paints its own meter from it.
+      // Main only ever sees one finished utterance at a time, which is not a
+      // live level, so anything but zero here would be a lie.
+      level: 0,
+      userSpeaking: false,
+      micEnabled: this.state !== 'off',
+      videoEnabled: this.state !== 'off' && this.live.video,
+      lastUserText: this.lastUserText,
+      assistantText: this.assistantText,
+      turns: this.turnCount,
+      error: this.errorText,
+      timings: this.lastTimings
+    }
+  }
+
+  settings(): LiveSettings {
+    return { ...this.live }
+  }
+
+  updateSettings(patch: Partial<LiveSettings>): LiveSettings {
+    const next: LiveSettings = { ...this.live }
+
+    if (typeof patch.voice === 'string' && patch.voice.trim().length > 0) {
+      const wanted = patch.voice.trim()
+      if (this.knownVoices.length === 0 || this.knownVoices.includes(wanted)) {
+        next.voice = wanted
+      } else {
+        // voice-mcp silently substitutes its default for a name it does not
+        // know, so an unchecked value here would speak in the wrong voice with
+        // no indication of why.
+        this.o.onLog('warn', SCOPE, `voice "${wanted}" is not one of the ${this.knownVoices.length} available; keeping ${next.voice}`)
+      }
+    }
+    if (isNumber(patch.speed)) next.speed = clamp(patch.speed, 0.5, 2)
+    if (isNumber(patch.vadThreshold)) next.vadThreshold = clamp(patch.vadThreshold, 0, 1)
+    if (isNumber(patch.silenceMs)) next.silenceMs = clamp(Math.round(patch.silenceMs), 100, 5_000)
+    if (isNumber(patch.minUtteranceMs)) {
+      next.minUtteranceMs = clamp(Math.round(patch.minUtteranceMs), 0, 5_000)
+    }
+    if (typeof patch.video === 'boolean') next.video = patch.video
+    if (typeof patch.bargeIn === 'boolean') next.bargeIn = patch.bargeIn
+    if (typeof patch.speak === 'boolean') next.speak = patch.speak
+
+    this.live = next
+    this.pushStatus()
+    return { ...next }
+  }
+
+  exchanges(): LiveExchange[] {
+    return this.exchangeLog.slice()
+  }
+
+  /**
+   * ADDITION TO THE SPEC. `live:voices` is routed through the session rather
+   * than straight to SpeechServices, so the list the picker shows and the list
+   * `updateSettings` validates against are the same one, refreshed here.
+   */
+  async voices(): Promise<string[]> {
+    this.knownVoices = await this.o.speech.voices()
+    return this.knownVoices.slice()
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* The turn                                                         */
+  /* ---------------------------------------------------------------- */
+
+  async utterance(
+    pcm: ArrayBuffer,
+    sampleRate: number,
+    frameDataUrl?: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const arrivedAt = Date.now()
+
+    if (this.state === 'off' || this.conversationId === null) {
+      return { ok: false, error: 'The live session is not running' }
+    }
+    if (!this.o.speech.available()) {
+      return { ok: false, error: SPEECH_UNAVAILABLE }
+    }
+
+    if (this.turnActive) {
+      if (!this.live.bargeIn) {
+        this.o.onLog('info', SCOPE, 'ignored an utterance that arrived mid-turn (barge-in is off)')
+        return { ok: false, error: 'A reply is already in flight' }
+      }
+      this.o.onLog('info', SCOPE, 'barge-in: abandoning the reply in flight')
+      await this.interrupt()
+    }
+
+    const samples = toSamples(pcm)
+    const rate = Math.round(sampleRate)
+    if (samples === null || !Number.isFinite(rate) || rate <= 0) {
+      return { ok: false, error: 'The utterance carried no usable audio' }
+    }
+
+    const durationMs = (samples.length / rate) * 1000
+    if (durationMs < this.live.minUtteranceMs) {
+      // A cough, a chair, a door. Not a turn, and not worth waking whisper for.
+      this.o.onLog(
+        'info',
+        SCOPE,
+        `ignored a ${Math.round(durationMs)}ms burst (shorter than minUtteranceMs ${this.live.minUtteranceMs})`
+      )
+      return { ok: true }
+    }
+
+    const level = rmsOf(samples)
+    if (level < SILENCE_RMS) {
+      this.o.onLog(
+        'info',
+        SCOPE,
+        `ignored ${Math.round(durationMs)}ms of silence (level ${level.toFixed(4)}); whisper would have invented words for it`
+      )
+      return { ok: true }
+    }
+
+    const generation = ++this.generation
+    this.turnActive = true
+
+    try {
+      return await this.runTurn(generation, samples, rate, frameDataUrl, arrivedAt)
+    } catch (err) {
+      const message = messageOf(err)
+      if (this.isStale(generation)) return { ok: false, error: message }
+      this.errorText = message
+      this.o.onLog('error', SCOPE, `turn failed: ${message}`)
+      this.setState('error')
+      return { ok: false, error: message }
+    } finally {
+      // A stale generation means an interrupt already tidied up and may have
+      // started another turn; touching shared state here would clobber it.
+      if (!this.isStale(generation)) {
+        this.turnActive = false
+        this.abort = null
+        // stop() and interrupt() both bump the generation, so a live generation
+        // means the session is still up; only a turn that failed keeps its state.
+        if (this.state !== 'error') this.setState('listening')
+      }
+    }
+  }
+
+  private async runTurn(
+    generation: number,
+    samples: Int16Array,
+    sampleRate: number,
+    frameDataUrl: string | undefined,
+    arrivedAt: number
+  ): Promise<{ ok: boolean; error?: string }> {
+    this.errorText = undefined
+
+    /* ---- 1. transcribe ---- */
+    this.setState('transcribing')
+    const transcript = await this.o.speech.transcribe(encodeWav(samples, sampleRate))
+    if (this.isStale(generation)) return { ok: true }
+
+    const sttMs = Date.now() - arrivedAt
+    const userText = transcript.trim()
+    if (userText.length === 0) {
+      // Whisper heard no words. This happens constantly and must not leave an
+      // empty exchange behind — just go back to listening, silently.
+      return { ok: true }
+    }
+
+    /* ---- 2. think ---- */
+    this.lastUserText = userText
+    this.assistantText = ''
+    this.setState('thinking')
+
+    const conversationId = this.conversationId
+    const conv = conversationId === null ? null : this.o.conversations.get(conversationId)
+    if (conv === null) throw new Error('The conversation this session was started on is gone')
+
+    const model = this.resolveModel(conv)
+    if (model === null) {
+      throw new Error('No model is available on the server to answer with')
+    }
+
+    conv.messages.push(chatMessage('user', userText))
+    this.o.conversations.save(conv)
+
+    const frame = this.frameFor(frameDataUrl, model)
+    const messages = buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision)
+    if (frame !== undefined) attachFrame(messages, frame)
+
+    const controller = new AbortController()
+    this.abort = controller
+
+    const turn: AudioTurn = {
+      turnId: randomUUID(),
+      generation,
+      queued: 0,
+      seq: 0,
+      emitted: 0,
+      streamFinished: false,
+      markedLast: false,
+      firstSentenceAt: null,
+      firstAudioAt: null,
+      chain: Promise.resolve()
+    }
+
+    const splitter = new SentenceSplitter()
+    let content = ''
+    let reasoning = ''
+    let finishReason = ''
+    let usage = { promptTokens: 0, completionTokens: 0 }
+    /** 0 until the first token lands. */
+    let firstTokenAt = 0
+
+    const settings = this.o.getSettings()
+    const requestAt = Date.now()
+
+    await streamChat(
+      {
+        baseUrl: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: model.id,
+        messages,
+        temperature: WORKFLOW.sampling.temperature,
+        topP: WORKFLOW.sampling.topP,
+        maxTokens: WORKFLOW.sampling.maxTokens,
+        // The single biggest lever on perceived latency here. Measured on
+        // gemma-4-e4b: without it the first speakable word is ~3.9s away
+        // because the model reasons first; with it, ~0.3s.
+        reasoningEffort: WORKFLOW.sampling.reasoningEffort,
+        signal: controller.signal
+      },
+      {
+        onFirstToken: () => {
+          firstTokenAt = Date.now()
+        },
+        onContent: (delta) => {
+          content += delta
+          this.assistantText = content
+          this.pushStatusThrottled()
+          /* ---- 3. speak each sentence as it completes ---- */
+          for (const sentence of splitter.push(delta)) this.enqueueSpeech(turn, sentence)
+        },
+        // Reasoning is not part of the answer and must never be spoken or
+        // recorded as one; it is kept only so the turn's cost is honest.
+        onReasoning: (delta) => {
+          reasoning += delta
+        },
+        onToolCallDelta: () => undefined,
+        onUsage: (u) => {
+          usage = u
+        },
+        onDone: (reason) => {
+          finishReason = reason
+        }
+      }
+    )
+
+    const streamDoneAt = Date.now()
+    const ttftMs = firstTokenAt === 0 ? 0 : firstTokenAt - requestAt
+    if (this.isStale(generation)) return { ok: true }
+
+    const tail = splitter.flush()
+    if (tail !== null) this.enqueueSpeech(turn, tail)
+    turn.streamFinished = true
+
+    /* ---- 4. drain the speech queue ---- */
+    await turn.chain
+    if (this.isStale(generation)) return { ok: true }
+    this.closeAudioTurn(turn)
+
+    /* ---- 5. record the turn ---- */
+    const finishedAt = Date.now()
+    const timings: LiveTurnTimings = {
+      sttMs,
+      ttftMs,
+      ttsMs:
+        turn.firstAudioAt !== null && turn.firstSentenceAt !== null
+          ? turn.firstAudioAt - turn.firstSentenceAt
+          : 0,
+      // Measured end to end, not summed from the stages above.
+      firstAudioMs: turn.firstAudioAt === null ? 0 : turn.firstAudioAt - arrivedAt,
+      totalMs: finishedAt - arrivedAt
+    }
+
+    const spoken = content.trim()
+    this.assistantText = spoken
+    this.lastTimings = timings
+    this.turnCount += 1
+
+    const assistant = chatMessage('assistant', spoken)
+    if (reasoning.length > 0) assistant.reasoning = reasoning
+    assistant.metrics = this.metricsFor({
+      model,
+      usage,
+      reasoning,
+      ttftMs,
+      decodeMs: firstTokenAt === 0 ? 0 : streamDoneAt - firstTokenAt,
+      totalMs: timings.totalMs,
+      finishReason
+    })
+    conv.messages.push(assistant)
+    this.o.conversations.save(conv)
+
+    const exchange: LiveExchange = {
+      id: turn.turnId,
+      userText,
+      assistantText: spoken,
+      frameDataUrl: frame,
+      timings,
+      at: finishedAt
+    }
+    this.remember(exchange)
+    this.o.onExchange(exchange)
+
+    this.o.onLog(
+      'info',
+      SCOPE,
+      `turn ${this.turnCount}: stt ${timings.sttMs}ms, ttft ${timings.ttftMs}ms, first audio ${timings.firstAudioMs}ms, total ${timings.totalMs}ms`
+    )
+
+    return { ok: true }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Speech queue                                                     */
+  /* ---------------------------------------------------------------- */
+
+  private enqueueSpeech(turn: AudioTurn, sentence: string): void {
+    if (!this.live.speak) return
+    const text = speakable(sentence)
+    if (text.length === 0) return
+
+    const index = turn.queued++
+    if (turn.firstSentenceAt === null) turn.firstSentenceAt = Date.now()
+    turn.chain = turn.chain.then(() => this.speakOne(turn, index, text))
+  }
+
+  private async speakOne(turn: AudioTurn, index: number, text: string): Promise<void> {
+    if (this.isStale(turn.generation)) return
+
+    let wav: Buffer
+    try {
+      wav = await this.o.speech.synthesize(text, this.live.voice, this.live.speed)
+    } catch (err) {
+      // One sentence failing to synthesise is not worth killing a turn over —
+      // the text is already on screen and the rest of the reply still speaks.
+      this.o.onLog('warn', SCOPE, `could not speak a sentence: ${messageOf(err)}`)
+      return
+    }
+    // Kokoro cannot be cancelled, so the interrupt check that matters is this
+    // one: the audio exists, and it must not be played over the next turn.
+    if (this.isStale(turn.generation)) return
+
+    const last = turn.streamFinished && index === turn.queued - 1
+    if (last) turn.markedLast = true
+    if (turn.firstAudioAt === null) {
+      turn.firstAudioAt = Date.now()
+      this.setState('speaking')
+    }
+    turn.emitted += 1
+
+    this.o.onAudio({
+      turnId: turn.turnId,
+      seq: turn.seq++,
+      dataUrl: decodeWavToDataUrl(wav, 'audio/wav'),
+      text,
+      last
+    })
+  }
+
+  /** Guarantees exactly one chunk per spoken turn carries `last`. See the note
+   *  in the file header for when this fires. */
+  private closeAudioTurn(turn: AudioTurn): void {
+    if (turn.emitted === 0 || turn.markedLast) return
+    this.o.onAudio({ turnId: turn.turnId, seq: turn.seq++, dataUrl: '', text: '', last: true })
+    turn.markedLast = true
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Helpers                                                          */
+  /* ---------------------------------------------------------------- */
+
+  private cancelTurn(): void {
+    this.generation += 1
+    this.turnActive = false
+    const controller = this.abort
+    this.abort = null
+    controller?.abort()
+  }
+
+  private isStale(generation: number): boolean {
+    return generation !== this.generation
+  }
+
+  private setState(next: LiveSessionState): void {
+    if (this.state === next) return
+    this.state = next
+    this.pushStatus()
+  }
+
+  private pushStatus(): void {
+    this.lastStatusAt = Date.now()
+    this.o.onStatus(this.status())
+  }
+
+  private pushStatusThrottled(): void {
+    if (Date.now() - this.lastStatusAt < STATUS_PUSH_MS) return
+    this.pushStatus()
+  }
+
+  private remember(exchange: LiveExchange): void {
+    this.exchangeLog.push(exchange)
+    if (this.exchangeLog.length > MAX_EXCHANGES) {
+      this.exchangeLog.splice(0, this.exchangeLog.length - MAX_EXCHANGES)
+    }
+    // Frames are large and every read of the log copies them; keep only the
+    // newest few, which is all a transcript rail shows anyway.
+    for (let i = 0; i < this.exchangeLog.length - MAX_FRAMES_KEPT; i++) {
+      delete this.exchangeLog[i].frameDataUrl
+    }
+  }
+
+  private resolveModel(conv: Conversation): ModelInfo | null {
+    const models = this.o.models.list()
+    const wanted = conv.modelId ?? this.o.getSettings().defaultModelId
+    if (wanted !== null) {
+      const pinned = models.find((m) => m.id === wanted)
+      if (pinned !== undefined) return pinned
+    }
+    const residentId = this.o.models.residentModelId()
+    if (residentId !== null) {
+      const resident = models.find((m) => m.id === residentId)
+      if (resident !== undefined) return resident
+    }
+    // Nothing pinned and nothing resident. With the camera on, a text-only model
+    // would silently drop every frame, so prefer one that can actually see.
+    if (this.live.video) {
+      const vlm = models.find((m) => m.supportsVision)
+      if (vlm !== undefined) return vlm
+    }
+    return models[0] ?? null
+  }
+
+  /**
+   * A cold load of a 27B is nineteen seconds. Doing it now, while the user is
+   * still putting the headset on, is the difference between a first turn that
+   * works and one that looks broken.
+   */
+  private warmModel(): void {
+    const conversationId = this.conversationId
+    const conv = conversationId === null ? null : this.o.conversations.get(conversationId)
+    if (conv === null) return
+
+    const model = this.resolveModel(conv)
+    if (model === null) {
+      this.o.onLog('warn', SCOPE, 'no models are visible on the server; a turn cannot be answered')
+      return
+    }
+    if (model.state === 'loaded') return
+
+    this.o.onLog('info', SCOPE, `warming ${model.id} — a cold load takes about 20 seconds`)
+    void this.o.models
+      .load(model.id)
+      .then((result) => {
+        if (!result.ok) {
+          this.o.onLog('warn', SCOPE, `could not warm ${model.id}: ${result.error ?? 'unknown error'}`)
+        }
+      })
+      .catch((err: unknown) => {
+        this.o.onLog('warn', SCOPE, `could not warm ${model.id}: ${messageOf(err)}`)
+      })
+  }
+
+  /** The frame to send with this turn, or undefined with the reason logged. */
+  private frameFor(frameDataUrl: string | undefined, model: ModelInfo): string | undefined {
+    if (frameDataUrl === undefined || frameDataUrl.length === 0) return undefined
+    if (!this.live.video) return undefined
+
+    if (!model.supportsVision) {
+      if (!this.warnedNoVision) {
+        this.warnedNoVision = true
+        this.o.onLog(
+          'warn',
+          SCOPE,
+          `${model.id} has no vision capability, so camera frames are being dropped rather than sent`
+        )
+      }
+      return undefined
+    }
+    if (!frameDataUrl.startsWith('data:image/')) {
+      this.o.onLog('warn', SCOPE, 'dropped a camera frame that was not an image data URL')
+      return undefined
+    }
+    if (frameDataUrl.length > MAX_FRAME_CHARS) {
+      this.o.onLog(
+        'warn',
+        SCOPE,
+        `dropped a ${Math.round(frameDataUrl.length / 1024)}KB camera frame; downscale it before sending`
+      )
+      return undefined
+    }
+    return frameDataUrl
+  }
+
+  private metricsFor(args: {
+    model: ModelInfo
+    usage: { promptTokens: number; completionTokens: number }
+    reasoning: string
+    ttftMs: number
+    decodeMs: number
+    totalMs: number
+    finishReason: string
+  }): TurnMetrics {
+    const metrics: TurnMetrics = {
+      modelId: args.model.id,
+      promptTokens: args.usage.promptTokens,
+      completionTokens: args.usage.completionTokens,
+      ttftMs: args.ttftMs,
+      totalMs: args.totalMs,
+      prefillTps: rate(args.usage.promptTokens, args.ttftMs),
+      decodeTps: rate(args.usage.completionTokens, args.decodeMs),
+      // The live workflow ships no tools, by design — a spoken turn cannot
+      // afford a tool round trip.
+      toolSchemaTokens: 0,
+      source: 'client',
+      finishReason: args.finishReason
+    }
+    if (args.reasoning.length > 0) metrics.reasoningTokens = estimateTokens(args.reasoning)
+    return metrics
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sentence splitting                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Abbreviations whose full stop is not the end of a sentence. */
+const ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs', 'etc', 'approx',
+  'fig', 'no', 'inc', 'ltd', 'co', 'dept', 'est', 'al', 'ca', 'cf',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct',
+  'nov', 'dec', 'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun'
+])
+
+const TERMINATORS = '.!?'
+/** Quotes and brackets belong to the sentence they close. */
+const CLOSERS = '"\'`)]}»”’'
+
+/**
+ * Streaming sentence splitter.
+ *
+ * `push` returns whatever is ready to speak; anything incomplete is held until
+ * more text arrives or `flush` closes the turn. The held fragment is the point:
+ * a terminator at the very end of the buffer is ambiguous — "the value is 1."
+ * may still become "1.5" — so a boundary is only accepted once the next
+ * character has been seen.
+ */
+class SentenceSplitter {
+  private buffer = ''
+  /** Completed sentences too short to send on their own. */
+  private pending = ''
+  private emittedAny = false
+
+  push(delta: string): string[] {
+    this.buffer += delta
+    const out: string[] = []
+
+    for (;;) {
+      let end = boundaryOf(this.buffer)
+      if (end < 0) {
+        if (this.buffer.length <= MAX_CHUNK_CHARS) break
+        end = this.buffer.lastIndexOf(' ', MAX_CHUNK_CHARS)
+        if (end <= 0) end = MAX_CHUNK_CHARS
+      }
+
+      const sentence = this.buffer.slice(0, end).trim()
+      this.buffer = this.buffer.slice(end)
+      if (sentence.length === 0) continue
+
+      this.pending = this.pending.length > 0 ? `${this.pending} ${sentence}` : sentence
+      if (!this.emittedAny || this.pending.length >= MIN_CHUNK_CHARS) {
+        out.push(this.pending)
+        this.pending = ''
+        this.emittedAny = true
+      }
+    }
+
+    return out
+  }
+
+  /** Everything still held, or null when there is nothing left to say. */
+  flush(): string | null {
+    const rest = `${this.pending} ${this.buffer}`.replace(/\s+/g, ' ').trim()
+    this.pending = ''
+    this.buffer = ''
+    if (rest.length === 0) return null
+    this.emittedAny = true
+    return rest
+  }
+}
+
+/** Index one past the end of the first complete sentence in `buf`, or -1. */
+function boundaryOf(buf: string): number {
+  for (let i = 0; i < buf.length; i++) {
+    const ch = buf[i]
+    if (ch === '\n') return i + 1
+    if (!TERMINATORS.includes(ch)) continue
+
+    // "?!", "!!", "..." are one terminator, not several.
+    let end = i + 1
+    while (end < buf.length && TERMINATORS.includes(buf[end])) end++
+    const run = buf.slice(i, end)
+
+    // An ellipsis is a pause inside a thought, not the end of one.
+    if (/^\.{2,}$/.test(run)) {
+      i = end - 1
+      continue
+    }
+    if (run === '.' && !isFullStop(buf, i)) {
+      i = end - 1
+      continue
+    }
+
+    let after = end
+    while (after < buf.length && CLOSERS.includes(buf[after])) after++
+
+    // Nothing after it yet: wait for the next character rather than guess.
+    if (after >= buf.length) return -1
+    if (!/\s/.test(buf[after])) {
+      i = after - 1
+      continue
+    }
+    return after
+  }
+  return -1
+}
+
+/** False when the period belongs to a number or an abbreviation. */
+function isFullStop(buf: string, dot: number): boolean {
+  const previous = dot > 0 ? buf[dot - 1] : ''
+  const next = dot + 1 < buf.length ? buf[dot + 1] : ''
+  // 1.5 — the decimal point, the one that most often ruins a spoken number.
+  if (/[0-9]/.test(previous) && /[0-9]/.test(next)) return false
+
+  let start = dot
+  while (start > 0 && /[A-Za-z]/.test(buf[start - 1])) start--
+  const word = buf.slice(start, dot)
+
+  if (word.length === 0) return true
+  // A lone letter is an initial or part of e.g. / i.e. / U.S., never a full stop.
+  if (word.length === 1) return false
+  return !ABBREVIATIONS.has(word.toLowerCase())
+}
+
+/**
+ * What Kokoro should actually say. The Live prompt forbids markdown, but models
+ * emit it anyway, and a read-aloud asterisk is worse than a missing one. Only
+ * the spoken text and its caption are cleaned — the recorded reply keeps
+ * whatever the model wrote.
+ */
+function speakable(text: string): string {
+  return text
+    .replace(/`+/g, ' ')
+    .replace(/\*+/g, ' ')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/^\s*[-–—•]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/* ------------------------------------------------------------------ */
+/* Small helpers                                                      */
+/* ------------------------------------------------------------------ */
+
+type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/**
+ * Hangs the frame off the newest user message — the one just spoken.
+ *
+ * The frame rides on the wire message rather than being stored as an attachment
+ * on the conversation, for two reasons: a frame per turn would multiply the size
+ * of the conversation file on disk by a hundred, and a frame from four turns ago
+ * is actively misleading to a model that has been told it is seeing the room in
+ * real time.
+ */
+function attachFrame(messages: WireMessage[], frameDataUrl: string): void {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role !== 'user') continue
+    const parts: ContentPart[] =
+      typeof msg.content === 'string'
+        ? msg.content.length > 0
+          ? [{ type: 'text', text: msg.content }]
+          : []
+        : [...msg.content]
+    parts.push({ type: 'image_url', image_url: { url: frameDataUrl } })
+    messages[i] = { ...msg, content: parts }
+    return
+  }
+}
+
+function chatMessage(role: 'user' | 'assistant', content: string): ChatMessage {
+  return { id: randomUUID(), role, content, createdAt: Date.now() }
+}
+
+/** The renderer sends 16-bit PCM; an odd byte count means a truncated frame. */
+function toSamples(pcm: ArrayBuffer): Int16Array | null {
+  if (!(pcm instanceof ArrayBuffer) || pcm.byteLength < 2) return null
+  const usable = pcm.byteLength - (pcm.byteLength % 2)
+  return new Int16Array(pcm, 0, usable / 2)
+}
+
+/** Loudness of the whole utterance, 0..1 on the same scale as `vadThreshold`. */
+function rmsOf(samples: Int16Array): number {
+  if (samples.length === 0) return 0
+  let sum = 0
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i] / 32768
+    sum += s * s
+  }
+  return Math.sqrt(sum / samples.length)
+}
+
+function rate(tokens: number, ms: number): number {
+  if (tokens <= 0 || ms <= 0) return 0
+  return Math.round((tokens / (ms / 1000)) * 10) / 10
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function messageOf(err: unknown): string {
+  if (err instanceof Error) {
+    const cause = err.cause
+    if (cause instanceof Error && cause.message !== err.message) {
+      return `${err.message} (${cause.message})`
+    }
+    return err.message
+  }
+  return String(err)
+}

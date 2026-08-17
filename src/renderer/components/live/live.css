@@ -1,0 +1,784 @@
+/*
+ * The Live workflow: orb, captions, call controls, transcript rail.
+ *
+ * Two sizes have no token behind them and are declared here instead. The orb is
+ * a display element rather than chrome — it is sized against the viewport, not
+ * the 4px scale — and the caption has to be readable from further away than any
+ * text in the rest of the app, which stops at --fs-xl. Everything else comes
+ * from styles/theme.css.
+ *
+ * Motion rule: every animation in here is tied to something happening — audio
+ * arriving, a turn being processed, a voice playing. The level-driven transforms
+ * are information rather than decoration, but they are still movement, so under
+ * prefers-reduced-motion they resolve to the static arc meter at the bottom of
+ * this file and nothing in the orb moves at all.
+ */
+
+.lv {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-app);
+
+  --lv-orb: clamp(150px, 30vh, 244px);
+  --lv-caption: clamp(19px, 2.1vw, 28px);
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage                                                               */
+/* ------------------------------------------------------------------ */
+
+.lv-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s5);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--s6) var(--s6) var(--s4);
+  overflow: hidden;
+}
+
+/* Shrinkable, and the only shrinkable thing on the stage. The orb holds its
+   size and the reply gives up whatever height is left over — which is what
+   stops a long answer from being clipped at BOTH ends by the centring. */
+.lv-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  max-width: 60ch;
+  flex: 0 1 auto;
+  min-height: 0;
+  text-align: center;
+}
+
+.lv-heard,
+.lv-hush,
+.lv-prompt {
+  flex: none;
+}
+
+/* What was heard. Quiet, because it is confirmation rather than content — but
+   present, because a misheard word explains most bad answers in a spoken call. */
+.lv-heard {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.lv-heard-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.lv-reply {
+  font-size: var(--lv-caption);
+  line-height: 1.34;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  /* Bounded by the space the stage actually has, not by a viewport fraction:
+     the dock, the notes and the timing strip all take height from the same
+     column and a vh cap does not know about any of them. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Karaoke: the part that has actually come out of the speaker, against the part
+   still queued. Only applied once a chunk has genuinely started playing, so it
+   never claims to have said something it has not. */
+.lv-reply[data-karaoke='true'] .lv-rest {
+  color: var(--fg-dim);
+}
+
+.lv-prompt {
+  font-size: var(--fs-body);
+  color: var(--fg-faint);
+}
+
+.lv-hush {
+  margin-top: var(--s1);
+  color: var(--fg-muted);
+}
+
+/* ---- camera ---- */
+
+.lv-cam {
+  position: absolute;
+  top: var(--s4);
+  right: var(--s4);
+  width: clamp(140px, 18vw, 216px);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg-void);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.lv-cam-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--bg-void);
+  /* Mirrored for the preview only. The frame sent to the model is drawn from
+     the unflipped source — see useCamera.grab. */
+  transform: scaleX(-1);
+}
+
+.lv-cam[data-active='false'] .lv-cam-video {
+  opacity: 0.3;
+}
+
+.lv-cam-tag {
+  padding: 3px var(--s2);
+  border-top: 1px solid var(--line-subtle);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+  background: var(--bg-panel);
+}
+
+.lv-canvas {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Notes                                                               */
+/* ------------------------------------------------------------------ */
+
+/* Four notes can be true at once (no mic, no speech server, cold model, blind
+   model). Capped and scrollable so a bad day never pushes the call button off
+   the bottom of the window. */
+.lv-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 34vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--s6);
+}
+
+.lv-notes:empty {
+  display: none;
+}
+
+.lv-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  animation: fade-in var(--dur) var(--ease) both;
+}
+
+.lv-note .lv-icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.lv-note.is-error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+
+.lv-note.is-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 38%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.lv-note.is-info {
+  color: var(--fg-muted);
+}
+
+.lv-note-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lv-note-title {
+  font-weight: 600;
+}
+
+.lv-note-text {
+  color: var(--fg-muted);
+}
+
+.lv-note.is-error .lv-note-text,
+.lv-note.is-warn .lv-note-text {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* ------------------------------------------------------------------ */
+/* Timings                                                             */
+/* ------------------------------------------------------------------ */
+
+.lv-timing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3) var(--s5);
+  flex: none;
+  margin: var(--s3) var(--s6) 0;
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+/* First audio gets the type size because it is the only number the user can
+   actually feel. The rest are diagnosis for when it is bad. */
+.lv-t-hero {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lv-t-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.lv-t-label {
+  font-size: var(--fs-tiny);
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+
+.lv-t-rest {
+  display: flex;
+  gap: var(--s4);
+  flex: none;
+}
+
+.lv-t-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lv-t-k {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.lv-t-v {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dock                                                                */
+/* ------------------------------------------------------------------ */
+
+.lv-dock {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex: none;
+  padding: var(--s3) var(--s6) var(--s5);
+}
+
+.lv-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lv-toggle {
+  color: var(--fg-dim);
+}
+
+.lv-toggle.is-on {
+  color: var(--fg);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.lv-icon {
+  flex: none;
+}
+
+.lv-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 4px var(--s2) 4px var(--s3);
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+
+.lv-field-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.lv-select {
+  max-width: 16ch;
+  font-size: var(--fs-small);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.lv-select:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+
+.lv-field-speed {
+  gap: var(--s2);
+}
+
+.lv-range {
+  width: 88px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.lv-range:disabled {
+  cursor: default;
+}
+
+.lv-range-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg-muted);
+  width: 5ch;
+  text-align: right;
+}
+
+.lv-call-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex: none;
+}
+
+.lv-call {
+  padding: var(--s2) var(--s5);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.lv-call.is-live {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.lv-call.is-live:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: var(--danger);
+}
+
+.lv-call-note {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ */
+/* Orb                                                                 */
+/* ------------------------------------------------------------------ */
+
+.orb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+  flex: none;
+
+  --orb-c: var(--fg-faint);
+  --orb-level: 0;
+}
+
+.orb[data-state='starting'] {
+  --orb-c: var(--fg-dim);
+}
+.orb[data-state='listening'],
+.orb[data-state='capturing'] {
+  --orb-c: var(--accent);
+}
+.orb[data-state='transcribing'] {
+  --orb-c: var(--metric-context);
+}
+.orb[data-state='thinking'] {
+  --orb-c: var(--warn);
+}
+.orb[data-state='speaking'] {
+  --orb-c: var(--ok);
+}
+/* The live workflow's accent is close to the danger hue, so the error state is
+   given a shape as well as a colour: a hollow shell and a broken ring. */
+.orb[data-state='error'] {
+  --orb-c: var(--danger);
+}
+
+.orb-svg {
+  width: var(--lv-orb);
+  height: var(--lv-orb);
+  overflow: visible;
+}
+
+.orb-svg circle,
+.orb-svg rect,
+.orb-svg path {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.orb-aura {
+  opacity: 0.12;
+  transform: scale(calc(0.78 + var(--orb-level) * 0.5));
+  transition:
+    transform 90ms linear,
+    opacity var(--dur) var(--ease);
+}
+
+.orb[data-state='off'] .orb-aura {
+  opacity: 0.05;
+}
+
+.orb[data-state='capturing'] .orb-aura,
+.orb[data-state='speaking'] .orb-aura {
+  opacity: 0.26;
+}
+
+.orb-shell {
+  transform: scale(calc(1 + var(--orb-level) * 0.07));
+  transition: transform 90ms linear;
+}
+
+.orb[data-state='error'] .orb-shell {
+  opacity: 0.15;
+}
+
+.orb-edge {
+  fill: none;
+  stroke: var(--orb-c);
+  stroke-width: 1.25;
+  opacity: 0.45;
+}
+
+.orb[data-state='error'] .orb-edge {
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
+/* ---- the meter ---- */
+
+.orb-arc-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.orb-arc {
+  fill: none;
+  stroke: var(--orb-c);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* Start at twelve o'clock rather than three. */
+  transform: rotate(-90deg);
+  transition: stroke-dasharray 80ms linear;
+}
+
+/* ---- processing pings ---- */
+
+.orb-ping {
+  fill: none;
+  stroke: var(--orb-c);
+  stroke-width: 1.5;
+  opacity: 0;
+}
+
+.orb[data-state='transcribing'] .orb-ping,
+.orb[data-state='thinking'] .orb-ping,
+.orb[data-state='starting'] .orb-ping {
+  animation: orb-ping 2.1s var(--ease) infinite;
+}
+
+.orb-ping-2 {
+  animation-delay: 1.05s !important;
+}
+
+@keyframes orb-ping {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.86);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+
+/* ---- glyphs ---- */
+
+.orb-stroke {
+  fill: none;
+  stroke: var(--orb-c);
+  stroke-width: 1.8;
+}
+
+.orb-solid {
+  fill: var(--orb-c);
+}
+
+.orb-bar {
+  fill: var(--orb-c);
+  transform: scaleY(calc(0.3 + var(--orb-level) * 1.5));
+  transition: transform 70ms linear;
+}
+
+.orb-bar-1 {
+  transform: scaleY(calc(0.28 + var(--orb-level) * 1.1));
+}
+
+.orb-bar-3 {
+  transform: scaleY(calc(0.26 + var(--orb-level) * 1.25));
+}
+
+.orb-dot {
+  fill: var(--orb-c);
+  animation: orb-think 1.25s var(--ease) infinite;
+}
+
+.orb-dot-2 {
+  animation-delay: 0.16s;
+}
+
+.orb-dot-3 {
+  animation-delay: 0.32s;
+}
+
+@keyframes orb-think {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.orb-wave .orb-stroke {
+  stroke-dasharray: 8 6;
+  animation: orb-wave 900ms linear infinite;
+}
+
+@keyframes orb-wave {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+.orb-label {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+}
+
+.orb[data-state='error'] .orb-label {
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ */
+/* Transcript rail                                                     */
+/* ------------------------------------------------------------------ */
+
+.lvt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.lvt-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.lvt-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  list-style: none;
+}
+
+.lvt-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  border: 1px solid var(--line-subtle);
+  background: var(--bg-void);
+  animation: fade-in var(--dur) var(--ease) both;
+}
+
+.lvt-item.is-live {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.lvt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.lvt-time {
+  font-family: var(--font-mono);
+}
+
+.lvt-phase {
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lvt-first {
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+
+.lvt-body {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-start;
+}
+
+.lvt-thumb {
+  flex: none;
+  width: 56px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+}
+
+.lvt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lvt-said {
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+}
+
+.lvt-said.is-waiting {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+.lvt-reply {
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * theme.css collapses animation durations globally, which is not enough here:
+ * the orb's level response is a transition on a transform driven by a custom
+ * property, and a zero-duration transition still moves. So the orb stops moving
+ * entirely and reports state through colour, the glyph, and the arc — which was
+ * always a static indicator rather than an animation.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .orb-aura,
+  .orb-shell,
+  .orb-bar {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .orb-aura {
+    opacity: 0.14;
+  }
+
+  .orb-ping,
+  .orb-dot,
+  .orb-wave .orb-stroke {
+    animation: none !important;
+  }
+
+  .orb-ping {
+    opacity: 0;
+  }
+
+  .orb-dot {
+    opacity: 1;
+    transform: none;
+  }
+
+  .orb-arc {
+    transition: none;
+  }
+
+  .lvt-item,
+  .lv-note {
+    animation: none !important;
+  }
+}

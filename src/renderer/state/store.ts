@@ -37,6 +37,9 @@ import type {
   EditParams,
   FileActivity,
   LabRecord,
+  LiveExchange,
+  LiveSessionStatus,
+  LiveSettings,
   LiveMetrics,
   LoadOptions,
   McpServerSpec,
@@ -77,6 +80,9 @@ export interface AppState {
   editJobs: EditJob[]
   /** Live filesystem effects for the Code workspace, newest last. */
   fileActivity: FileActivity[]
+  liveStatus: LiveSessionStatus
+  liveExchanges: LiveExchange[]
+  liveSettings: LiveSettings
   usage: ContextUsage
   health: ServerHealth
   labHistory: LabRecord[]
@@ -108,6 +114,12 @@ export interface AppState {
   cancelEdit(id: string): Promise<void>
   deleteEdit(id: string): Promise<void>
   readImageDataUrl(path: string): Promise<string | null>
+  /* live voice */
+  startLive(): Promise<{ ok: boolean; error?: string }>
+  stopLive(): Promise<void>
+  sendUtterance(pcm: ArrayBuffer, sampleRate: number, frameDataUrl?: string): Promise<void>
+  interruptLive(): Promise<void>
+  updateLiveSettings(patch: Partial<LiveSettings>): Promise<void>
   respondApproval(id: string, decision: ApprovalDecision): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
 }
@@ -162,6 +174,31 @@ const INITIAL_CONTROL: ControlState = {
   catalog: [],
   inFlight: null,
   lastRefreshedAt: 0
+}
+
+/** Placeholders until main answers. Mirrors LiveSession's own defaults; the
+ *  real values arrive from `live:settings` during bootstrap. */
+const IDLE_LIVE_SESSION: LiveSessionStatus = {
+  state: 'off',
+  level: 0,
+  userSpeaking: false,
+  micEnabled: false,
+  videoEnabled: false,
+  lastUserText: '',
+  assistantText: '',
+  turns: 0,
+  timings: null
+}
+
+const DEFAULT_LIVE_SETTINGS: LiveSettings = {
+  voice: 'af_heart',
+  speed: 1,
+  vadThreshold: 0.02,
+  silenceMs: 700,
+  minUtteranceMs: 350,
+  video: false,
+  bargeIn: true,
+  speak: true
 }
 
 const EMPTY_USAGE: ContextUsage = {
@@ -328,6 +365,14 @@ export const useStore = create<AppState>()((set, get) => {
       set((s) => ({ editJobs: s.editJobs.filter((j) => j.id !== jobId) })),
     'event:fileActivity': (activity) =>
       set((s) => ({ fileActivity: [...s.fileActivity, activity].slice(-ACTIVITY_CAP) })),
+    'event:liveStatus': (liveStatus) => set({ liveStatus }),
+    // Audio chunks are large data: URLs on a hot path and are consumed by the
+    // player in LiveWorkspace, which subscribes directly. Holding them in the
+    // store would grow it without bound for no reader. This entry exists because
+    // subscribe() maps over every channel and would otherwise register undefined.
+    'event:liveAudio': () => {},
+    'event:liveExchange': (exchange) =>
+      set((s) => ({ liveExchanges: [exchange, ...s.liveExchanges].slice(0, 200) })),
     'event:controlState': (control) => set({ control }),
     // Progress arrives far more often than the full state; merging it in keeps
     // the load bar smooth without re-rendering the whole catalog each tick.
@@ -371,16 +416,18 @@ export const useStore = create<AppState>()((set, get) => {
     )
     if (latest) await loadConversation(latest.id, false)
 
-    const [history, pending, control, editJobs] = await Promise.all([
+    const [history, pending, control, editJobs, liveSettings] = await Promise.all([
       call('lab', 'telemetry:history'),
       call('approval', 'approval:pending'),
       call('control', 'control:state'),
-      call('edit', 'edit:list')
+      call('edit', 'edit:list'),
+      call('live', 'live:settings')
     ])
     if (history) set({ labHistory: history.slice(-LAB_CAP) })
     if (pending) set({ approvals: pending })
     if (control) set({ control })
     if (editJobs) set({ editJobs })
+    if (liveSettings) set({ liveSettings })
 
     // An explicit LH_START_WORKFLOW wins over whatever the last conversation
     // was; it is how the screenshot driver photographs a given workflow.
@@ -410,6 +457,9 @@ export const useStore = create<AppState>()((set, get) => {
     control: INITIAL_CONTROL,
     editJobs: [],
     fileActivity: [],
+    liveStatus: IDLE_LIVE_SESSION,
+    liveExchanges: [],
+    liveSettings: DEFAULT_LIVE_SETTINGS,
     usage: EMPTY_USAGE,
     health: INITIAL_HEALTH,
     labHistory: [],
@@ -556,6 +606,31 @@ export const useStore = create<AppState>()((set, get) => {
       await call('edit', 'edit:delete', id)
     },
     readImageDataUrl: async (path) => call('edit', 'artifacts:readDataUrl', path),
+
+    /* --- live voice -------------------------------------------------- */
+    startLive: async () => {
+      const conversationId = await ensureConversation('live')
+      if (!conversationId) {
+        return { ok: false, error: 'Could not open a conversation for the session.' }
+      }
+      const result = await call('live', 'live:start', conversationId)
+      return result ?? { ok: false, error: 'The session did not start.' }
+    },
+    stopLive: async () => {
+      await call('live', 'live:stop')
+    },
+    // Hot path: one call per utterance, so it deliberately does not touch state —
+    // main pushes event:liveStatus as the turn moves through its stages.
+    sendUtterance: async (pcm, sampleRate, frameDataUrl) => {
+      await call('live', 'live:utterance', pcm, sampleRate, frameDataUrl)
+    },
+    interruptLive: async () => {
+      await call('live', 'live:interrupt')
+    },
+    updateLiveSettings: async (patch) => {
+      const next = await call('live', 'live:updateSettings', patch)
+      if (next) set({ liveSettings: next })
+    },
 
     setMcpEnabled: async (serverId, enabled) => {
       const states = await call('mcp', 'mcp:setEnabled', get().activeWorkflow, serverId, enabled)
