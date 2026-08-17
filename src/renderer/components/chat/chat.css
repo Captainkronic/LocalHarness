@@ -1259,3 +1259,22 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
+/* The model swap warning. Warmer than the cost line above it because this one
+   has a consequence the user may not want: it unloads what they were using. */
+.chat-empty-swap {
+  margin: calc(var(--s2) * -1) 0 0;
+  padding: var(--s2) var(--s3);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+  text-align: center;
+  max-width: 52ch;
+}
+
+.chat-empty-swap strong {
+  color: var(--fg);
+  font-weight: 500;
+}

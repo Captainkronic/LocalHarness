@@ -18,6 +18,7 @@ export default function ChatView() {
   const workflows = useStore((s) => s.workflows)
   const activeWorkflow = useStore((s) => s.activeWorkflow)
   const mcpStates = useStore((s) => s.mcpStates)
+  const residentModelId = useStore((s) => s.health.residentModelId)
 
   const [draft, setDraft] = useState('')
   const [focusSignal, setFocusSignal] = useState(0)
@@ -44,6 +45,13 @@ export default function ChatView() {
     }
   }, [mcpStates, workflow])
 
+  /** Non-null only when the first message here would evict a different model. */
+  const swap = useMemo(() => {
+    const want = workflow.preferredModel
+    if (!want || !residentModelId || residentModelId === want) return null
+    return { from: residentModelId, to: want }
+  }, [workflow, residentModelId])
+
   const applySuggestion = useCallback((s: string) => {
     setDraft(s)
     setFocusSignal((n) => n + 1)
@@ -65,6 +73,19 @@ export default function ChatView() {
               one moment the user is deciding what to ask on telling them what
               they had just read. */}
           <p className="chat-empty-blurb">{workflow.firstMove}</p>
+          {/* The other cost, and the expensive one. Each workflow carries a
+              preferredModel and swaps to it on the first turn — which evicts
+              whatever is resident and spends about twenty seconds doing it,
+              because this machine holds one model at a time. That was surfaced
+              nowhere in the renderer, so the first message in a workflow could
+              silently unload the model you were part-way through using. */}
+          {swap !== null ? (
+            <p className="chat-empty-swap">
+              Sending here loads <strong>{shortModel(swap.to)}</strong>, which unloads{' '}
+              <strong>{shortModel(swap.from)}</strong> — about twenty seconds, and only one model
+              fits at a time.
+            </p>
+          ) : null}
           {/* And what it costs. Payload control is the point of this app, so the
               moment before the first message is exactly when the standing cost
               should be visible rather than buried in the sidebar. */}
@@ -106,4 +127,10 @@ export default function ChatView() {
       <Composer value={draft} onValueChange={setDraft} focusSignal={focusSignal} />
     </div>
   )
+}
+
+/** Model ids are namespaced and long; the family name is what identifies it. */
+function shortModel(id: string): string {
+  const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id
+  return tail.split('@')[0]
 }
