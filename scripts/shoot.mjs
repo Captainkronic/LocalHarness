@@ -65,9 +65,17 @@ child.stderr.on('data', (d) => {
   out += d
 })
 
-const deadline = setTimeout(() => {
-  child.kill('SIGTERM')
-}, 90_000)
+// 90s is right for a screenshot of a static screen and far too short for one
+// that has to WAIT for something — two ComfyUI renders back to back is roughly
+// seven minutes, and this deadline silently killed three attempts at verifying
+// take lineage, each time looking like the app had failed rather than the
+// harness. LH_SHOT_DEADLINE_MS raises it for those runs.
+const deadline = setTimeout(
+  () => {
+    child.kill('SIGTERM')
+  },
+  Number(process.env.LH_SHOT_DEADLINE_MS ?? 90_000)
+)
 
 child.on('exit', () => {
   clearTimeout(deadline)

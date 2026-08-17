@@ -93,7 +93,7 @@ interface ActiveTurn {
  * variance rather than pinning the music. Saying "seed held" out loud is what
  * stops that being mistaken for a surgical edit.
  */
-function describeTakeDiff(
+export function describeTakeDiff(
   before: Record<string, string | number>,
   after: Record<string, string | number>
 ): string | null {
