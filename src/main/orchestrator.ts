@@ -483,7 +483,14 @@ export class Orchestrator {
         call.status = result.isError ? 'error' : 'ok'
         if (result.isError) call.error = result.text
       } else {
-        const result = await this.d.mcp.callTool(call.name, args)
+        const result = await this.d.mcp.callTool(call.name, args, (p) => {
+          // Straight onto the call the card is already rendering, then a
+          // throttled push: a render emits a tick every second or two, and the
+          // whole point is that the user sees it move while it happens.
+          call.progressFraction = p.fraction
+          call.progressMessage = p.message
+          this.persist(conv, false)
+        })
         call.result = result.text
         call.artifacts = result.artifacts
         call.status = result.isError ? 'error' : 'ok'

@@ -16,7 +16,7 @@ import type {
   McpToolInfo,
   WireTool
 } from '@shared/types'
-import { McpClient, type McpCallResult } from './client'
+import { McpClient, type McpCallResult, type McpProgress } from './client'
 import { sanitizeSchema } from './tokens'
 
 /**
@@ -282,7 +282,11 @@ export class McpManager {
     return total
   }
 
-  async callTool(qualifiedName: string, args: unknown): Promise<McpCallResult> {
+  async callTool(
+    qualifiedName: string,
+    args: unknown,
+    onProgress?: (p: McpProgress) => void
+  ): Promise<McpCallResult> {
     const route = this.resolve(qualifiedName)
     if (!route) {
       throw new Error(`Unknown MCP tool "${qualifiedName}"`)
@@ -292,7 +296,7 @@ export class McpManager {
     if (!client || state?.status !== 'ready') {
       throw new Error(`MCP server "${route.serverId}" is not running`)
     }
-    return client.callTool(route.toolName, args)
+    return client.callTool(route.toolName, args, onProgress)
   }
 
   /* ---------------------------------------------------------------- */

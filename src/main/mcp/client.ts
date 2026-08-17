@@ -60,6 +60,16 @@ interface PendingRequest {
   timer: NodeJS.Timeout
 }
 
+/** One progress tick from a server, normalised. */
+export interface McpProgress {
+  /** Human phrase from the server, e.g. "Composing - step 3 of 8". */
+  message?: string
+  progress: number | null
+  total: number | null
+  /** 0..1, only when the server supplied a real total. */
+  fraction: number | null
+}
+
 export class McpClient {
   readonly id: string
 
@@ -300,16 +310,66 @@ export class McpClient {
   /* Tool calls                                                       */
   /* ---------------------------------------------------------------- */
 
-  async callTool(name: string, args: unknown): Promise<McpCallResult> {
+  /**
+   * `onProgress` opts this call into the server's progress notifications.
+   *
+   * MCP only sends them if the caller supplies a `_meta.progressToken`, and we
+   * never did — so a ComfyUI render that reports "step 3 of 8" every few
+   * seconds arrived as nothing, and the UI showed a static dot for the whole
+   * one to two minutes. The token is the request id, which is already unique
+   * and already what the response will be matched on.
+   */
+  async callTool(
+    name: string,
+    args: unknown,
+    onProgress?: (p: McpProgress) => void
+  ): Promise<McpCallResult> {
     const seconds = Math.round(this.opts.callTimeoutMs / 1000)
-    const raw = await this.request(
-      'tools/call',
-      { name, arguments: args ?? {} },
-      this.opts.callTimeoutMs,
-      `MCP server "${this.id}" did not respond to ${name} within ${seconds}s`,
-      false
-    )
-    return parseCallResult(raw, name)
+    const token = onProgress ? `p${this.nextId}` : undefined
+    if (token && onProgress) this.progressHandlers.set(token, onProgress)
+    try {
+      const raw = await this.request(
+        'tools/call',
+        {
+          name,
+          arguments: args ?? {},
+          ...(token ? { _meta: { progressToken: token } } : {})
+        },
+        this.opts.callTimeoutMs,
+        `MCP server "${this.id}" did not respond to ${name} within ${seconds}s`,
+        false
+      )
+      return parseCallResult(raw, name)
+    } finally {
+      if (token) this.progressHandlers.delete(token)
+    }
+  }
+
+  /** Callbacks awaiting `notifications/progress`, keyed by progress token. */
+  private readonly progressHandlers = new Map<string, (p: McpProgress) => void>()
+
+  /**
+   * Routes one progress notification back to the call that asked for it.
+   *
+   * `total` is optional in the spec and genuinely absent for some servers, so a
+   * percentage is only computed when there is a real denominator. Reporting a
+   * fraction of an unknown total would be a number invented to look useful.
+   */
+  private handleProgress(params: unknown): void {
+    if (params === null || typeof params !== 'object') return
+    const p = params as Record<string, unknown>
+    const token = typeof p['progressToken'] === 'string' ? p['progressToken'] : String(p['progressToken'] ?? '')
+    const handler = this.progressHandlers.get(token)
+    if (!handler) return
+
+    const progress = typeof p['progress'] === 'number' ? p['progress'] : null
+    const total = typeof p['total'] === 'number' && p['total'] > 0 ? p['total'] : null
+    handler({
+      message: typeof p['message'] === 'string' ? p['message'] : undefined,
+      progress,
+      total,
+      fraction: progress !== null && total !== null ? Math.min(1, Math.max(0, progress / total)) : null
+    })
   }
 
   /* ---------------------------------------------------------------- */
@@ -416,6 +476,12 @@ export class McpClient {
     }
 
     if (typeof message.method === 'string') {
+      // Progress notifications used to be logged by name and dropped, params
+      // and all — which is why a long render looked identical to a hung one.
+      if (message.method === 'notifications/progress') {
+        this.handleProgress(message.params)
+        return
+      }
       this.log('info', `notification ${message.method}`)
       return
     }

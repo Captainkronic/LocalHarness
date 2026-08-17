@@ -232,6 +232,17 @@ export type ApprovalDecision = 'allow_once' | 'allow_session' | 'deny'
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
 export interface ToolCall {
+  /**
+   * Live progress for a long-running tool, 0..1, or null when the server
+   * reports steps without a total.
+   *
+   * A local ComfyUI render takes one to two minutes and used to show a static
+   * dot for all of it, which is indistinguishable from a hang. The servers were
+   * already emitting per-step progress; the app simply never asked for it.
+   */
+  progressFraction?: number | null
+  /** The server's own phrase, e.g. "Composing - step 3 of 8". */
+  progressMessage?: string
   id: string
   name: string
   /** Raw JSON arguments as emitted by the model (may be partial while streaming). */

@@ -1290,3 +1290,54 @@
   margin-left: auto;
   flex: none;
 }
+
+/* --- live render progress --- */
+
+/*
+ * A local ComfyUI render is one to two minutes with the machine's whole GPU
+ * busy. The badge used to be a static dot for all of it, which looks exactly
+ * like a hang. These only appear when a server actually reports where it has
+ * got to — an invented bar would be worse than the dot.
+ */
+.tool-state-progress {
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.tool-progress-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 26ch;
+}
+
+.tool-progress-track {
+  flex: none;
+  width: 72px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.tool-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* Eases toward each reported step rather than jumping, so the motion reads as
+     progress rather than as flicker. Steps arrive every second or two. */
+  transition: width var(--dur) var(--ease);
+}
+
+.tool-progress-pct {
+  flex: none;
+  color: var(--fg-dim);
+  font-size: var(--fs-micro);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-progress-fill {
+    transition: none;
+  }
+}

@@ -68,6 +68,8 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
           status={call.status}
           duration={duration}
           writtenChars={call.arguments.length}
+          progressFraction={call.progressFraction}
+          progressMessage={call.progressMessage}
         />
       </button>
 
@@ -119,7 +121,9 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
 function StatusBadge({
   status,
   duration,
-  writtenChars
+  writtenChars,
+  progressFraction,
+  progressMessage
 }: {
   status: ToolCall['status']
   duration: string | null
@@ -127,6 +131,10 @@ function StatusBadge({
    *  the call. A write_file argument can be a whole file, so this is the only
    *  progress there is during the longest generation the app does. */
   writtenChars: number
+  /** Live render progress, 0..1, when the server reports a real total. */
+  progressFraction?: number | null
+  /** The server's own phrase for what it is doing right now. */
+  progressMessage?: string
 }) {
   switch (status) {
     case 'awaiting_approval':
@@ -137,10 +145,33 @@ function StatusBadge({
         </span>
       )
     case 'running':
+      // A local render takes one to two minutes. A bare dot for all of it is
+      // indistinguishable from a hang, so when the server tells us where it has
+      // got to, say so — and show the bar only when there is a real fraction
+      // behind it rather than animating an invented one.
       return (
-        <span className="tool-state">
+        <span className="tool-state tool-state-progress">
           <span className="dot dot-busy" />
-          running
+          <span className="tool-progress-label">{progressMessage ?? 'running'}</span>
+          {typeof progressFraction === 'number' ? (
+            <>
+              <span
+                className="tool-progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressFraction * 100)}
+              >
+                <span
+                  className="tool-progress-fill"
+                  style={{ width: `${Math.round(progressFraction * 100)}%` }}
+                />
+              </span>
+              <span className="tool-progress-pct tnum">
+                {Math.round(progressFraction * 100)}%
+              </span>
+            </>
+          ) : null}
         </span>
       )
     case 'pending':
