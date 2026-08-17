@@ -843,6 +843,16 @@ export interface TurnMetrics {
   completionTokens: number
   /** reasoning_content tokens, when the model reports or we can infer them. */
   reasoningTokens?: number
+  /**
+   * The reasoning_effort actually sent for this turn.
+   *
+   * The footer showed how MANY reasoning tokens a turn spent but never the
+   * setting that produced them, so the one number you would change to spend
+   * fewer was the one number you could not see. It also makes a comparison
+   * between two runs self-documenting rather than dependent on remembering
+   * what the picker said at the time.
+   */
+  reasoningEffortUsed?: string
   ttftMs: number
   totalMs: number
   prefillTps: number

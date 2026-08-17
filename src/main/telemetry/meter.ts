@@ -66,6 +66,9 @@ export class TurnMeter {
   private promptTokens = 0
   private completionTokens = 0
   private reasoningTokens = 0
+  /** What was actually sent as reasoning_effort, recorded so the footer can
+   *  show the setting beside its cost. */
+  private reasoningEffort: string | undefined
   private toolSchemaTokens = 0
   private estimatedPrefillTps: number | null = null
   private estimatedOverheadMs = 0
@@ -133,6 +136,10 @@ export class TurnMeter {
    * the orchestrator knows how much of the prompt was tool schemas; it hands the
    * number over here so `finish()` can return a complete record.
    */
+  setReasoningEffort(effort: string | undefined): void {
+    this.reasoningEffort = effort
+  }
+
   setToolSchemaTokens(n: number): void {
     this.toolSchemaTokens = Math.max(0, Math.round(n))
   }
@@ -239,6 +246,7 @@ export class TurnMeter {
       finishReason
     }
     if (this.reasoningTokens > 0) metrics.reasoningTokens = this.reasoningTokens
+    if (this.reasoningEffort !== undefined) metrics.reasoningEffortUsed = this.reasoningEffort
     return metrics
   }
 
@@ -247,6 +255,7 @@ export class TurnMeter {
     this.promptTokens = 0
     this.completionTokens = 0
     this.reasoningTokens = 0
+    this.reasoningEffort = undefined
     this.toolSchemaTokens = 0
     this.estimatedPrefillTps = null
     this.estimatedOverheadMs = 0

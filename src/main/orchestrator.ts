@@ -307,6 +307,10 @@ export class Orchestrator {
     await this.d.models.learn(model.id).catch(() => undefined)
 
     const tools = this.buildTools(conv.workflowId)
+    // Resolved once so the request and the recorded metric cannot disagree
+    // about what was actually sent.
+    const effort =
+      this.d.settings.get().workflowReasoning[conv.workflowId] ?? wf.sampling.reasoningEffort
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -363,9 +367,7 @@ export class Orchestrator {
           // spend the entire answer budget thinking — qwen once used all 8,192
           // of Code's and returned nothing after eleven minutes. The user's
           // per-workflow choice wins over the profile's default.
-          reasoningEffort:
-            this.d.settings.get().workflowReasoning[conv.workflowId] ??
-            wf.sampling.reasoningEffort,
+          reasoningEffort: effort,
           signal: controller.signal
         },
         {
@@ -421,6 +423,7 @@ export class Orchestrator {
 
       assistant.streaming = false
       meter.setToolSchemaTokens(this.toolTokens(tools))
+      meter.setReasoningEffort(effort)
       const turnMetrics = meter.finish(usage, finishReason)
       assistant.metrics = turnMetrics
       this.calibrator.observe(
