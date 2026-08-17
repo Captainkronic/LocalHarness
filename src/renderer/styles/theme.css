@@ -11,18 +11,25 @@
 :root {
   /* --- surfaces, darkest to lightest --- */
   /*
-   * Four grounds, and the gaps between them are the point.
+   * Four grounds, arranged to say what kind of thing each region IS.
    *
-   * The two that sit side by side all day — the sidebar and whatever pane it is
-   * next to — used to be five levels apart, which is not enough to find the
-   * edge without looking for it. Chrome is now clearly RAISED above content:
-   * panel sits about fifteen levels above app, roughly three times the old
-   * separation, so the boundary reads at a glance and from an angle.
+   * The window has three jobs and they should not have to be learned: the rail
+   * navigates, the sidebar configures, and the middle is the conversation. So
+   * the first two are one material — `void` and `panel` are a step apart, close
+   * enough to read as the same raised surface with internal structure — and the
+   * conversation sits in a well below both. `app` is now the darkest ground in
+   * the window rather than a midtone, which is what makes the chrome read as
+   * chrome instead of as more panels.
+   *
+   * Earlier passes only widened the tonal gap. That helped find the EDGE but
+   * not the concept: the rail was darker than the content it framed, so
+   * navigation looked like a third unrelated zone rather than part of the
+   * chrome beside it.
    */
-  --bg-void: #07090c;
-  --bg-app: #0c0e13;
-  --bg-panel: #171b25;
-  --bg-raised: #1e2331;
+  --bg-void: #12161f;
+  --bg-app: #06070a;
+  --bg-panel: #1b2029;
+  --bg-raised: #232936;
   --bg-input: #1d2129;
   --bg-hover: #232833;
   --bg-active: #2a303d;
@@ -111,10 +118,11 @@
 }
 
 :root[data-theme='light'] {
-  /* Same idea inverted: content takes the tint, chrome stays white, so the
-     sidebar reads as raised here too rather than merging into the page. */
-  --bg-void: #e2e6ec;
-  --bg-app: #eef0f4;
+  /* The same three zones, inverted. Chrome is white and near-white — one
+     material, rail a step under sidebar — and the conversation takes the tint,
+     so it reads as the well rather than as another panel. */
+  --bg-void: #f4f6f9;
+  --bg-app: #e6e9ef;
   --bg-panel: #ffffff;
   --bg-raised: #ffffff;
   --bg-input: #f1f3f6;

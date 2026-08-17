@@ -841,7 +841,12 @@
   flex: none;
   padding: var(--s3) var(--s6) var(--s4);
   border-top: 1px solid var(--line);
-  background: var(--bg-panel);
+  /* The conversation's ground, not the chrome's. Typing is part of the
+     conversation, and on the panel colour the composer closed the well from
+     below — the one edge where the chat opened back out into chrome. The
+     input's own field and border carry the affordance; the strip behind it does
+     not need to. */
+  background: var(--bg-app);
 }
 
 .composer-inner {
