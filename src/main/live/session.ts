@@ -450,7 +450,12 @@ export class LiveSession {
     this.o.conversations.save(conv)
 
     const frame = this.frameFor(frameDataUrl, model)
-    const messages = buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision)
+    // Hoisted above the message build: the schemas are part of what the window
+    // must hold, so the history's budget cannot be worked out without them.
+    const tools = this.o.mcp.wireTools(WORKFLOW.mcpTools)
+    const toolSchemaCost = tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
+
+    const messages = this.composeMessages(conv, model, toolSchemaCost)
     if (frame !== undefined) attachFrame(messages, frame)
 
     const controller = new AbortController()
@@ -478,8 +483,6 @@ export class LiveSession {
     let firstTokenAt = 0
 
     const settings = this.o.getSettings()
-    const tools = this.o.mcp.wireTools(WORKFLOW.mcpTools)
-    const toolSchemaCost = tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
 
     /**
      * The spoken turn's own tool loop.
@@ -617,7 +620,7 @@ export class LiveSession {
       this.setState('thinking')
 
       messages.length = 0
-      messages.push(...buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision))
+      messages.push(...this.composeMessages(conv, model, toolSchemaCost))
       if (frame !== undefined) attachFrame(messages, frame)
     }
 
