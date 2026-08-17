@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from 'react'
+import { useMemo, useState, type JSX } from 'react'
 import type { ToolCall } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, relativeTime, shortenPath } from '@renderer/lib/format'
@@ -47,6 +47,9 @@ function pathArg(call: ToolCall): string | null {
 
 export function FilesPanel(): JSX.Element {
   const roots = useStore((s) => s.settings.workspaceRoots)
+  const addWorkspaceRoot = useStore((s) => s.addWorkspaceRoot)
+  const removeWorkspaceRoot = useStore((s) => s.removeWorkspaceRoot)
+  const [adding, setAdding] = useState(false)
   const conversation = useStore((s) => s.conversation)
 
   const touched = useMemo(() => {
@@ -87,12 +90,27 @@ export function FilesPanel(): JSX.Element {
       <section className="fil-block">
         <div className="fil-block-head">
           <span className="section-label">Sandbox</span>
-          <span className="fil-count tnum">{roots.length}</span>
+          {/* The picker belongs HERE, where the sandbox is shown. It used to
+              exist only in Settings, so "choose the folder I want to work in"
+              had no answer anywhere in the Code workflow. */}
+          <button
+            type="button"
+            className="btn btn-sm fil-add"
+            disabled={adding}
+            onClick={() => {
+              setAdding(true)
+              void addWorkspaceRoot().finally(() => setAdding(false))
+            }}
+            title="Choose a folder the agent may read, write and run commands in"
+          >
+            {adding ? 'Choosing…' : 'Add folder'}
+          </button>
         </div>
         {roots.length === 0 ? (
           <p className="pnl-empty pnl-empty-tight">
-            No workspace roots. Every file tool and every shell command will be refused
-            before it is even offered for approval. Add a root in Settings.
+            No workspace roots yet. Until one is added, every file tool and every shell
+            command is refused before it is even offered for approval. Add the folder
+            you want to work in.
           </p>
         ) : (
           <ul className="fil-roots">
@@ -100,6 +118,15 @@ export function FilesPanel(): JSX.Element {
               <li key={root} className="fil-root" title={root}>
                 <span className="fil-root-name">{basename(root)}</span>
                 <span className="fil-root-path">{shortenPath(root, 3)}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm fil-root-x"
+                  title={`Remove ${root} from the sandbox`}
+                  aria-label={`Remove ${basename(root)}`}
+                  onClick={() => void removeWorkspaceRoot(root)}
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>

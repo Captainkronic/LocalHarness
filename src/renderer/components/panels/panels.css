@@ -729,3 +729,29 @@
 .fil-del {
   color: var(--danger);
 }
+
+/* Choosing the working folder belongs next to the sandbox it changes, not
+   only in Settings. */
+.fil-add {
+  margin-left: auto;
+}
+
+.fil-root {
+  position: relative;
+}
+.fil-root-x {
+  margin-left: auto;
+  padding: 0 var(--s2);
+  font-size: var(--fs-base);
+  line-height: 1;
+  color: var(--fg-faint);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.fil-root:hover .fil-root-x,
+.fil-root-x:focus-visible {
+  opacity: 1;
+}
+.fil-root-x:hover {
+  color: var(--danger);
+}

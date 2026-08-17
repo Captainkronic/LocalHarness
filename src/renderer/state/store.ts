@@ -122,6 +122,10 @@ export interface AppState {
   updateLiveSettings(patch: Partial<LiveSettings>): Promise<void>
   respondApproval(id: string, decision: ApprovalDecision): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
+  /** Opens a folder picker and adds the choice to the agent's sandbox.
+   *  Returns the path, or null if cancelled or already present. */
+  addWorkspaceRoot(): Promise<string | null>
+  removeWorkspaceRoot(path: string): Promise<void>
 }
 
 /* ------------------------------------------------------------------ */
@@ -686,6 +690,24 @@ export const useStore = create<AppState>()((set, get) => {
       // waiting for a round trip after the user has already decided.
       set((s) => ({ approvals: s.approvals.filter((a) => a.id !== id) }))
       await call('approval', 'approval:respond', id, decision)
+    },
+
+    addWorkspaceRoot: async () => {
+      const dir = await call('settings', 'settings:pickDirectory')
+      if (!dir) return null
+      const roots = get().settings.workspaceRoots
+      if (roots.includes(dir)) return null
+      const next = await call('settings', 'settings:update', {
+        workspaceRoots: [...roots, dir]
+      })
+      if (next) set({ settings: next })
+      return dir
+    },
+
+    removeWorkspaceRoot: async (path) => {
+      const roots = get().settings.workspaceRoots.filter((r) => r !== path)
+      const next = await call('settings', 'settings:update', { workspaceRoots: roots })
+      if (next) set({ settings: next })
     },
 
     updateSettings: async (patch) => {
