@@ -23,10 +23,11 @@ import type {
   SendMessageRequest,
   ToolCall,
   WireTool,
+  WorkflowDefinition,
   WorkflowId
 } from '@shared/types'
 import type { IpcEventChannel, IpcEvents } from '@shared/ipc'
-import { WORKFLOW_BY_ID } from '@shared/workflows'
+import { DEFAULT_WORKFLOW, WORKFLOW_BY_ID } from '@shared/workflows'
 
 import type { SettingsStore } from './store/settings'
 import type { ConversationStore } from './store/conversations'
@@ -87,8 +88,7 @@ export class Orchestrator {
   }
 
   async applyWorkflow(workflowId: WorkflowId): Promise<McpServerState[]> {
-    const wf = WORKFLOW_BY_ID[workflowId]
-    if (!wf) return this.d.mcp.states()
+    const wf = this.workflow(workflowId)
     const override = this.d.settings.get().workflowMcpOverrides[workflowId]
     const ids = override ?? wf.mcpServers
     return this.d.mcp.applySet(ids)
@@ -108,7 +108,7 @@ export class Orchestrator {
         fraction: null
       }
     }
-    const wf = WORKFLOW_BY_ID[conv.workflowId]
+    const wf = this.workflow(conv.workflowId)
     const model = this.resolveModel(conv)
     const tools = this.buildTools(conv.workflowId)
     const messages = buildMessages(conv, wf.systemPrompt, model?.supportsVision ?? false)
@@ -187,7 +187,7 @@ export class Orchestrator {
   /* ---------------------------------------------------------------- */
 
   private async runTurn(conv: Conversation, model: ModelInfo): Promise<void> {
-    const wf = WORKFLOW_BY_ID[conv.workflowId]
+    const wf = this.workflow(conv.workflowId)
     const settings = this.d.settings.get()
     const controller = new AbortController()
     const meter = new TurnMeter()
@@ -214,7 +214,12 @@ export class Orchestrator {
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision)
       const promptTokens = this.estimatePromptTokens(messages, tools)
 
-      meter.start(model.id, promptTokens, this.calibrator.prefillTps(model.id))
+      meter.start(
+        model.id,
+        promptTokens,
+        this.calibrator.prefillTps(model.id),
+        this.calibrator.overheadMs(model.id)
+      )
       this.pushUsage(conv, tools, messages, model)
 
       const assistant: ChatMessage = {
@@ -255,7 +260,9 @@ export class Orchestrator {
           },
           onReasoning: (delta) => {
             assistant.reasoning = (assistant.reasoning ?? '') + delta
-            meter.countCompletionToken()
+            // Counts toward decode rate and the completion total, but tracked
+            // separately so TurnMetrics.reasoningTokens is actually populated.
+            meter.countReasoningToken()
             this.persist(conv, false)
           },
           onToolCallDelta: (index, id, name, argsDelta) => {
@@ -287,8 +294,8 @@ export class Orchestrator {
       )
 
       assistant.streaming = false
+      meter.setToolSchemaTokens(this.toolTokens(tools))
       const turnMetrics = meter.finish(usage, finishReason)
-      turnMetrics.toolSchemaTokens = this.toolTokens(tools)
       assistant.metrics = turnMetrics
       this.calibrator.observe(
         model.id,
@@ -387,9 +394,18 @@ export class Orchestrator {
   /* Helpers                                                           */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * `WORKFLOW_BY_ID` is typed as a total Record, so TypeScript sees no risk in
+   * indexing it — but `conv:setWorkflow` assigns straight from an IPC argument,
+   * so an unknown id really can reach here and would throw mid-turn. One lookup
+   * helper, one fallback.
+   */
+  private workflow(id: WorkflowId): WorkflowDefinition {
+    return WORKFLOW_BY_ID[id] ?? WORKFLOW_BY_ID[DEFAULT_WORKFLOW]
+  }
+
   private buildTools(workflowId: WorkflowId): WireTool[] {
-    const wf = WORKFLOW_BY_ID[workflowId]
-    if (!wf) return []
+    const wf = this.workflow(workflowId)
     return [...nativeWireTools(wf.nativeTools), ...this.d.mcp.wireTools()]
   }
 
@@ -448,7 +464,7 @@ export class Orchestrator {
     messages: WireMessage[],
     model: ModelInfo
   ): void {
-    const wf = WORKFLOW_BY_ID[conv.workflowId]
+    const wf = this.workflow(conv.workflowId)
     const usage = buildContextUsage({
       system: wf.systemPrompt,
       tools,

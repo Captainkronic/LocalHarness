@@ -14,6 +14,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:sandbox": "node scripts/sandbox-test.mjs",
+    "test:calibration": "node scripts/calibration-test.mjs",
+    "test:smoke": "node scripts/smoke.mjs",
+    "test": "npm run typecheck && npm run test:sandbox && npm run test:calibration",
+    "verify": "npm run test && npm run test:smoke",
     "package": "npm run build && electron-builder --mac --dir",
     "dist": "npm run build && electron-builder --mac"
   },

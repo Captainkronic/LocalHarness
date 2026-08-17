@@ -1,0 +1,673 @@
+/*
+ * Metrics HUD.
+ *
+ * Rules this file exists to enforce:
+ *  - nothing in the strip may change width as a number changes. Every span that
+ *    can update has a fixed min-width and tabular figures; slots that can empty
+ *    keep their box and render an em dash.
+ *  - one hue per metric, taken from the theme so the eye learns them:
+ *    prefill amber, decode green, context periwinkle, payload magenta.
+ *  - estimates look like estimates — hatching and an "est." marker, never a
+ *    clean solid bar pretending to be a measurement.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Strip                                                               */
+/* ------------------------------------------------------------------ */
+
+.mx-hud-wrap {
+  position: relative;
+  z-index: 20;
+  flex: none;
+}
+
+.mx-hud {
+  display: flex;
+  align-items: center;
+  height: var(--hud-h);
+  padding: 0 var(--s2);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-tiny);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.mx-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 100%;
+  padding: 0 var(--s3);
+  flex: none;
+}
+
+.mx-sep {
+  width: 1px;
+  height: 15px;
+  flex: none;
+  background: var(--line);
+}
+.mx-sep-faint {
+  height: 9px;
+  background: var(--line-subtle);
+}
+
+.mx-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.mx-val {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  min-width: 32px;
+  text-align: right;
+  color: var(--fg);
+}
+
+.mx-unit {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.mx-null {
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+
+/* ---- phase ---- */
+
+.mx-phase {
+  gap: var(--s2);
+}
+
+.mx-phase-name {
+  min-width: 46px;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.mx-phase-el {
+  min-width: 48px;
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+/* Scoped with .mx-hud so these beat the global .dot base colour regardless of
+   which stylesheet the bundler emits first. */
+.mx-hud .mx-dot-idle {
+  background: var(--fg-faint);
+}
+.mx-hud .mx-dot-queued {
+  background: var(--fg-dim);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+.mx-hud .mx-dot-prefill {
+  background: var(--metric-prefill);
+  animation: pulse 1s var(--ease) infinite;
+}
+.mx-hud .mx-dot-decode {
+  background: var(--metric-decode);
+  animation: pulse 0.9s var(--ease) infinite;
+}
+.mx-hud .mx-dot-tool {
+  background: var(--accent);
+  animation: pulse 1.2s var(--ease) infinite;
+}
+
+/* ---- toggle ---- */
+
+.mx-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.mx-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.mx-toggle svg {
+  transition: transform var(--dur) var(--ease);
+}
+.mx-toggle.is-open svg {
+  transform: rotate(180deg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Prefill bar                                                         */
+/* ------------------------------------------------------------------ */
+
+.mx-pf {
+  gap: var(--s2);
+}
+
+.mx-pf-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 64px;
+  max-width: 96px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.mx-pf-track.is-active {
+  background: color-mix(in srgb, var(--metric-prefill) 18%, var(--bg-active));
+}
+
+.mx-pf-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--metric-prefill);
+  transition: width 160ms linear;
+}
+
+/* An estimate must not look like a measurement: hatched body, soft leading edge. */
+.mx-pf-fill.is-est {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    115deg,
+    var(--metric-prefill) 0 3px,
+    color-mix(in srgb, var(--metric-prefill) 40%, transparent) 3px 6px
+  );
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--metric-prefill) 70%, transparent);
+}
+
+/* No estimable progress at all — sweep, rather than invent a percentage. */
+.mx-pf-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--metric-prefill) 75%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: mx-sweep 1.15s var(--ease) infinite;
+}
+
+@keyframes mx-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.mx-pf-est {
+  width: 22px;
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--metric-prefill);
+}
+
+.mx-pf-eta {
+  min-width: 44px;
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Speed gauges                                                        */
+/* ------------------------------------------------------------------ */
+
+.mx-gauge {
+  gap: var(--s1);
+}
+.mx-gauge .mx-label {
+  min-width: 34px;
+}
+.mx-gauge .mx-val {
+  margin-left: var(--s1);
+}
+.mx-gauge.is-prefill .mx-val {
+  color: var(--metric-prefill);
+}
+.mx-gauge.is-decode .mx-val {
+  color: var(--metric-decode);
+}
+/* Unknown beats coloured: an em dash is not a reading. */
+.mx-gauge .mx-val.mx-null {
+  color: var(--fg-faint);
+}
+
+.mx-approx {
+  width: 8px;
+  flex: none;
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+}
+
+.mx-spark-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 44px;
+  height: 18px;
+  flex: none;
+  margin-left: var(--s1);
+}
+
+.mx-spark {
+  display: block;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------ */
+/* Context meter                                                       */
+/* ------------------------------------------------------------------ */
+
+.mx-ctx {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 208px;
+  max-width: 340px;
+  outline-offset: -2px;
+}
+
+.mx-ctx-bar {
+  display: flex;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 48px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+/* Window size unknown: an inert hatched track, not a bar at 0%. */
+.mx-ctx-bar.is-unknown {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--line) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.mx-ctx-seg {
+  height: 100%;
+  min-width: 1px;
+  transition: width 240ms var(--ease);
+}
+
+.mx-seg-sys {
+  background: color-mix(in srgb, var(--meter) 50%, transparent);
+}
+.mx-seg-tools {
+  background: color-mix(in srgb, var(--meter) 75%, transparent);
+}
+.mx-seg-msgs {
+  background: var(--meter);
+}
+.mx-seg-att {
+  background: color-mix(in srgb, var(--meter) 32%, transparent);
+}
+
+.mx-ctx-read {
+  min-width: 94px;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.mx-ctx-pct {
+  min-width: 32px;
+  text-align: right;
+  color: var(--meter);
+  font-weight: 600;
+}
+
+/* ---- breakdown popover ---- */
+
+.mx-pop {
+  position: absolute;
+  top: calc(100% - 3px);
+  left: var(--s2);
+  z-index: 50; /* above the drawer, which is also anchored to the strip */
+  width: 250px;
+  padding: var(--s3);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    visibility var(--dur-fast) var(--ease);
+}
+.mx-ctx:hover .mx-pop,
+.mx-ctx:focus-visible .mx-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.mx-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+.mx-pop-total {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg);
+}
+
+.mx-pop-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mx-pop-list li {
+  display: grid;
+  grid-template-columns: 8px 1fr auto 38px;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-tiny);
+}
+.mx-sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.mx-pop-k {
+  color: var(--fg-muted);
+}
+.mx-pop-v {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.mx-pop-p {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+.mx-pop-note {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line-subtle);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Payload budget                                                      */
+/* ------------------------------------------------------------------ */
+
+.mx-pay .mx-val {
+  color: var(--metric-payload);
+}
+.mx-pay-time {
+  min-width: 48px;
+  text-align: right;
+  color: var(--fg-dim);
+}
+.mx-pay-est {
+  width: 22px;
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+.mx-pay.is-clickable {
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.mx-pay.is-clickable:hover {
+  background: var(--bg-hover);
+}
+
+/* ------------------------------------------------------------------ */
+/* Drawer                                                              */
+/* ------------------------------------------------------------------ */
+
+.mx-drawer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  max-height: 48vh;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.mx-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line-subtle);
+  flex: none;
+}
+
+.mx-drawer-body {
+  flex: 1 1 auto;
+  min-height: 0; /* lets the body scroll instead of blowing past max-height */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--s2);
+}
+
+/* ---- health ---- */
+
+.mx-health {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3) var(--s4);
+  padding: var(--s3) var(--s4);
+}
+
+.mx-health-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mx-health-v {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--fg);
+}
+
+.mx-health-err {
+  font-size: var(--fs-tiny);
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mx-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+}
+
+.mx-ell {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- decode trend ---- */
+
+.mx-trend {
+  padding: var(--s3) var(--s4);
+}
+
+.mx-trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+
+.mx-trend-range {
+  font-size: var(--fs-tiny);
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+
+.mx-trend-plot {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  color: var(--metric-decode);
+}
+
+.mx-trend-none {
+  font-size: var(--fs-small);
+}
+
+/* ---- records ---- */
+
+.mx-records {
+  padding: 0 var(--s4) var(--s3);
+}
+
+.mx-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+}
+
+.mx-tbl th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--s2) var(--s2) var(--s1);
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.mx-tbl td {
+  padding: 3px var(--s2);
+  text-align: right;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--line-subtle);
+  white-space: nowrap;
+}
+
+.mx-tbl th.mx-td-l,
+.mx-tbl th:first-child,
+.mx-tbl th:nth-child(2),
+.mx-tbl th:nth-child(3),
+.mx-tbl td.mx-td-l {
+  text-align: left;
+}
+
+.mx-tbl tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+.mx-td-model {
+  max-width: 200px;
+  color: var(--fg-dim);
+}
+
+.mx-td-prefill {
+  color: var(--metric-prefill);
+}
+.mx-td-decode {
+  color: var(--metric-decode);
+}
+
+/* ---- empty ---- */
+
+.mx-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 70ch;
+  padding: var(--s4);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+.mx-empty strong {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Narrow windows: drop the least load-bearing readouts, in order.     */
+/* Width changes here come from the window, never from a value.        */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 1180px) {
+  .mx-spark-slot {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .mx-gauge .mx-unit {
+    display: none;
+  }
+  .mx-ctx {
+    min-width: 168px;
+  }
+}
+
+@media (max-width: 940px) {
+  .mx-pf-eta,
+  .mx-pay-time {
+    display: none;
+  }
+  .mx-slot {
+    padding: 0 var(--s2);
+  }
+}
+
+/* Last resort. The phase dot and the amber gauge still say a prefill is running,
+   so the bar is the one readout whose absence costs nothing. */
+@media (max-width: 860px) {
+  .mx-phase-el,
+  .mx-pf,
+  .mx-pf + .mx-sep {
+    display: none;
+  }
+}

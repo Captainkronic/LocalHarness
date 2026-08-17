@@ -83,10 +83,17 @@ export function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n))
 }
 
-/** Colour for a context-usage fraction: calm until it matters. */
-export function usageColor(fraction: number | null): string {
+/**
+ * Colour for a context-usage fraction: calm until it matters.
+ *
+ * `warnAt` is settings.contextWarnFraction — the Settings panel promises the
+ * meter turns amber past it, so it has to be the actual threshold rather than a
+ * hardcoded one. Danger sits halfway between the warning point and full.
+ */
+export function usageColor(fraction: number | null, warnAt = 0.75): string {
   if (fraction === null) return 'var(--fg-faint)'
-  if (fraction >= 0.9) return 'var(--danger)'
-  if (fraction >= 0.75) return 'var(--warn)'
+  const warn = Math.min(Math.max(warnAt, 0.05), 0.98)
+  if (fraction >= warn + (1 - warn) / 2) return 'var(--danger)'
+  if (fraction >= warn) return 'var(--warn)'
   return 'var(--metric-context)'
 }

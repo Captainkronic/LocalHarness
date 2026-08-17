@@ -79,7 +79,7 @@ function sanitizeNode(node: unknown): unknown {
 
   // enum -> description
   if (Array.isArray(current.enum)) {
-    const values = current.enum
+    const values: unknown[] = current.enum
     delete current.enum
     const rendered = values.map(renderEnumValue).filter((v) => v.length > 0)
     if (rendered.length > 0) {

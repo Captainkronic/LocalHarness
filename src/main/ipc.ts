@@ -80,19 +80,10 @@ export function registerIpc(d: IpcDeps): void {
     /* ---- models ---- */
     'models:list': () => d.models.list(),
     'models:refresh': () => d.models.refresh(),
-    'models:load': async (modelId: string) => {
-      try {
-        await d.models.learn(modelId)
-        const found = d.models
-          .list()
-          .find((m: ModelInfo) => m.id === modelId && m.state === 'loaded')
-        return found
-          ? { ok: true }
-          : { ok: false, error: 'The model did not report as loaded.' }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
-    },
+    // load() issues the 1-token completion that triggers LM Studio's JIT load
+    // and returns the backend's failure text verbatim. learn() only re-polls
+    // /api/v0/models, so it can never make a model resident.
+    'models:load': (modelId: string) => d.models.load(modelId),
 
     /* ---- conversations ---- */
     'conv:list': () => d.conversations.list(),

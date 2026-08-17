@@ -218,7 +218,11 @@ Uses `fetch` with SSE parsing. Notes that matter:
 ## `src/main/llm/prompt.ts`
 
 ```ts
-export function buildMessages(conv: Conversation, systemPrompt: string): WireMessage[]
+export function buildMessages(
+  conv: Conversation,
+  systemPrompt: string,
+  supportsVision: boolean
+): WireMessage[]
 export function countConversationTokens(msgs: WireMessage[]): number
 export function buildContextUsage(args: {
   system: string; tools: WireTool[]; messages: WireMessage[];

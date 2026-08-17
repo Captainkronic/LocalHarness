@@ -13,3 +13,6 @@ dist/
 config.local.json
 *.local.json
 sessions/
+
+# TS incremental build info
+*.tsbuildinfo

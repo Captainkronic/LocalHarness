@@ -1,0 +1,434 @@
+import { useCallback, useMemo, useState, type JSX } from 'react'
+import type { McpServerSpec, McpServerState, McpToolInfo } from '@shared/types'
+import { useStore } from '@renderer/state/store'
+import { formatMs, formatTokens, formatTps } from '@renderer/lib/format'
+import './workflow.css'
+
+/**
+ * The payload-control surface.
+ *
+ * Every token of tool schema in this list is paid for on every single request,
+ * as wall-clock prefill time. So the panel is built around one question: what is
+ * loaded, what does it cost, and what does that cost in seconds.
+ */
+
+/** Prefill rate assumed before any turn has been measured. Roughly what a 27B
+ *  model does on the Mac Studio; only used to give the budget a unit, and it is
+ *  always labelled as assumed rather than measured. */
+const ASSUMED_PREFILL_TPS = 250
+
+/** How many recent Lab records to average for the measured prefill rate. */
+const RATE_WINDOW = 8
+
+function statusDot(status: McpServerState['status']): string {
+  switch (status) {
+    case 'ready':
+      return 'dot dot-ok'
+    case 'starting':
+    case 'stopping':
+      return 'dot dot-busy'
+    case 'error':
+      return 'dot dot-error'
+    default:
+      return 'dot'
+  }
+}
+
+function statusWord(status: McpServerState['status']): string {
+  switch (status) {
+    case 'ready':
+      return 'ready'
+    case 'starting':
+      return 'starting…'
+    case 'stopping':
+      return 'stopping…'
+    case 'error':
+      return 'failed'
+    default:
+      return 'not running'
+  }
+}
+
+function cx(...parts: Array<string | false | undefined>): string {
+  return parts.filter(Boolean).join(' ')
+}
+
+function Chevron({ open }: { open: boolean }): JSX.Element {
+  return (
+    <svg
+      className={open ? 'mcp-chev is-open' : 'mcp-chev'}
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  )
+}
+
+function RestartIcon(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13 8a5 5 0 1 1-1.6-3.66" />
+      <path d="M13 2.5V5.5h-3" />
+    </svg>
+  )
+}
+
+export function McpPanel(): JSX.Element {
+  const specs = useStore((s) => s.mcpSpecs)
+  const states = useStore((s) => s.mcpStates)
+  const workflows = useStore((s) => s.workflows)
+  const activeWorkflow = useStore((s) => s.activeWorkflow)
+  const mcpOverrides = useStore((s) => s.settings.workflowMcpOverrides)
+  const setMcpEnabled = useStore((s) => s.setMcpEnabled)
+  const labHistory = useStore((s) => s.labHistory)
+  const livePrefillTps = useStore((s) => s.live.prefillTps)
+  const livePrefillEstimated = useStore((s) => s.live.prefillEstimated)
+
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set<string>())
+  /** Optimistic per-tool enablement, keyed `${serverId}__${toolName}`. Reconciled
+   *  from the authoritative state array the IPC call returns. */
+  const [toolFlags, setToolFlags] = useState<Record<string, boolean>>({})
+
+  const definition = useMemo(
+    () => workflows.find((w) => w.id === activeWorkflow) ?? null,
+    [workflows, activeWorkflow]
+  )
+  const defaultIds = useMemo(
+    () => new Set(definition?.mcpServers ?? []),
+    [definition]
+  )
+  const enabledIds = useMemo(
+    () => new Set(mcpOverrides[activeWorkflow] ?? definition?.mcpServers ?? []),
+    [mcpOverrides, activeWorkflow, definition]
+  )
+  const stateById = useMemo(
+    () => new Map(states.map((s) => [s.id, s] as const)),
+    [states]
+  )
+
+  // Workflow defaults first, then anything the user added, then the rest.
+  const ordered = useMemo(() => {
+    const rank = (s: McpServerSpec): number =>
+      defaultIds.has(s.id) ? 0 : enabledIds.has(s.id) ? 1 : 2
+    return [...specs].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
+  }, [specs, defaultIds, enabledIds])
+
+  const isToolOn = useCallback(
+    (serverId: string, tool: McpToolInfo): boolean =>
+      toolFlags[`${serverId}__${tool.name}`] ?? tool.enabled,
+    [toolFlags]
+  )
+
+  /** Measured cost once a server is ready, registry estimate before that. */
+  const costOf = useCallback(
+    (spec: McpServerSpec): { tokens: number; estimated: boolean } => {
+      const st = stateById.get(spec.id)
+      if (!st || st.status !== 'ready' || st.tools.length === 0) {
+        return { tokens: spec.estimatedTokens, estimated: true }
+      }
+      const asStored = st.tools.reduce((n, t) => n + (t.enabled ? t.tokens : 0), 0)
+      const asShown = st.tools.reduce((n, t) => n + (isToolOn(spec.id, t) ? t.tokens : 0), 0)
+      // Whatever tokenCost carries beyond the tool schemas is protocol overhead.
+      const overhead = Math.max(0, st.tokenCost - asStored)
+      return { tokens: asShown + overhead, estimated: false }
+    },
+    [stateById, isToolOn]
+  )
+
+  const total = useMemo(() => {
+    let tokens = 0
+    let estimated = false
+    let on = 0
+    for (const spec of specs) {
+      if (!enabledIds.has(spec.id)) continue
+      on += 1
+      const c = costOf(spec)
+      tokens += c.tokens
+      if (c.estimated) estimated = true
+    }
+    return { tokens, estimated, on }
+  }, [specs, enabledIds, costOf])
+
+  /** Real prefill rate when we have one, otherwise a labelled assumption. */
+  const rate = useMemo(() => {
+    const recent = labHistory
+      .filter((r) => Number.isFinite(r.prefillTps) && r.prefillTps > 0)
+      .slice(-RATE_WINDOW)
+    if (recent.length > 0) {
+      return {
+        tps: recent.reduce((n, r) => n + r.prefillTps, 0) / recent.length,
+        measured: true
+      }
+    }
+    if (livePrefillTps !== null && livePrefillTps > 0 && !livePrefillEstimated) {
+      return { tps: livePrefillTps, measured: true }
+    }
+    return { tps: ASSUMED_PREFILL_TPS, measured: false }
+  }, [labHistory, livePrefillTps, livePrefillEstimated])
+
+  const mark = useCallback((id: string, on: boolean): void => {
+    setBusy((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
+  const toggleServer = useCallback(
+    async (id: string, next: boolean): Promise<void> => {
+      mark(id, true)
+      try {
+        await setMcpEnabled(id, next)
+      } finally {
+        mark(id, false)
+      }
+    },
+    [mark, setMcpEnabled]
+  )
+
+  const restartServer = useCallback(
+    async (id: string): Promise<void> => {
+      mark(id, true)
+      // A restart re-discovers tools, so any optimistic per-tool flags are void.
+      setToolFlags((prev) => {
+        const next: Record<string, boolean> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (!k.startsWith(`${id}__`)) next[k] = v
+        }
+        return next
+      })
+      try {
+        await window.harness.invoke('mcp:restart', id)
+      } finally {
+        mark(id, false)
+      }
+    },
+    [mark]
+  )
+
+  const toggleTool = useCallback(
+    async (serverId: string, toolName: string, next: boolean): Promise<void> => {
+      const key = `${serverId}__${toolName}`
+      setToolFlags((prev) => ({ ...prev, [key]: next }))
+      try {
+        const updated = await window.harness.invoke(
+          'mcp:setToolEnabled',
+          serverId,
+          toolName,
+          next
+        )
+        const st = updated.find((s) => s.id === serverId)
+        if (!st) return
+        setToolFlags((prev) => {
+          const merged = { ...prev }
+          for (const t of st.tools) merged[`${serverId}__${t.name}`] = t.enabled
+          return merged
+        })
+      } catch {
+        setToolFlags((prev) => {
+          const merged = { ...prev }
+          delete merged[key]
+          return merged
+        })
+      }
+    },
+    []
+  )
+
+  const toggleExpanded = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const prefillMs = rate.tps > 0 ? (total.tokens / rate.tps) * 1000 : null
+
+  return (
+    <section className="mcp" aria-label="MCP servers">
+      <div className="mcp-head">
+        <span className="section-label">MCP servers</span>
+        <span className="mcp-head-n tnum">{total.on} on</span>
+      </div>
+
+      {ordered.length === 0 ? (
+        <p className="mcp-empty">
+          No servers in the registry. Nothing can be loaded until one is added to
+          <code> mcp-registry.ts</code>.
+        </p>
+      ) : (
+        <div className="mcp-list scroll-y">
+          {ordered.map((spec) => {
+            const st = stateById.get(spec.id)
+            const status: McpServerState['status'] = st?.status ?? 'stopped'
+            const on = enabledIds.has(spec.id)
+            const isDefault = defaultIds.has(spec.id)
+            const tools = st?.tools ?? []
+            const ready = status === 'ready' && tools.length > 0
+            const open = expanded.has(spec.id)
+            const cost = costOf(spec)
+            const onCount = tools.reduce((n, t) => n + (isToolOn(spec.id, t) ? 1 : 0), 0)
+            const working = busy.has(spec.id)
+
+            return (
+              <div
+                key={spec.id}
+                className={cx('mcp-item', isDefault && 'is-default', on && 'is-on')}
+              >
+                <div className="mcp-row">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${spec.label}: ${on ? 'enabled' : 'disabled'}`}
+                    className={cx('sw', on && 'is-on')}
+                    disabled={working}
+                    onClick={() => void toggleServer(spec.id, !on)}
+                  >
+                    <span className="sw-knob" />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="mcp-name"
+                    disabled={!ready}
+                    aria-expanded={ready ? open : undefined}
+                    title={
+                      status === 'error'
+                        ? `${spec.blurb}\n\n${st?.error ?? 'Failed to start'}`
+                        : `${spec.blurb}\n${statusWord(status)}${
+                            ready ? ` — click to list ${tools.length} tools` : ''
+                          }`
+                    }
+                    onClick={() => toggleExpanded(spec.id)}
+                  >
+                    <span className={statusDot(status)} />
+                    <span className="mcp-label">{spec.label}</span>
+                    {on && !isDefault ? <span className="mcp-tag">added</span> : null}
+                    {ready ? <Chevron open={open} /> : null}
+                  </button>
+
+                  <span className="mcp-meta">
+                    {tools.length > 0 ? (
+                      <span
+                        className="mcp-tools-n tnum"
+                        title={`${onCount} of ${tools.length} tools enabled`}
+                      >
+                        {onCount === tools.length ? tools.length : `${onCount}/${tools.length}`}t
+                      </span>
+                    ) : null}
+                    <span
+                      className={cx('mcp-cost', 'tnum', cost.estimated && 'is-est')}
+                      title={
+                        cost.estimated
+                          ? 'Registry estimate — the server has not reported its tools yet'
+                          : 'Measured from the schemas this server actually returned'
+                      }
+                    >
+                      {cost.estimated ? '~' : ''}
+                      {formatTokens(cost.tokens)}
+                    </span>
+                  </span>
+                </div>
+
+                {status === 'error' ? (
+                  <div className="mcp-error" title={st?.error ?? 'Failed to start'}>
+                    <span className="mcp-error-msg">{st?.error ?? 'Failed to start'}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost mcp-restart"
+                      disabled={working}
+                      onClick={() => void restartServer(spec.id)}
+                    >
+                      <RestartIcon />
+                      Restart
+                    </button>
+                  </div>
+                ) : null}
+
+                {ready && open ? (
+                  <div className="mcp-tools">
+                    {tools.map((t) => {
+                      const toolOn = isToolOn(spec.id, t)
+                      return (
+                        <div
+                          key={t.qualifiedName}
+                          className={cx('mcp-tool', toolOn && 'is-on')}
+                        >
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={toolOn}
+                            aria-label={`${t.name}: ${toolOn ? 'enabled' : 'disabled'}`}
+                            className={cx('sw sw-xs', toolOn && 'is-on')}
+                            onClick={() => void toggleTool(spec.id, t.name, !toolOn)}
+                          >
+                            <span className="sw-knob" />
+                          </button>
+                          <span className="mcp-tool-name" title={t.description}>
+                            {t.name}
+                          </span>
+                          <span className="mcp-tool-cost tnum">{formatTokens(t.tokens)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mcp-foot">
+        <span className="section-label">Payload</span>
+        <span className="mcp-foot-nums">
+          <span
+            className="mcp-foot-tokens tnum"
+            title={
+              total.estimated
+                ? 'Includes registry estimates for servers that are not running yet'
+                : 'Measured from live tool schemas'
+            }
+          >
+            {total.estimated ? '~' : ''}
+            {formatTokens(total.tokens)} tok
+          </span>
+          <span className="mcp-foot-sep">·</span>
+          <span
+            className="mcp-foot-prefill tnum"
+            title={`≈${formatTps(rate.tps)} tok/s prefill (${
+              rate.measured ? 'measured on this box' : 'assumed until a turn is measured'
+            })`}
+          >
+            {formatMs(prefillMs)} prefill
+          </span>
+        </span>
+      </div>
+    </section>
+  )
+}
+
+export default McpPanel

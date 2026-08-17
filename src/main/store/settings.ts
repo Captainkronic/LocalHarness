@@ -25,16 +25,12 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModelId: null,
   approvalMode: 'always_ask',
   workspaceRoots: [join(HOME, 'Documents'), join(HOME, 'Desktop'), join(HOME, 'LocalHarness')],
-  shellAllowlist: [
-    'ls',
-    'cat',
-    'pwd',
-    'git status',
-    'git diff',
-    'git log',
-    'npm run typecheck',
-    'node -v'
-  ],
+  // Deliberately excludes `cat` and `ls`: both take an arbitrary path, so
+  // allowlisting them would let the model read any file on the disk with no
+  // approval, straight past the workspace sandbox. `read_file` and `list_dir`
+  // are the sandboxed route to the same capability. Everything left here either
+  // takes no path or operates on the working directory.
+  shellAllowlist: ['pwd', 'git status', 'git diff', 'git log', 'npm run typecheck', 'node -v'],
   contextWarnFraction: 0.75,
   theme: 'dark',
   modelPollMs: 15000,

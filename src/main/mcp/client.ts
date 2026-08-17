@@ -12,11 +12,11 @@
  *    (or a spawn error, or a handshake timeout) fails start().
  */
 
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, extname } from 'node:path'
-import type { Readable, Writable } from 'node:stream'
 import type { Artifact, ArtifactKind, JsonSchema, McpToolInfo } from '@shared/types'
 import { expandEnv, expandTilde } from '../store/paths'
 import { sanitizeSchema, toolSchemaTokens } from './tokens'
@@ -51,19 +51,13 @@ export interface McpCallResult {
   isError: boolean
 }
 
-type McpChild = ChildProcessByStdio<Writable, Readable, Readable>
+type McpChild = ChildProcessWithoutNullStreams
 
 interface PendingRequest {
   method: string
   resolve: (value: unknown) => void
   reject: (err: Error) => void
   timer: NodeJS.Timeout
-}
-
-interface JsonRpcError {
-  code?: number
-  message?: string
-  data?: unknown
 }
 
 export class McpClient {
@@ -75,6 +69,18 @@ export class McpClient {
   private readonly pending = new Map<number, PendingRequest>()
   private stdoutBuffer = ''
   private stderrBuffer = ''
+  /**
+   * Streaming decoders, NOT `chunk.toString('utf8')`.
+   *
+   * Lines are already buffered across chunks, but the bytes were being decoded
+   * per chunk — so a multi-byte character split across a pipe boundary became
+   * U+FFFD before it ever reached the line buffer. The JSON still parses (a
+   * replacement char is a legal string char), so results were silently mangled
+   * rather than failing loudly. These servers routinely emit em dashes, ✓ and
+   * accented filenames.
+   */
+  private stdoutDecoder = new TextDecoder()
+  private stderrDecoder = new TextDecoder()
   private readonly stderrTail: string[] = []
   private handshakeDone = false
   private handshakeDuration: number | undefined
@@ -111,6 +117,10 @@ export class McpClient {
     this.handshakeDone = false
     this.stdoutBuffer = ''
     this.stderrBuffer = ''
+    // Fresh decoders: a restart must not inherit a half-character from the
+    // previous process's last chunk.
+    this.stdoutDecoder = new TextDecoder()
+    this.stderrDecoder = new TextDecoder()
     this.stderrTail.length = 0
 
     let child: McpChild
@@ -196,7 +206,7 @@ export class McpClient {
         true
       )
       const result = asRecord(raw)
-      const list = result && Array.isArray(result.tools) ? result.tools : []
+      const list: unknown[] = result && Array.isArray(result.tools) ? result.tools : []
       for (const entry of list) {
         const info = this.toToolInfo(entry)
         if (info) tools.push(info)
@@ -359,7 +369,7 @@ export class McpClient {
   }
 
   private onStdout(chunk: Buffer): void {
-    this.stdoutBuffer += chunk.toString('utf8')
+    this.stdoutBuffer += this.stdoutDecoder.decode(chunk, { stream: true })
 
     if (this.stdoutBuffer.length > MAX_BUFFER_BYTES) {
       this.log('error', 'stdout buffer overflowed without a newline, discarding')
@@ -422,14 +432,12 @@ export class McpClient {
     this.pending.delete(numericId)
     clearTimeout(entry.timer)
 
-    const rpcError = asRecord(message.error) as JsonRpcError | null
+    const rpcError = asRecord(message.error)
     if (rpcError) {
+      const reason =
+        typeof rpcError.message === 'string' ? rpcError.message : 'unknown JSON-RPC error'
       const detail = rpcError.data === undefined ? '' : ` (${truncate(safeJson(rpcError.data), 200)})`
-      entry.reject(
-        new Error(
-          `MCP server "${this.id}" ${entry.method} failed: ${rpcError.message ?? 'unknown error'}${detail}`
-        )
-      )
+      entry.reject(new Error(`MCP server "${this.id}" ${entry.method} failed: ${reason}${detail}`))
       return
     }
 
@@ -454,7 +462,7 @@ export class McpClient {
   }
 
   private onStderr(chunk: Buffer): void {
-    this.stderrBuffer += chunk.toString('utf8')
+    this.stderrBuffer += this.stderrDecoder.decode(chunk, { stream: true })
     let newline = this.stderrBuffer.indexOf('\n')
     while (newline !== -1) {
       const line = this.stderrBuffer.slice(0, newline).replace(/\r$/, '')
@@ -567,11 +575,17 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 }
 
 /**
- * Absolute POSIX paths that carry a file extension. The leading boundary class
- * keeps `https://host/a.png` from matching — a URL's slashes are preceded by
- * `:` or `/`, neither of which is a legal prefix here.
+ * Absolute POSIX paths that carry a file extension.
+ *
+ * The leading boundary class keeps `https://host/a.png` from matching — a URL's
+ * slashes are preceded by `:` or `/`, neither of which is a legal prefix here.
+ * The body tolerates single spaces (these servers name files from the prompt,
+ * so "take 1.mp3" is common) and the match is lazy so two paths on one line do
+ * not merge; the ambiguity a space introduces is settled against the disk in
+ * findPathsInText.
  */
-const ABSOLUTE_PATH_RE = /(?:^|[\s"'`(\[<,;=])(\/(?:[\w.\-+@%~$]|\/)+\.[A-Za-z0-9]{1,8})/g
+const ABSOLUTE_PATH_RE =
+  /(?:^|[\s"'`(\[<,;=])(\/(?:[^\s"'`<>|:*?]| (?! ))+?\.[A-Za-z0-9]{1,8})(?=[\s"'`)\]},;:.!?]|$)/g
 
 function parseCallResult(raw: unknown, toolName: string): McpCallResult {
   const result = asRecord(raw)
@@ -584,7 +598,7 @@ function parseCallResult(raw: unknown, toolName: string): McpCallResult {
   const artifacts: Artifact[] = []
   const seenPaths = new Set<string>()
 
-  const content = Array.isArray(result.content) ? result.content : []
+  const content: unknown[] = Array.isArray(result.content) ? result.content : []
   for (const entry of content) {
     const block = asRecord(entry)
     if (!block) continue
@@ -764,7 +778,7 @@ function findPathsInText(text: string): string[] {
     if (candidate) {
       const trimmed = candidate.replace(/[.,;:)\]}'"`]+$/, '')
       const ext = extname(trimmed).toLowerCase()
-      if (EXTENSION_KINDS[ext] && !seen.has(trimmed)) {
+      if (EXTENSION_KINDS[ext] && !seen.has(trimmed) && isCrediblePath(trimmed)) {
         seen.add(trimmed)
         found.push(trimmed)
       }
@@ -772,6 +786,22 @@ function findPathsInText(text: string): string[] {
     match = ABSOLUTE_PATH_RE.exec(text)
   }
   return found
+}
+
+/**
+ * A path with a space in it is genuinely ambiguous in prose — "wrote it to
+ * /tmp and then log.txt" parses as one filename — so those are only accepted
+ * when they exist on disk. Space-free paths are unambiguous and taken as read,
+ * which keeps a file the server wrote to a location we cannot stat from
+ * silently vanishing.
+ */
+function isCrediblePath(path: string): boolean {
+  if (!path.includes(' ')) return true
+  try {
+    return existsSync(path)
+  } catch {
+    return false
+  }
 }
 
 /* ------------------------------------------------------------------ */

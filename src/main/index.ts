@@ -93,9 +93,12 @@ app.whenReady().then(async () => {
   const settings = new SettingsStore(userData)
   const conversations = new ConversationStore(userData)
 
+  // Note the three-arg shape: LogFn is (level, scope, message). Binding a
+  // two-arg function here compiles fine — a shorter function is assignable —
+  // but silently swallows every message and logs the scope as the text.
   const mcp = new McpManager({
     onStates: (states: McpServerState[]) => emit('event:mcpStates', states),
-    onLog: (level, message) => log(level, 'mcp', message)
+    onLog: (level, scope, message) => log(level, scope, message)
   })
 
   const models = new ModelRegistry({
@@ -107,15 +110,24 @@ app.whenReady().then(async () => {
   const lab = new LabFeed({
     getUrl: () => settings.get().labUrl,
     onRecord: (r: LabRecord) => emit('event:labRecord', r),
-    onStatus: (s: LabStatus) => log('info', 'lab', `feed ${s}`)
+    onStatus: (s: LabStatus) => {
+      // ServerHealth carries labStatus, and ModelRegistry is what stamps it onto
+      // every health push — logging alone would leave the indicator reading
+      // "unavailable" while records were visibly arriving.
+      models.setLabStatus(s)
+      log('info', 'lab', `feed ${s}`)
+    }
   })
 
-  const approvals = new ApprovalBroker((req) => emit('event:approvalRequest', req))
+  const approvals = new ApprovalBroker(
+    (req) => emit('event:approvalRequest', req),
+    (requestId, decision) => emit('event:approvalResolved', { requestId, decision })
+  )
 
   const executor = new ToolExecutor({
     getSettings: () => settings.get(),
     requestApproval: (req) => approvals.request(req),
-    onLog: (level, message) => log(level, 'tools', message)
+    onLog: (level, scope, message) => log(level, scope, message)
   })
 
   const orchestrator = new Orchestrator({
@@ -172,13 +184,20 @@ app.whenReady().then(async () => {
     await mcp.shutdown().catch(() => undefined)
   }
 
-  app.on('before-quit', () => {
-    void shutdown()
+  // MCP children are spawned with detached:false, which does NOT kill them when
+  // the parent exits, and stop() needs up to 3s per server for its
+  // SIGTERM->SIGKILL escalation. Quitting without awaiting that orphans any
+  // server that does not exit on stdin EOF, so the quit is held until shutdown
+  // finishes and then forced.
+  let quitting = false
+  app.on('before-quit', (event) => {
+    if (quitting) return
+    quitting = true
+    event.preventDefault()
+    void shutdown().finally(() => app.exit(0))
   })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      void shutdown().then(() => app.quit())
-    }
+    if (process.platform !== 'darwin') app.quit()
   })
 })

@@ -1,0 +1,363 @@
+/*
+ * Shell layout only. Everything inside the four columns styles itself.
+ *
+ * The window is one flex column — title bar, HUD, body — so an overlay that
+ * renders position:fixed (approvals, settings) never claims a row.
+ */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-app);
+
+  /* --accent arrives inline from the active workflow. The derived tints have
+     to be re-declared on the same element, because a custom property that
+     references var() is substituted where it is *declared* — the :root copies
+     would stay frozen on the default accent and every workflow would tint
+     blue. Components keep using var(--accent-soft) unchanged. */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.app > .titlebar {
+  flex: 0 0 var(--titlebar-h);
+}
+.app > .body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The HUD sits between the two; hold it at its natural height instead of
+   letting the flex algorithm squeeze it when the window is short. */
+.app > :not(.titlebar):not(.body) {
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Title bar                                                           */
+/* ------------------------------------------------------------------ */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s2) 0 var(--s3);
+  background: var(--bg-void);
+  border-bottom: 1px solid var(--line-subtle);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+/* Clear the traffic lights. Other platforms start at the edge. */
+.app[data-platform='darwin'] .titlebar {
+  padding-left: 78px;
+}
+
+.titlebar button,
+.titlebar input,
+.titlebar select,
+.titlebar .model-menu {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-spacer {
+  flex: 1 1 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.brand-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: var(--fs-tiny);
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.brand-sep {
+  color: var(--fg-faint);
+  font-size: var(--fs-small);
+}
+
+.brand-workflow {
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  padding: 4px;
+  color: var(--fg-dim);
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Model picker                                                        */
+/* ------------------------------------------------------------------ */
+
+.model-picker {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.model-trigger {
+  gap: 6px;
+  max-width: 260px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+}
+
+.model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Marks "we are following whatever LM Studio has resident", not a pin. */
+.model-auto {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.model-trigger .chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--fg-faint);
+}
+
+.model-menu {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  right: 0;
+  z-index: 60;
+  width: 360px;
+  padding: var(--s1);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  animation: fade-in var(--dur-fast) var(--ease);
+}
+
+.model-menu .hr {
+  margin: var(--s1) 0;
+}
+
+.model-list {
+  max-height: 300px;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 5px var(--s2);
+  border-radius: var(--r-sm);
+  text-align: left;
+  color: var(--fg-muted);
+  transition: background var(--dur-fast) var(--ease);
+}
+.model-option:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.model-option[data-selected='true'] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.model-option-name {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-meta {
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.model-empty {
+  padding: var(--s3) var(--s2);
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--fg-dim);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Connection chip                                                     */
+/* ------------------------------------------------------------------ */
+
+.conn {
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+}
+
+.conn-host {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn-latency {
+  color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Body                                                                */
+/* ------------------------------------------------------------------ */
+
+/* A flex row, not a grid: the rail, sidebar and panel each declare their own
+   width from the chrome tokens (--rail-w, --sidebar-w, --panel-w) and opt out
+   of flexing, so those widths stay in one place. Workflows whose panel kind is
+   'none' simply do not render a fourth child. */
+.body {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.body > * {
+  min-height: 0;
+}
+
+.center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.center > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Narrow windows: shed the optional columns rather than crushing the thread.
+   The 4th child is the context panel, the 2nd is the conversation sidebar. */
+@media (max-width: 1180px) {
+  .body > :nth-child(4) {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .body > :nth-child(2) {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                                */
+/* ------------------------------------------------------------------ */
+
+.boot {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--bg-app);
+  -webkit-app-region: drag;
+}
+
+.boot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.boot-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+
+.boot-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.boot-bar {
+  position: relative;
+  width: 180px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.boot-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  background: var(--accent);
+  animation: boot-slide 1.2s var(--ease) infinite;
+}
+
+@keyframes boot-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(365%);
+  }
+}
+
+.boot-note {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
