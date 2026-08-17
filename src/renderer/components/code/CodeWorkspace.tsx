@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { FileActivity, FileOpKind } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, clockTime, formatMs, shortenPath } from '@renderer/lib/format'
+import ChatView from '@renderer/components/chat/ChatView'
 import FileViewer from './FileViewer'
 import ActivityTicker from './ActivityTicker'
 import CodeStats from './CodeStats'
@@ -58,6 +59,17 @@ export function CodeWorkspace(): JSX.Element {
   const phase = useStore((s) => s.live.phase)
   const roots = useStore((s) => s.settings.workspaceRoots)
 
+  /**
+   * Chat or Watch.
+   *
+   * This started as Watch-only, which shipped a Code workflow with NO WAY TO
+   * TYPE — the composer lives in ChatView, and this column replaced it instead
+   * of complementing it. Chat is the default because a conversation is how work
+   * starts; the first file activity flips to Watch once, and after that the
+   * choice is the user's.
+   */
+  const [mode, setMode] = useState<'chat' | 'watch'>('chat')
+  const autoSwitched = useRef(false)
   const [pinnedPath, setPinnedPath] = useState<string | null>(null)
   const [autoPath, setAutoPath] = useState<string | null>(null)
   const [sweep, setSweep] = useState<{ path: string; gen: number } | null>(null)
@@ -110,6 +122,15 @@ export function CodeWorkspace(): JSX.Element {
 
   const activePath = pinnedPath ?? autoPath ?? tabs[0]?.path ?? null
   const activeTab = activePath ? (tabIndex.get(activePath) ?? null) : null
+
+  /* Flip to Watch the first time the agent actually touches a file, so the work
+     is visible without being asked for — but only once. After that, whichever
+     view the user chose is the one they keep. */
+  useEffect(() => {
+    if (autoSwitched.current || tabs.length === 0) return
+    autoSwitched.current = true
+    setMode('watch')
+  }, [tabs.length])
 
   /* ---- auto-jump ----------------------------------------------------- */
 
@@ -176,8 +197,32 @@ export function CodeWorkspace(): JSX.Element {
     setAutoPath(jump?.target ?? tabs[0]?.path ?? null)
   }
 
+  if (mode === 'chat') {
+    return (
+      <div className="cw cw-chat">
+        <ModeBar
+          mode={mode}
+          onMode={setMode}
+          files={tabs.length}
+          added={totals.added}
+          removed={totals.removed}
+        />
+        <div className="cw-chat-body">
+          <ChatView />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="cw">
+      <ModeBar
+        mode={mode}
+        onMode={setMode}
+        files={tabs.length}
+        added={totals.added}
+        removed={totals.removed}
+      />
       {tabs.length > 0 ? (
         <div className="cw-tabs">
           <div
@@ -312,6 +357,53 @@ export function CodeWorkspace(): JSX.Element {
 }
 
 export default CodeWorkspace
+
+/* ------------------------------------------------------------------ */
+/* Mode bar                                                            */
+/* ------------------------------------------------------------------ */
+
+/** Chat is where you talk to the agent; Watch is where you see what it did.
+ *  Always visible, so neither half of the workflow can be lost. */
+function ModeBar(props: {
+  mode: 'chat' | 'watch'
+  onMode: (m: 'chat' | 'watch') => void
+  files: number
+  added: number
+  removed: number
+}): JSX.Element {
+  const { mode, onMode, files, added, removed } = props
+  return (
+    <div className="cw-modebar">
+      <div className="cw-segmented" role="tablist" aria-label="Code view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'chat'}
+          className={mode === 'chat' ? 'cw-seg is-on' : 'cw-seg'}
+          onClick={() => onMode('chat')}
+        >
+          Chat
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'watch'}
+          className={mode === 'watch' ? 'cw-seg is-on' : 'cw-seg'}
+          onClick={() => onMode('watch')}
+        >
+          Watch
+          {files > 0 ? <span className="cw-seg-badge tnum">{files}</span> : null}
+        </button>
+      </div>
+      {files > 0 ? (
+        <span className="cw-modebar-stat tnum">
+          <span className="cw-add">+{added}</span> <span className="cw-del">−{removed}</span>{' '}
+          across {files} file{files === 1 ? '' : 's'}
+        </span>
+      ) : null}
+    </div>
+  )
+}
 
 
 /* ------------------------------------------------------------------ */

@@ -851,3 +851,76 @@
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Mode bar — Chat vs Watch                                            */
+/* ------------------------------------------------------------------ */
+
+/* The Code workflow needs both halves reachable at all times: the composer
+   lives in the chat view, and this column used to replace it outright. */
+.cw-modebar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+  flex: none;
+}
+
+.cw-segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--r);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+}
+
+.cw-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 4px var(--s3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--fg-dim);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.cw-seg:hover {
+  color: var(--fg);
+}
+.cw-seg.is-on {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.cw-seg-badge {
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.cw-modebar-stat {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+/* Chat mode hands the whole column to ChatView, which brings its own
+   scrolling and composer. */
+.cw-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.cw-chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

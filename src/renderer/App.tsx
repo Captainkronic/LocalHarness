@@ -165,6 +165,7 @@ export default function App(): ReactElement {
           onSelect={(id) => {
             void updateSettings({ defaultModelId: id })
           }}
+          onManage={() => setModelsOpen(true)}
         />
 
         <ConnectionChip health={health} onClick={() => setSettingsOpen(true)} />
@@ -231,6 +232,8 @@ interface ModelPickerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelect: (id: string | null) => void
+  /** Opens the model manager — load, unload, context length, cache settings. */
+  onManage: () => void
 }
 
 function ModelPicker({
@@ -239,7 +242,8 @@ function ModelPicker({
   residentId,
   open,
   onOpenChange,
-  onSelect
+  onSelect,
+  onManage
 }: ModelPickerProps): ReactElement {
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -351,6 +355,22 @@ function ModelPicker({
               ))}
             </div>
           )}
+
+          {/* Where someone actually looks for this. It was reachable only from
+              an unlabelled titlebar icon and a shortcut, which is to say: not
+              reachable. */}
+          <div className="hr" />
+          <button
+            type="button"
+            className="model-option model-manage"
+            onClick={() => {
+              onOpenChange(false)
+              onManage()
+            }}
+          >
+            <span className="model-option-name">Load, unload &amp; configure models…</span>
+            <span className="model-option-meta">⌘M</span>
+          </button>
         </div>
       )}
     </div>

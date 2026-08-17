@@ -361,3 +361,14 @@
   font-size: var(--fs-tiny);
   color: var(--fg-faint);
 }
+
+/* The way into the model manager. Distinct from the model rows above it —
+   it is an action, not a selection. */
+.model-manage {
+  color: var(--accent);
+  font-weight: 500;
+}
+.model-manage .model-option-meta {
+  font-family: var(--font-mono);
+  color: var(--fg-faint);
+}
