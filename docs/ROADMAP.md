@@ -111,11 +111,11 @@ States: `off starting listening capturing transcribing thinking tool speaking
 error`. Photographing them is what found the contradictory "say something"
 prompt and the uncoloured tool state.
 
-### 3. Live's dead space
-The core sits in a lot of empty middle, and the transcript rail is mostly
-empty until a few turns have landed. Neither is wrong, but an instrument panel
-wants readouts around the instrument — first-audio, ttft, turns, the model —
-rather than a large dark gap. Not started.
+### 3. Live's empty middle
+Before the first turn there is a lot of nothing between the core and the
+controls. After a turn the timings register fills it, so this is really a
+first-run state rather than a layout fault — worth an idle readout (model,
+voice, what it can look up) rather than a redesign.
 
 Constraints that must survive anything done here: reduced-motion support, and
 never animating a number that is not measured.
@@ -140,6 +140,17 @@ never animating a number that is not measured.
   rejects `parameter: {}`; it must be omitted.
 - **Barge-in on speakers is a feedback loop.** Default is off; it is for
   headphones.
+- **An unknown CSS class fails silently and looks like a design choice.** Hit
+  three times in `SkillsPanel.tsx` alone — `mcp-row-main`, `mcp-switch`,
+  `mcp-knob`, then `mcp-foot-figures`, `-tok`, `-note`. Rows lost their layout
+  and stacked vertically at 88px each with no visible toggle, and it read as
+  intentional. When copying markup between panels, copy the class names from the
+  CSS, not from the other component's JSX.
+- **A failing test is a claim about the code, not a fact.** A skill-sandbox test
+  reported that reading outside every root SUCCEEDED — a serious hole, and
+  entirely the test's fault: `ToolResult` is `{ text, artifacts, isError }` and
+  it was reading `.content`, so every refusal stringified to an object and
+  scored as a pass. Check the harness before believing the alarm.
 - **A python `str.replace` that does not match fails silently.** Assert every
   anchor, or a change looks applied and is not.
 - **Never put the forbidden literal INSIDE a prohibition.** "Never type
