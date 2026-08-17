@@ -1278,3 +1278,10 @@
   color: var(--fg);
   font-weight: 500;
 }
+
+/* Pushes the dismiss to the right edge of the warning row without disturbing
+   the dot and message, which read as one unit. */
+.composer-warn-dismiss {
+  margin-left: auto;
+  flex: none;
+}

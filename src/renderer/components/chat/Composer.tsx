@@ -52,8 +52,14 @@ export default function Composer({ value, onValueChange, focusSignal }: Composer
   const canSend =
     !running && activeModel !== null && (text.trim() !== '' || attachments.length > 0)
 
-  const overBudget =
-    usage.fraction !== null && usage.fraction > settings.contextWarnFraction
+  /** Set when a send was refused before it reached the transcript. */
+  const [rejected, setRejected] = useState<string | null>(null)
+
+  // The draft as it is RIGHT NOW, for the async restore above to consult.
+  const textRef = useRef(text)
+  const attachRef = useRef(attachments)
+  textRef.current = text
+  attachRef.current = attachments
 
   /* --- auto-grow --- */
   useLayoutEffect(() => {
@@ -80,7 +86,19 @@ export default function Composer({ value, onValueChange, focusSignal }: Composer
     const files = attachments
     setText('')
     setAttachments([])
-    void send(body, files.length > 0 ? files : undefined)
+    setRejected(null)
+    void send(body, files.length > 0 ? files : undefined).then((res) => {
+      if (res.accepted) return
+      // The message never reached the transcript, so the only copy of it is the
+      // draft we just cleared. Put it back — but only if the box is still empty,
+      // since the user may have started typing something else while the send
+      // was in flight, and overwriting that would be its own kind of data loss.
+      // Read through refs: `text` and `attachments` in this closure are the
+      // values from before the send, and the user may have typed since.
+      if (textRef.current.trim() === '') setText(body)
+      if (attachRef.current.length === 0) setAttachments(files)
+      setRejected(res.error ?? 'That message was not sent.')
+    })
   }, [canSend, text, attachments, send, setText])
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -110,14 +128,23 @@ export default function Composer({ value, onValueChange, focusSignal }: Composer
   return (
     <div className="composer">
       <div className="composer-inner chat-measure">
-        {overBudget ? (
-          <div className="composer-warn">
-            <span className="dot dot-warn" />
-            <span className="tnum">
-              Context at {formatPercent(usage.fraction)} of the window (
-              {formatTokens(usage.used)} / {formatTokens(usage.max)})
-            </span>
-            <span>— older turns will start to cost you.</span>
+        {/* The context warning that used to live here has moved wholesale to
+            ContextBanner, which already owned both the approaching and the
+            already-trimmed states and is the only one carrying a remedy. Two
+            warnings for one condition disagreed with each other once trimming
+            began: this one said older turns "will" start to cost, under a
+            banner saying they already had. */}
+        {rejected !== null ? (
+          <div className="composer-warn" role="status">
+            <span className="dot dot-error" />
+            <span>{rejected}</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm composer-warn-dismiss"
+              onClick={() => setRejected(null)}
+            >
+              Dismiss
+            </button>
           </div>
         ) : null}
 

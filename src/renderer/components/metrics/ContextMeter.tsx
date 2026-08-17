@@ -60,7 +60,14 @@ export function ContextMeter(): ReactElement {
       <span className="mx-ctx-read tnum">
         {maxTokens !== null ? `${formatTokens(used)} / ${formatTokens(maxTokens)}` : '— / —'}
       </span>
-      <span className="mx-ctx-pct tnum">{formatPercent(fraction)}</span>
+      {/* Clamped, like the bar above it at :54. An unclamped reading printed
+          "139%" over a bar sitting at full — one of them had to be wrong, and
+          a percentage of a window cannot exceed the window. Over-full is a real
+          state and it is reported by ContextBanner, which has room to explain
+          it; here it just pins. */}
+      <span className="mx-ctx-pct tnum" title={fraction !== null && fraction > 1 ? 'Over the loaded window — the oldest exchanges will be dropped' : undefined}>
+        {formatPercent(fraction === null ? null : Math.min(1, fraction))}
+      </span>
 
       <div className="mx-pop" role="tooltip">
         <div className="mx-pop-head">

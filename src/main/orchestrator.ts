@@ -180,19 +180,26 @@ export class Orchestrator {
     this.d.approvals.denyAll()
   }
 
-  async send(req: SendMessageRequest): Promise<{ ok: boolean; error?: string }> {
+  async send(
+    req: SendMessageRequest
+  ): Promise<{ ok: boolean; accepted: boolean; error?: string }> {
+    // Everything before the message is persisted is a REJECTION: the text is
+    // still only in the composer, so the renderer has to be told not to throw
+    // it away. Everything after is accepted, error or not, because the message
+    // is in the transcript and the failure renders next to it.
     if (this.active) {
-      return { ok: false, error: 'A turn is already running in this window.' }
+      return { ok: false, accepted: false, error: 'A turn is already running in this window.' }
     }
     const conv = this.d.conversations.get(req.conversationId)
-    if (!conv) return { ok: false, error: 'Conversation not found.' }
+    if (!conv) return { ok: false, accepted: false, error: 'Conversation not found.' }
 
     const model = this.resolveModel(conv)
     if (!model) {
       return {
         ok: false,
+        accepted: false,
         error:
-          'No model available. Load one in LM Studio, or pin a model in Settings.'
+          'No model is loaded on the server. Open Models (⌘M) to load one, or pin a model in Settings.'
       }
     }
 
@@ -210,7 +217,7 @@ export class Orchestrator {
 
     try {
       await this.runTurn(conv, model)
-      return { ok: true }
+      return { ok: true, accepted: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.log('error', 'turn', message)
@@ -228,7 +235,7 @@ export class Orchestrator {
         })
       }
       this.persist(conv, true)
-      return { ok: false, error: message }
+      return { ok: false, accepted: true, error: message }
     } finally {
       this.endTurn()
     }

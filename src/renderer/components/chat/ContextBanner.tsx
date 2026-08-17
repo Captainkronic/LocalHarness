@@ -54,7 +54,31 @@ export function ContextBanner(): ReactElement | null {
 
   // Only meaningful when the window is actually known. Warning about a fraction
   // of an unknown total would be a number invented to look useful.
-  if (fraction === null || max === null || max <= 0 || fraction < warnAt) return null
+  if (fraction === null || max === null || max <= 0) return null
+
+  // Over the window but nothing dropped yet. Reachable without any trimming
+  // having happened: loading a smaller model shrinks `max` under an existing
+  // `used`, so the conversation stops fitting without a single message being
+  // touched. Said in the present tense, because it is already true.
+  if (fraction >= 1) {
+    return (
+      <div className="ctx-banner is-trimmed" role="status">
+        <span className="ctx-banner-mark" aria-hidden="true">
+          ◑
+        </span>
+        <span className="ctx-banner-text">
+          This conversation no longer fits the model&apos;s loaded window (
+          {formatTokens(used)} of {formatTokens(max)}).{' '}
+          <strong>The oldest exchanges will be dropped</strong> from the next message.
+        </span>
+        <button type="button" className="btn btn-sm" onClick={() => void newConversation()}>
+          New chat
+        </button>
+      </div>
+    )
+  }
+
+  if (fraction < warnAt) return null
 
   return (
     <div className="ctx-banner" role="status">

@@ -57,6 +57,13 @@ import type {
 /* Shape                                                               */
 /* ------------------------------------------------------------------ */
 
+/** What `send` tells its caller about the fate of the draft. */
+export interface SendOutcome {
+  /** True once the message exists outside the composer. */
+  accepted: boolean
+  error?: string
+}
+
 export interface LogEntry {
   level: string
   scope: string
@@ -93,7 +100,14 @@ export interface AppState {
   logs: LogEntry[]
   // actions
   bootstrap(): Promise<void>
-  send(text: string, attachments?: Attachment[]): Promise<void>
+  /**
+   * Resolves with whether the message was ACCEPTED — that is, whether it now
+   * exists somewhere other than the composer. The caller clears its draft on
+   * the strength of this, so a rejection must be reported rather than logged:
+   * both failure paths here used to return silently, and `pushLog` writes to a
+   * store no component renders.
+   */
+  send(text: string, attachments?: Attachment[]): Promise<SendOutcome>
   cancel(): void
   selectWorkflow(id: WorkflowId): Promise<void>
   selectConversation(id: string): Promise<void>
@@ -502,15 +516,29 @@ export const useStore = create<AppState>()((set, get) => {
 
     send: async (text, attachments) => {
       const hasAttachments = attachments !== undefined && attachments.length > 0
-      if (text.trim().length === 0 && !hasAttachments) return
+      if (text.trim().length === 0 && !hasAttachments) {
+        return { accepted: false, error: 'Nothing to send.' }
+      }
       const conversationId = await ensureConversation()
-      if (!conversationId) return
+      if (!conversationId) {
+        const error = 'Could not start a conversation. The main process may not be responding.'
+        pushLog('error', 'chat', error)
+        return { accepted: false, error }
+      }
       const res = await call('chat', 'chat:send', {
         conversationId,
         content: text,
         attachments
       })
-      if (res && !res.ok) pushLog('error', 'chat', res.error ?? 'Send failed')
+      // A null result means the IPC call itself failed, which is a rejection:
+      // nothing reached the transcript.
+      if (!res) {
+        const error = 'The app could not reach its own main process to send that.'
+        pushLog('error', 'chat', error)
+        return { accepted: false, error }
+      }
+      if (!res.ok) pushLog('error', 'chat', res.error ?? 'Send failed')
+      return { accepted: res.accepted, error: res.error }
     },
 
     cancel: () => {

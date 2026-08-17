@@ -80,11 +80,36 @@ export function setupScreenshots(getWindow: () => BrowserWindow | null, log: Log
   const delay = Number(process.env['LH_SHOT_AFTER_MS'] ?? 2500)
   const name = process.env['LH_SHOT_NAME'] ?? `shot-${stamp()}.png`
   const win = getWindow()
+  /**
+   * LH_SHOT_DRIVE runs a snippet in the renderer before the frame is taken.
+   *
+   * Most of what breaks in this app is only visible in a state you have to
+   * REACH — a rejected send, an approval dialog, a failed render. Photographing
+   * the idle screen finds the layout bugs and none of the behavioural ones, so
+   * the driver has to be able to click and type.
+   *
+   * Errors are reported and then swallowed: a snippet that throws should give
+   * back whatever the screen looks like at that moment, which is usually the
+   * thing being investigated.
+   */
+  const drive = process.env['LH_SHOT_DRIVE']
   const run = (): void => {
     setTimeout(() => {
-      void capture(getWindow(), dir, name, log).then(() => {
-        if (process.env['LH_SHOT_EXIT'] === '1') app.quit()
-      })
+      const w = getWindow()
+      const driven =
+        drive && w
+          ? w.webContents
+              .executeJavaScript(`(async () => { ${drive} })()`, true)
+              .then((r: unknown) => log('info', SCOPE, `drive ok${r === undefined ? '' : `: ${String(r)}`}`))
+              .catch((err: unknown) => log('warn', SCOPE, `drive failed: ${String(err)}`))
+          : Promise.resolve()
+
+      void driven
+        .then(() => new Promise((r) => setTimeout(r, Number(process.env['LH_SHOT_SETTLE_MS'] ?? 1200))))
+        .then(() => capture(getWindow(), dir, name, log))
+        .then(() => {
+          if (process.env['LH_SHOT_EXIT'] === '1') app.quit()
+        })
     }, Number.isFinite(delay) ? delay : 2500)
   }
   if (win) {

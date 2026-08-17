@@ -68,7 +68,18 @@ export interface IpcApi {
   'conv:setWorkflow': (id: string, workflowId: WorkflowId) => Promise<Conversation>
 
   /* ---- chat ---- */
-  'chat:send': (req: SendMessageRequest) => Promise<{ ok: boolean; error?: string }>
+  /**
+   * `accepted` says whether the user's message made it into the transcript.
+   *
+   * Distinct from `ok`, and the distinction is what the composer needs. A turn
+   * that fails MID-flight is accepted: the message is on screen and the error
+   * is rendered beside it. A send rejected BEFORE the turn starts — no model
+   * loaded, a turn already running — is not, and the typed text exists nowhere
+   * but the textarea the composer is about to clear.
+   */
+  'chat:send': (
+    req: SendMessageRequest
+  ) => Promise<{ ok: boolean; accepted: boolean; error?: string }>
   'chat:cancel': (conversationId: string) => Promise<void>
   'chat:contextUsage': (conversationId: string) => Promise<ContextUsage>
   'chat:attachFiles': () => Promise<import('./types').Attachment[]>
