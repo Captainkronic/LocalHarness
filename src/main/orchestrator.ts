@@ -38,13 +38,23 @@ import type { ApprovalBroker } from './agent/approval'
 import type { SkillRegistry } from './skills/registry'
 import type { LmStudioControl } from './llm/control'
 import { streamChat, type WireMessage } from './llm/client'
-import { buildContextUsage, buildMessages } from './llm/prompt'
+import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import { nativeWireTools, NATIVE_TOOLS } from './agent/tools'
 import { runSkillTool, skillTools } from './agent/skilltool'
 import { estimateTokens } from './mcp/tokens'
 
 /** Safety net against a model that calls tools forever. */
+/**
+ * Slice of the window held back from the history.
+ *
+ * Our token counts are estimates from character length, so they can be wrong in
+ * either direction — and being wrong on the high side means a request the
+ * server rejects, which is the exact failure trimming exists to prevent. Five
+ * percent is cheap insurance against an estimate that ran under.
+ */
+const CONTEXT_SAFETY_FRACTION = 0.05
+
 const MAX_ITERATIONS = 25
 
 /** Conversation pushes are coalesced to this interval while streaming. */
@@ -106,6 +116,38 @@ export class Orchestrator {
 
   artifacts(workflowId: WorkflowId): Artifact[] {
     return this.artifactsByWorkflow.get(workflowId) ?? []
+  }
+
+  /**
+   * Tokens the message history may occupy, or undefined for no limit.
+   *
+   * The window has to hold the reply and the tool schemas as well as the
+   * history, so both are subtracted before the history gets what is left. The
+   * margin covers the gap between our estimate and the server's real tokeniser:
+   * we count roughly, and being roughly right ON THE HIGH SIDE means a rejected
+   * request, which is the failure this exists to prevent.
+   *
+   * Returns undefined when the window is unknown — better to send the whole
+   * conversation and let the server complain than to silently drop history on
+   * the strength of a guess about a limit we cannot see.
+   */
+  historyBudget(model: ModelInfo | null, workflowId: WorkflowId, toolTokens: number): number | undefined {
+    if (!model) return undefined
+    const window = this.d.models.contextWindow(model.id)
+    if (window === null || window <= 0) return undefined
+    const reply = this.workflow(workflowId).sampling.maxTokens
+    const budget = window - reply - toolTokens - Math.ceil(window * CONTEXT_SAFETY_FRACTION)
+    return budget > 0 ? budget : undefined
+  }
+
+  /** Records a trim on the conversation and says so in the log. */
+  private noteTrim(conv: Conversation, modelId: string, info: TrimInfo): void {
+    conv.trimmedMessages = (conv.trimmedMessages ?? 0) + info.messages
+    this.log(
+      'warn',
+      'context',
+      `dropped ${info.messages} earlier message(s), about ${info.tokens} tokens, to fit ${modelId}'s window`
+    )
   }
 
   contextUsage(conversationId: string): ContextUsage {
@@ -222,11 +264,21 @@ export class Orchestrator {
     await this.d.models.learn(model.id).catch(() => undefined)
 
     const tools = this.buildTools(conv.workflowId)
+    // Fixed for the whole turn: the tool schemas do not change between
+    // iterations, and neither does the window.
+    const budget = this.historyBudget(
+      model,
+      conv.workflowId,
+      tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
+    )
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       if (controller.signal.aborted) break
 
-      const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision)
+      const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
+        budget,
+        onTrim: (info) => this.noteTrim(conv, model.id, info)
+      })
       const promptTokens = this.estimatePromptTokens(messages, tools)
 
       meter.start(

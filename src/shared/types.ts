@@ -272,6 +272,10 @@ export interface Attachment {
 }
 
 export interface Conversation {
+  /** Messages dropped from this conversation's history to fit the context
+   *  window, cumulative. Shown in the UI so the loss is visible rather than
+   *  silent; it does not change what is stored, only what is sent. */
+  trimmedMessages?: number
   id: string
   title: string
   workflowId: WorkflowId

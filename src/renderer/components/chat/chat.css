@@ -1188,3 +1188,57 @@
 .appr-auto:hover {
   color: var(--warn);
 }
+
+/* ------------------------------------------------------------------ */
+/* Context banner                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Sits above the transcript rather than inside it, because it describes the
+ * conversation as a whole and not a moment in it. `flex: none` so it never
+ * competes with the message list for height — the warning must not be what
+ * pushes the thing it is warning about off screen.
+ */
+.ctx-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--warn) 9%, var(--bg-panel));
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+/* Already lost, not about to be: stated in the colour we use for real
+   consequences rather than for approaching ones. */
+.ctx-banner.is-trimmed {
+  background: color-mix(in srgb, var(--danger) 9%, var(--bg-panel));
+}
+
+.ctx-banner-mark {
+  flex: none;
+  font-size: var(--fs-body);
+  color: var(--warn);
+  line-height: 1;
+}
+
+.ctx-banner.is-trimmed .ctx-banner-mark {
+  color: var(--danger);
+}
+
+.ctx-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.ctx-banner-text strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.ctx-banner .btn {
+  flex: none;
+}

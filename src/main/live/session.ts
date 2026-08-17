@@ -895,6 +895,35 @@ export class LiveSession {
   }
 
   /**
+   * The turn's message list, trimmed to fit the model's window.
+   *
+   * A spoken conversation grows faster than it looks: every turn adds the
+   * transcript, the reply, and up to MAX_TOOL_RESULT_CHARS of tool output —
+   * 4,000 characters of mail on its own. Without this, a long call eventually
+   * sends more than the window holds and the turn fails outright, mid-
+   * conversation, out loud, with nothing on screen to explain it.
+   */
+  private composeMessages(conv: Conversation, model: ModelInfo, toolTokens: number): WireMessage[] {
+    const window = this.o.models.contextWindow(model.id)
+    // No window figure means no trimming: dropping history on a guess about a
+    // limit we cannot see is worse than letting the server object.
+    const raw =
+      window === null || window <= 0
+        ? 0
+        : window - WORKFLOW.sampling.maxTokens - toolTokens - Math.ceil(window * 0.05)
+
+    return buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision, {
+      budget: raw > 0 ? raw : undefined,
+      onTrim: (info) =>
+        this.o.onLog(
+          'warn',
+          SCOPE,
+          `dropped ${info.messages} earlier message(s) from the call to fit ${model.id}'s window`
+        )
+    })
+  }
+
+  /**
    * Whether a spoken chunk is a tool call the model typed out as prose.
    *
    * Measured on gemma-4-e4b: asked for the weather it sometimes replies with

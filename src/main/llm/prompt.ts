@@ -30,6 +30,10 @@ const PER_MESSAGE_OVERHEAD_TOKENS = 4
  */
 const IMAGE_PART_TOKENS = 1024
 
+/** Headroom for the "earlier messages were dropped" marker, which is written
+ *  after the budget maths has already been done. */
+const MARKER_RESERVE_TOKENS = 64
+
 /**
  * `supportsVision` is an ADDITION TO THE SPEC's signature. Whether an image can
  * go on the wire is a property of the model, not of the conversation, and the
@@ -37,10 +41,31 @@ const IMAGE_PART_TOKENS = 1024
  * attachment is replaced by a text note naming the file, so a text-only model
  * never receives a payload it cannot read.
  */
+/** What was dropped to fit the window, for the UI and the log. */
+export interface TrimInfo {
+  /** Wire messages removed. */
+  messages: number
+  /** Their estimated token cost. */
+  tokens: number
+  /** Wire messages that survived, excluding the marker. */
+  kept: number
+}
+
+export interface BuildOptions {
+  /**
+   * Token ceiling for the whole message list. Omit for no trimming, which is
+   * what `contextUsage` wants — it is measuring the untrimmed truth.
+   */
+  budget?: number
+  /** Called only when something was actually dropped. */
+  onTrim?: (info: TrimInfo) => void
+}
+
 export function buildMessages(
   conv: Conversation,
   systemPrompt: string,
-  supportsVision: boolean
+  supportsVision: boolean,
+  opts: BuildOptions = {}
 ): WireMessage[] {
   const out: WireMessage[] = []
   if (systemPrompt.trim().length > 0) {
@@ -107,7 +132,92 @@ export function buildMessages(
     }
   }
 
-  return out
+  return opts.budget === undefined ? out : trimToBudget(out, opts.budget, opts.onTrim)
+}
+
+/**
+ * Drops the oldest exchanges until the list fits, and says so in the prompt.
+ *
+ * Three rules, and all three are load-bearing:
+ *
+ * 1. System messages are never dropped. They are the workflow's identity, and a
+ *    JARVIS that forgets it is JARVIS is not a smaller context, it is a
+ *    different assistant.
+ * 2. An assistant message carrying `tool_calls` and the `tool` replies that
+ *    answer it move together, always. Splitting them is the exact corruption
+ *    that a late tool result caused in the Live loop — the request is rejected
+ *    outright, so trimming that "worked" would break every later turn.
+ * 3. The newest exchange is never dropped. Trimming away the question being
+ *    asked leaves the model answering the one before it.
+ *
+ * Oldest-first rather than summarised, deliberately. A summary costs a
+ * round-trip on the inference box and quietly loses the specifics a coding
+ * session needs later — an exact path, an error string. Dropping is lossy in a
+ * way the user can SEE, and a visible loss beats an invisible one.
+ */
+export function trimToBudget(
+  messages: WireMessage[],
+  budget: number,
+  onTrim?: (info: TrimInfo) => void
+): WireMessage[] {
+  if (budget <= 0) return messages
+  if (countConversationTokens(messages) <= budget) return messages
+
+  // Leading system messages are fixed cost; everything after them is history.
+  let head = 0
+  while (head < messages.length && messages[head].role === 'system') head++
+  const system = messages.slice(0, head)
+  const groups = groupExchanges(messages.slice(head))
+  if (groups.length <= 1) return messages
+
+  const marker: WireMessage = { role: 'system', content: '' }
+  const fixed = countConversationTokens(system)
+
+  // Keep the newest groups, walking backwards, and always keep at least one.
+  const kept: WireMessage[][] = []
+  let total = fixed + PER_MESSAGE_OVERHEAD_TOKENS + MARKER_RESERVE_TOKENS
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const cost = countConversationTokens(groups[i])
+    if (kept.length > 0 && total + cost > budget) break
+    kept.unshift(groups[i])
+    total += cost
+  }
+
+  const droppedGroups = groups.slice(0, groups.length - kept.length)
+  if (droppedGroups.length === 0) return messages
+
+  const droppedMessages = droppedGroups.reduce((n, g) => n + g.length, 0)
+  const droppedTokens = droppedGroups.reduce((n, g) => n + countConversationTokens(g), 0)
+
+  // Said in the prompt, not just in the UI. A model that cannot see the start of
+  // the conversation should know that is why, rather than infer that it never
+  // happened — otherwise it answers confidently about a thread it cannot read.
+  marker.content =
+    `[${droppedMessages} earlier message${droppedMessages === 1 ? '' : 's'} ` +
+    `were dropped from this conversation to fit the context window. ` +
+    `If the user refers to something you cannot see, say so and ask them to repeat it ` +
+    `rather than guessing at what it was.]`
+
+  onTrim?.({ messages: droppedMessages, tokens: droppedTokens, kept: kept.flat().length })
+  return [...system, marker, ...kept.flat()]
+}
+
+/**
+ * Splits history into units that must move together.
+ *
+ * A `tool` message belongs to the assistant message before it. Anything else
+ * starts a new group.
+ */
+function groupExchanges(messages: WireMessage[]): WireMessage[][] {
+  const groups: WireMessage[][] = []
+  for (const msg of messages) {
+    if (msg.role === 'tool' && groups.length > 0) {
+      groups[groups.length - 1].push(msg)
+    } else {
+      groups.push([msg])
+    }
+  }
+  return groups
 }
 
 export function countConversationTokens(msgs: WireMessage[]): number {

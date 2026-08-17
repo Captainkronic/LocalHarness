@@ -6,6 +6,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useStore } from '@renderer/state/store'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
+import ContextBanner from './ContextBanner'
 import MessageList from './MessageList'
 import Composer from './Composer'
 import './chat.css'
@@ -36,6 +37,7 @@ export default function ChatView() {
 
   return (
     <div className="chat">
+      <ContextBanner />
       {hasMessages ? (
         <MessageList />
       ) : (
