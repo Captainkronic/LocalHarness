@@ -1365,3 +1365,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* --- the thinking pulse --- */
+
+/*
+ * A dot that breathes while reasoning tokens are still arriving. It is driven
+ * by the same "text is still growing" test as the timer beside it, so it stops
+ * the moment the model does — it cannot spin reassuringly over a stalled turn,
+ * which is the whole failure mode it exists to rule out.
+ */
+.reasoning-live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  animation: reasoning-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes reasoning-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-live {
+    animation: none;
+    opacity: 0.9;
+  }
+}

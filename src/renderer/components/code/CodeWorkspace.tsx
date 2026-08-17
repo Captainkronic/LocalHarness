@@ -81,7 +81,6 @@ export function CodeWorkspace(): JSX.Element {
    * choice is the user's.
    */
   const [mode, setMode] = useState<'chat' | 'watch'>(() => readStoredMode())
-  const autoSwitched = useRef(false)
 
   // Remember which half you were last in. Being dropped back into Chat every
   // launch is the sort of small forgetfulness that makes a tool feel careless.
@@ -143,14 +142,13 @@ export function CodeWorkspace(): JSX.Element {
   const activePath = pinnedPath ?? autoPath ?? tabs[0]?.path ?? null
   const activeTab = activePath ? (tabIndex.get(activePath) ?? null) : null
 
-  /* Flip to Watch the first time the agent actually touches a file, so the work
-     is visible without being asked for — but only once. After that, whichever
-     view the user chose is the one they keep. */
-  useEffect(() => {
-    if (autoSwitched.current || tabs.length === 0) return
-    autoSwitched.current = true
-    setMode('watch')
-  }, [tabs.length])
+  /* Deliberately no auto-switch to Watch.
+     It used to flip the first time the agent touched a file, on the theory that
+     the work should be visible without being asked for. In practice it moves
+     you off the conversation mid-turn — and the conversation is where the model
+     explains itself, where reasoning progress shows, and where you type the
+     next thing. The Watch tab carries a file count, which is enough of an
+     invitation; the choice stays the user's. */
 
   /* ---- auto-jump ----------------------------------------------------- */
 

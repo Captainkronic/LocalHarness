@@ -4,7 +4,7 @@
  * its tool calls, reasoning and telemetry attached.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Attachment, ChatMessage } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 import { basename, formatMs, formatTokens, formatTps } from '@renderer/lib/format'
@@ -153,6 +153,23 @@ function Reasoning({
   const runaway =
     !answered && typeof budget === 'number' && budget > 0 && used / budget >= REASONING_ALARM
   const share = typeof budget === 'number' && budget > 0 ? used / budget : null
+
+  // "Still growing" is the only honest definition of live here: the renderer
+  // sees reasoning as an ever-lengthening string, so a change since the last
+  // tick means tokens are genuinely arriving. No answer yet AND no growth for
+  // a few seconds means something else is happening — a tool, or a stall — and
+  // the timer should not keep implying progress.
+  const [startedAt] = useState(() => Date.now())
+  const [tick, setTick] = useState(0)
+  const lastLen = useRef({ len: text.length, at: Date.now() })
+  if (text.length !== lastLen.current.len) lastLen.current = { len: text.length, at: Date.now() }
+  const live = !answered && Date.now() - lastLen.current.at < 4000
+
+  useEffect(() => {
+    if (!live) return
+    const id = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [live, tick])
   return (
     <div className={runaway ? 'reasoning is-runaway' : 'reasoning'}>
       <button
@@ -175,7 +192,12 @@ function Reasoning({
         >
           <path d="M6 4l4 4-4 4" />
         </svg>
-        Reasoning
+        {/* "Reasoning" alone is a static word for something that can run for
+            minutes, so it reads as a hang. While tokens are still arriving it
+            becomes a live count of how long it has been thinking — measured,
+            not a spinner, and it stops the moment the text stops growing. */}
+        {live ? <span className="reasoning-live" aria-hidden="true" /> : null}
+        {live ? `Thinking ${formatMs(Date.now() - startedAt)}` : 'Reasoning'}
         <span
           className="reasoning-count tnum"
           title={
