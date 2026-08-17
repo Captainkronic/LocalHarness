@@ -42,21 +42,24 @@
     "zustand": "^5.0.15"
   },
   "build": {
-    "appId": "com.adam.localharness",
-    "productName": "LocalHarness",
+    "appId": "com.adam.captainllama",
+    "productName": "CaptainLlama",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "out/**/*",
       "resources/**/*"
     ],
     "mac": {
-      "target": "dmg",
+      "target": "dir",
       "category": "public.app-category.developer-tools",
+      "identity": null,
+      "icon": "build/icon.icns",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "LocalHarness uses the microphone for the Live workflow, so you can talk to a model running on your own hardware. Audio is transcribed on this Mac and never leaves your network.",
-        "NSCameraUsageDescription": "LocalHarness uses the camera for the Live workflow, so a vision model on your own hardware can see what you are showing it. Frames go only to your own inference server."
+        "NSMicrophoneUsageDescription": "CaptainLlama uses the microphone for the Live workflow, so you can talk to a model running on your own hardware. Audio is transcribed on this Mac and never leaves your network.",
+        "NSCameraUsageDescription": "CaptainLlama uses the camera for the Live workflow, so a vision model on your own hardware can see what you are showing it. Frames go only to your own inference server."
       }
     }
   }

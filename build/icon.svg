@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2430"/>
+      <stop offset="1" stop-color="#0d1016"/>
+    </linearGradient>
+    <linearGradient id="coat" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#e8b887"/>
+      <stop offset="1" stop-color="#c98f5e"/>
+    </linearGradient>
+    <linearGradient id="brim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6fb5"/>
+      <stop offset="1" stop-color="#1d4a80"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="222" fill="none"
+        />
+
+  <g transform="translate(0,52)">
+  <!-- ears -->
+  <path d="M395 322 C376 214 404 152 436 150 C468 148 486 214 478 318 Z" fill="url(#coat)"/>
+  <path d="M629 322 C648 214 620 152 588 150 C556 148 538 214 546 318 Z" fill="url(#coat)"/>
+  <path d="M416 300 C404 226 419 190 437 189 C455 188 465 226 461 297 Z" fill="#8d5f3c" opacity="0.55"/>
+  <path d="M608 300 C620 226 605 190 587 189 C569 188 559 226 563 297 Z" fill="#8d5f3c" opacity="0.55"/>
+
+  <!-- head -->
+  <path d="M512 300
+           C640 300 700 386 700 500
+           C700 612 636 690 512 690
+           C388 690 324 612 324 500
+           C324 386 384 300 512 300 Z" fill="url(#coat)"/>
+
+  <!-- muzzle -->
+  <ellipse cx="512" cy="606" rx="118" ry="96" fill="#f5ddc4"/>
+  <path d="M512 566 l30 26 -30 24 -30 -24 Z" fill="#4a3428"/>
+  <path d="M512 616 v30" stroke="#4a3428" stroke-width="11" stroke-linecap="round"/>
+  <path d="M512 646 q-30 26 -56 6" stroke="#4a3428" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M512 646 q30 26 56 6" stroke="#4a3428" stroke-width="11" fill="none" stroke-linecap="round"/>
+
+  <!-- eyes -->
+  <circle cx="443" cy="507" r="28" fill="#22303f"/>
+  <circle cx="581" cy="507" r="28" fill="#22303f"/>
+  <circle cx="452" cy="497" r="9" fill="#ffffff" opacity="0.9"/>
+  <circle cx="590" cy="497" r="9" fill="#ffffff" opacity="0.9"/>
+
+  <!-- captain's cap -->
+  <path d="M330 356 C330 268 404 214 512 214 C620 214 694 268 694 356 Z" fill="#f2f5f8"/>
+  <rect x="322" y="352" width="380" height="52" rx="26" fill="#12304f"/>
+  <path d="M286 404 C286 452 360 470 512 470 C664 470 738 452 738 404 Z" fill="url(#brim)"/>
+  <circle cx="512" cy="300" r="44" fill="#12304f"/>
+  <path d="M512 274 l9 20 22 2 -17 15 5 22 -19 -12 -19 12 5 -22 -17 -15 22 -2 Z" fill="#e8c26a"/>
+  </g>
+</svg>

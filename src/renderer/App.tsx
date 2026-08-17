@@ -147,7 +147,7 @@ export default function App(): ReactElement {
           <span className="brand-mark" aria-hidden="true">
             {workflow.glyph}
           </span>
-          <span className="brand-name">LocalHarness</span>
+          <span className="brand-name">CaptainLlama</span>
           <span className="brand-sep" aria-hidden="true">
             /
           </span>
@@ -406,7 +406,7 @@ function BootScreen(): ReactElement {
         <span className="boot-mark" aria-hidden="true">
           ◇
         </span>
-        <span className="boot-name">LocalHarness</span>
+        <span className="boot-name">CaptainLlama</span>
         <div className="boot-bar" role="progressbar" aria-label="Starting" />
         <span className="boot-note">Reading settings and reaching the inference host</span>
       </div>
