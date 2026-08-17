@@ -10,7 +10,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { ApprovalMode, Settings, WorkflowId } from '@shared/types'
+import { REASONING_EFFORTS } from '@shared/types'
+import type { ApprovalMode, ReasoningEffort, Settings, WorkflowId } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { atomicWriteSync, expandTilde } from './paths'
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   contextWarnFraction: 0.75,
   theme: 'dark',
   modelPollMs: 15000,
+  workflowReasoning: {},
   workflowMcpOverrides: {}
 }
 
@@ -100,6 +102,18 @@ function asWorkflowOverrides(v: unknown): Partial<Record<WorkflowId, string[]>> 
   return out
 }
 
+function asWorkflowReasoning(v: unknown): Partial<Record<WorkflowId, ReasoningEffort>> | undefined {
+  if (!isRecord(v)) return undefined
+  const out: Partial<Record<WorkflowId, ReasoningEffort>> = {}
+  for (const [key, value] of Object.entries(v)) {
+    if (!(key in WORKFLOW_BY_ID)) continue
+    if (typeof value !== 'string') continue
+    if (!(REASONING_EFFORTS as readonly string[]).includes(value)) continue
+    out[key as WorkflowId] = value as ReasoningEffort
+  }
+  return out
+}
+
 function dedupe(values: string[]): string[] {
   return [...new Set(values)]
 }
@@ -139,6 +153,7 @@ function mergeSettings(base: Settings, raw: unknown): Settings {
         ? (theme as Settings['theme'])
         : base.theme,
     modelPollMs: asClampedNumber(src.modelPollMs, MIN_POLL_MS, MAX_POLL_MS) ?? base.modelPollMs,
+    workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
     workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides
   }
 }

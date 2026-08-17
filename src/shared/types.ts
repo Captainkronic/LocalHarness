@@ -104,6 +104,15 @@ export interface WorkflowDefinition {
   preferredModel?: string
 }
 
+/**
+ * How much the model should think before answering.
+ *
+ * Ordered least to most. 'none' is the biggest single latency lever there is —
+ * measured on gemma-4-e4b it takes the first spoken word from 3.9s to 0.3s.
+ */
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
+
 export interface SamplingDefaults {
   temperature: number
   topP: number
@@ -121,7 +130,7 @@ export interface SamplingDefaults {
    * natural and unusable. (`chat_template_kwargs: {reasoning: 'off'}` does NOT
    * work — it still reasoned. Only `reasoning_effort` took effect.)
    */
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
+  reasoningEffort?: ReasoningEffort
 }
 
 /* ------------------------------------------------------------------ */
@@ -895,6 +904,15 @@ export interface Settings {
   /** Poll interval floor for /api/v0/models, ms. Backs off when idle. */
   modelPollMs: number
   /** Per-workflow MCP server overrides that survive restarts. */
+  /**
+   * Per-workflow reasoning effort, overriding the workflow's own default.
+   *
+   * Exposed because reasoning tokens count against `max_tokens`: qwen once
+   * spent all 8,192 of Code's output budget thinking and returned no answer at
+   * all after eleven minutes. How hard a model should think is a judgement the
+   * user makes per task, not something to bury in a profile.
+   */
+  workflowReasoning: Partial<Record<WorkflowId, ReasoningEffort>>
   workflowMcpOverrides: Partial<Record<WorkflowId, string[]>>
 }
 

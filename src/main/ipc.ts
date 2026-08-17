@@ -18,6 +18,7 @@ import type {
 } from '@shared/ipc'
 import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
 import type {
+  ReasoningEffort,
   Attachment,
   DirEntry,
   EditJob,
@@ -203,6 +204,12 @@ export function registerIpc(d: IpcDeps): void {
     /* ---- mcp ---- */
     'mcp:listSpecs': () => d.mcp.specs(),
     'mcp:listStates': () => d.mcp.states(),
+    'settings:setReasoning': (workflowId: WorkflowId, effort: ReasoningEffort) => {
+      const current = d.settings.get()
+      return d.settings.update({
+        workflowReasoning: { ...current.workflowReasoning, [workflowId]: effort }
+      })
+    },
     'mcp:setEnabled': async (
       workflowId: WorkflowId,
       serverId: string,

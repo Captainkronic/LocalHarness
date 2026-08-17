@@ -356,7 +356,13 @@ export class Orchestrator {
           temperature: wf.sampling.temperature,
           topP: wf.sampling.topP,
           maxTokens: wf.sampling.maxTokens,
-          reasoningEffort: wf.sampling.reasoningEffort,
+          // Reasoning is billed against maxTokens, so an unbounded default can
+          // spend the entire answer budget thinking — qwen once used all 8,192
+          // of Code's and returned nothing after eleven minutes. The user's
+          // per-workflow choice wins over the profile's default.
+          reasoningEffort:
+            this.d.settings.get().workflowReasoning[conv.workflowId] ??
+            wf.sampling.reasoningEffort,
           signal: controller.signal
         },
         {

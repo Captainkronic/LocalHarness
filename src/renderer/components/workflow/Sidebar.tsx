@@ -4,6 +4,7 @@ import { workflowPayload } from '@renderer/lib/payload'
 import { useStore } from '@renderer/state/store'
 import { relativeTime } from '@renderer/lib/format'
 import McpPanel from './McpPanel'
+import ReasoningPicker from './ReasoningPicker'
 import SkillsPanel from './SkillsPanel'
 import './workflow.css'
 
@@ -140,6 +141,7 @@ export function Sidebar(): JSX.Element {
       {/* Beside the MCP servers on purpose: both are capability the model can
           reach for, and the cost difference is only legible side by side. */}
       <section className="sb-section">
+        <ReasoningPicker />
         <SkillsPanel />
       </section>
 

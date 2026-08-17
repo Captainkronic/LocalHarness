@@ -11,6 +11,7 @@
  */
 
 import type {
+  ReasoningEffort,
   ApprovalDecision,
   ApprovalRequest,
   Artifact,
@@ -87,6 +88,8 @@ export interface IpcApi {
   /* ---- mcp ---- */
   'mcp:listSpecs': () => Promise<McpServerSpec[]>
   'mcp:listStates': () => Promise<McpServerState[]>
+  /** Per-workflow reasoning effort. Returns the saved settings. */
+  'settings:setReasoning': (workflowId: WorkflowId, effort: ReasoningEffort) => Promise<Settings>
   'mcp:setEnabled': (
     workflowId: WorkflowId,
     serverId: string,
@@ -253,6 +256,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'chat:attachFiles',
   'mcp:listSpecs',
   'mcp:listStates',
+  'settings:setReasoning',
   'mcp:setEnabled',
   'mcp:setToolEnabled',
   'mcp:restart',

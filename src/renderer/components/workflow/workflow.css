@@ -941,3 +941,56 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- reasoning effort --- */
+
+.rsn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.rsn-label {
+  flex: none;
+  cursor: help;
+}
+
+/* A segmented control rather than a dropdown: there are four options, the
+   choice is worth changing often, and a menu would hide the fact that Low is
+   not the only setting. */
+.rsn-seg {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.rsn-opt {
+  padding: 2px 7px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.rsn-opt:last-child {
+  border-right: 0;
+}
+
+.rsn-opt:hover:not(.is-on) {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+}
+
+.rsn-opt.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
