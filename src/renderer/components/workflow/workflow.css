@@ -303,6 +303,12 @@
 }
 
 .mcp-list {
+  /* The cap slices whichever row it lands on, which reads as a rendering fault
+     rather than as "there is more below". The mask fades the last few pixels
+     so a half-row looks deliberate and says scroll. It is masked, not padded,
+     because padding would just move the slice down. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
   max-height: 258px;
   padding: 0 var(--s2) var(--s2);
   display: flex;
