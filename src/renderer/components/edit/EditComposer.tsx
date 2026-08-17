@@ -71,6 +71,9 @@ function pathsFromDrop(
   return { paths: fromUris, fromFile: false }
 }
 
+/** Named once, from the same map the main process validates against. */
+const SUPPORTED = `Editable images are ${EDIT_IMAGE_EXTENSIONS.join(', ')}.`
+
 export function EditComposer(): JSX.Element {
   const jobs = useStore((s) => s.editJobs)
   const pickEditSources = useStore((s) => s.pickEditSources)
@@ -104,7 +107,11 @@ export function EditComposer(): JSX.Element {
 
   const pick = (): void => {
     setDropError(null)
-    void pickEditSources()
+    void pickEditSources().then((accepted) => {
+      // Zero accepted after the user actively chose files means every one was
+      // refused — silence there reads as a broken button.
+      if (accepted === 0) setDropError(`No usable image in that selection. ${SUPPORTED}`)
+    })
   }
 
   const onDrop = (e: DragEvent<HTMLDivElement>): void => {
@@ -136,7 +143,17 @@ export function EditComposer(): JSX.Element {
         ? `${images.length - paths.length} of ${images.length} dropped files carried no filesystem path and were skipped.`
         : null
     )
-    for (const p of paths) void createEditFromPath(p)
+    void Promise.all(paths.map((p) => createEditFromPath(p).then((ok) => ({ p, ok })))).then(
+      (results) => {
+        const refused = results.filter((r) => !r.ok).map((r) => r.p.split('/').pop() ?? r.p)
+        if (refused.length === 0) return
+        setDropError(
+          refused.length === results.length
+            ? `Could not use ${refused.length === 1 ? refused[0] : `any of those ${refused.length} files`}. ${SUPPORTED}`
+            : `Skipped ${refused.join(', ')}. ${SUPPORTED}`
+        )
+      }
+    )
   }
 
   const onDragEnter = (e: DragEvent<HTMLDivElement>): void => {

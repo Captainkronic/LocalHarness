@@ -402,7 +402,18 @@ export class EditPipeline {
       steps: job.params.steps,
       confirm: true
     }
-    if (typeof job.params.seed === 'number') args.seed = job.params.seed
+    // Always send a seed, choosing one ourselves when the user has not.
+    //
+    // Leaving it out let ComfyUI pick, and it never told us what it picked — so
+    // a finished card said "seed random", which is not a fact about the render,
+    // it is an admission that we did not record one. The whole point of a
+    // parameter readout on an image you liked is being able to make that image
+    // again, or vary one thing about it. Choosing here means every render is
+    // reproducible and the number on the card is the number that was used.
+    if (typeof job.params.seed !== 'number') {
+      job.params.seed = Math.floor(Math.random() * (SEED_MAX + 1))
+    }
+    args.seed = job.params.seed
     // `model` is deliberately unset: z-image is the only one installed here.
 
     const startedAt = Date.now()

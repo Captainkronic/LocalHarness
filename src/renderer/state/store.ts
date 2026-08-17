@@ -120,8 +120,10 @@ export interface AppState {
   unloadModel(identifier: string): Promise<{ ok: boolean; error?: string }>
   cancelLoad(): Promise<void>
   /* image editing */
-  pickEditSources(): Promise<void>
-  createEditFromPath(path: string, parentId?: string): Promise<void>
+  /** Resolves with how many of the chosen files were accepted. */
+  pickEditSources(): Promise<number>
+  /** Resolves false when the file was refused — wrong type, unreadable, too big. */
+  createEditFromPath(path: string, parentId?: string): Promise<boolean>
   setEditInstruction(id: string, text: string): Promise<void>
   setEditParams(id: string, params: Partial<EditParams>): Promise<void>
   setEditPrompt(id: string, text: string): Promise<void>
@@ -652,10 +654,15 @@ export const useStore = create<AppState>()((set, get) => {
     // these deliberately do not set state themselves — the event handler is the
     // single writer, which keeps optimistic and pushed state from diverging.
     pickEditSources: async () => {
-      await call('edit', 'edit:pickSources')
+      const jobs = await call('edit', 'edit:pickSources')
+      return jobs?.length ?? 0
     },
     createEditFromPath: async (path, parentId) => {
-      await call('edit', 'edit:createFromPath', path, parentId)
+      // main returns null when it refuses the file. Throwing that away meant a
+      // dropped PDF or a 200MB TIFF did nothing at all, with no way to tell a
+      // rejection from a slow app.
+      const job = await call('edit', 'edit:createFromPath', path, parentId)
+      return job !== null && job !== undefined
     },
     setEditInstruction: async (id, text) => {
       await call('edit', 'edit:setInstruction', id, text)

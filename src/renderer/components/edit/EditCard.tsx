@@ -617,7 +617,7 @@ export function EditCard({ job }: EditCardProps): JSX.Element {
           <span className="ed-progress-text">
             {job.status === 'refining'
               ? 'Reading the photo and writing the render prompt on the Mac Studio.'
-              : 'Rendering on the Mac Studio — this takes 1–2 minutes.'}
+              : `Rendering on the Mac Studio at ${job.params.steps} step${job.params.steps === 1 ? '' : 's'}.`}
           </span>
           <span className="ed-progress-elapsed tnum">{formatMs(elapsed)}</span>
           <button type="button" className="btn btn-sm" onClick={() => void cancelEdit(job.id)}>
@@ -711,8 +711,11 @@ function Params({ job }: { job: EditJob }): JSX.Element {
       <span>
         steps <b>{steps}</b>
       </span>
+      {/* Before a render, no seed means "pick one". After one, the seed IS
+          known — the pipeline now chooses and records it — so "random" would be
+          hiding the one number that lets this image be made again. */}
       <span>
-        seed <b>{seed === undefined ? 'random' : seed}</b>
+        seed <b>{seed === undefined ? (job.status === 'done' ? 'not recorded' : 'chosen at render') : seed}</b>
       </span>
     </p>
   )
