@@ -70,15 +70,26 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
   },
   {
     id: 'live',
-    // Was gemma-4-e4b — smallest and fastest, on the reasoning that real-time
-    // speech cannot wait on a bigger model. Changed once Live got mail access:
-    // e4b repeatedly SKIPPED the search and spoke invented messages aloud, with
-    // confident names, subjects and counts and no tool call behind any of them.
-    // It recited a worked example out of this very prompt as fact, and kept
-    // fabricating after the example was removed and the tool named explicitly.
-    // No wording fixed it. Fabricated mail read aloud is worse than a slower
-    // answer, and 26b called both tools correctly on every run. It is also what
-    // Adam keeps resident, so Live no longer forces a model swap on the way in.
+    // Was gemma-4-e4b, on the reasoning that real-time speech cannot wait on a
+    // bigger model. Both quants of it were measured against the battery in
+    // scripts/live-probe.mjs and both fell short, differently:
+    //
+    //   4-bit  skipped the mail search and spoke INVENTED messages aloud —
+    //          confident names, subjects and counts with no tool call behind
+    //          them. It recited a worked example out of this prompt as fact.
+    //   8-bit  fixed the fabrication, but cannot reliably emit a tool call
+    //          that takes NO arguments. "What's the weather" and "what's in
+    //          the news" degrade to the literal text get_weather{} — which
+    //          runs nothing and gets read out loud, bracket by bracket.
+    //          Anything with a real argument (a city, a mail query, a team)
+    //          works. Bisecting the prompt found no culprit block: the rate
+    //          swings between 30% and 90% run to run on identical input, so
+    //          it is the model, not the wording.
+    //
+    // 26b-a4b-qat scored 70/70 on the same battery — every zero-argument call,
+    // both safety refusals, and correctly declining to call a tool for small
+    // talk. It is also what Adam keeps resident, so Live no longer forces a
+    // model swap on the way in.
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Live',
     blurb: 'Talk to the model. It hears you, sees you, and can look things up.',
@@ -99,9 +110,6 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
     },
     nativeTools: [],
     panel: 'transcript',
-    // Spoken assistance is useless without something to be assistant ABOUT.
-    // fastfacts answers weather, news and scores in one call rather than a
-    // search round-trip, which matters when the user is waiting out loud.
     systemPrompt: `${BASE_PROMPT}
 
 You are JARVIS: a composed British assistant with dry wit and no flap. Address
@@ -132,9 +140,22 @@ Everything you write is read aloud, so write for the ear, not the eye.
   unless asked.
 
 You can check the weather, the news, sports scores and drive times, and you can
-search and read Adam's mail. Use them without narrating the mechanics — "let me
-check" is fine, "I will call the get_weather tool" is not. If a tool fails, say
-what you could not find out and carry on; do not retry silently.
+search and read Adam's mail.
+
+Never announce that you are about to check something. Check it, then answer.
+"Let me check the weather for you." is NOT a reply — said on its own it ends the
+turn, and he is left listening to silence waiting for an answer that is never
+coming. If you need a tool, call it in the same turn you were asked. If you
+truly cannot, say what you cannot find out; do not promise and stop.
+
+A tool is only run when it goes through the tool channel. A function name typed
+into your reply runs nothing at all — it is simply read out loud to him, name,
+brackets and all. So never put one there.
+
+If a tool fails, say what you could not find out and carry on; do not retry
+silently. If the question names something that identifies the sport or the
+place — a team, a city — do not ask him to narrow it down. Look it up with what
+he said and ask only if the result is genuinely ambiguous.
 
 Any question about his mail — new mail, unread, "anything from X", "what did Y
 say" — is answered by calling search_emails FIRST, and never from memory. Its

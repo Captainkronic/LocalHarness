@@ -604,6 +604,17 @@ export class LiveSession {
     const ttftMs = firstTokenAt === 0 ? 0 : firstTokenAt - roundRequestAt
     if (this.isStale(generation)) return { ok: true }
 
+    // If the ENTIRE reply was a tool call typed as prose, every chunk of it was
+    // dropped on the way to the speech queue and the turn would end in total
+    // silence — a question asked and nothing at all said back, which reads as a
+    // crash rather than as a failure. Replaced with something honest, and done
+    // here while the audio turn is still open: after closeAudioTurn the last
+    // chunk has been marked and anything further is discarded.
+    if (content.trim() !== '' && this.isTypedToolCall(content)) {
+      content = 'I could not look that up just now, sir. Ask me again and I will try properly.'
+      splitter.push(content)
+    }
+
     const tail = splitter.flush()
     if (tail !== null) this.enqueueSpeech(turn, tail)
     turn.streamFinished = true
@@ -675,6 +686,13 @@ export class LiveSession {
     if (!this.live.speak) return
     const text = speakable(sentence)
     if (text.length === 0) return
+    // A tool call the model typed as prose runs nothing and is unlistenable
+    // read aloud. Dropped rather than spoken; the turn's own fallback covers
+    // the silence, and the text is still logged so the cause is visible.
+    if (this.isTypedToolCall(text)) {
+      this.o.onLog('warn', SCOPE, `model typed a tool call instead of calling it: ${text}`)
+      return
+    }
 
     const index = turn.queued++
     if (turn.firstSentenceAt === null) turn.firstSentenceAt = Date.now()
@@ -846,6 +864,27 @@ export class LiveSession {
       return undefined
     }
     return frameDataUrl
+  }
+
+  /**
+   * Whether a spoken chunk is a tool call the model typed out as prose.
+   *
+   * Measured on gemma-4-e4b: asked for the weather it sometimes replies with
+   * the literal text `get_weather{}` instead of calling anything. Nothing runs,
+   * and the sentence goes to the speech queue, so the user hears their
+   * assistant read a function signature aloud — name, underscores and brackets.
+   * Prompt wording did not reliably stop it and no wording can be relied on to,
+   * so it is caught here where the consequence actually happens.
+   *
+   * Kept deliberately narrow: the whole chunk must be one call-shaped token and
+   * nothing else. A sentence that merely mentions a tool by name is left alone.
+   */
+  private isTypedToolCall(text: string): boolean {
+    // No whitespace allowed before the bracket, and the brackets may nest.
+    // Both matter: `search_emails({"query": "is:unread"})` has nested braces
+    // and would otherwise slip through, while allowing a space would silence
+    // ordinary speech like "Right (as you say), sir."
+    return /^[a-z][a-z0-9_]*(__[a-z][a-z0-9_]*)?[({[][\s\S]*[)}\]]$/i.test(text.trim())
   }
 
   /**
