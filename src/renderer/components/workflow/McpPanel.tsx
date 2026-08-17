@@ -309,7 +309,7 @@ export function McpPanel(): JSX.Element {
                         ? `${spec.label} — ${spec.blurb}\n\n${st?.error ?? 'Failed to start'}`
                         : `${spec.label} — ${spec.blurb}\n${statusWord(status)}${
                             ready ? ` — click to list ${tools.length} tools` : ''
-                          }`
+                          }${on && !isDefault ? '\nAdded to this workflow, not one of its defaults.' : ''}`
                     }
                     onClick={() => toggleExpanded(spec.id)}
                   >
@@ -320,7 +320,16 @@ export function McpPanel(): JSX.Element {
                         find it. The friendly label lives in the tooltip, where
                         it explains without hiding anything. */}
                     <span className="mcp-label">{spec.id}</span>
-                    {on && !isDefault ? <span className="mcp-tag">added</span> : null}
+                    {/* A glyph, not the word. `added` is fixed-width and never
+                        shrinks, so it was winning space from the server NAME and
+                        leaving "play…" and "ui-r…" — the exact illegibility that
+                        showing ids instead of labels was meant to end. The
+                        meaning moves to the tooltip, which has room for it. */}
+                    {on && !isDefault ? (
+                      <span className="mcp-tag" aria-label="added to this workflow">
+                        +
+                      </span>
+                    ) : null}
                     {ready ? <Chevron open={open} /> : null}
                   </button>
 

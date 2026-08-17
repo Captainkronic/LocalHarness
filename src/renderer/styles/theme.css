@@ -10,10 +10,19 @@
 
 :root {
   /* --- surfaces, darkest to lightest --- */
-  --bg-void: #0a0b0e;
-  --bg-app: #101218;
-  --bg-panel: #14171f;
-  --bg-raised: #1a1e28;
+  /*
+   * Four grounds, and the gaps between them are the point.
+   *
+   * The two that sit side by side all day — the sidebar and whatever pane it is
+   * next to — used to be five levels apart, which is not enough to find the
+   * edge without looking for it. Chrome is now clearly RAISED above content:
+   * panel sits about fifteen levels above app, roughly three times the old
+   * separation, so the boundary reads at a glance and from an angle.
+   */
+  --bg-void: #07090c;
+  --bg-app: #0c0e13;
+  --bg-panel: #171b25;
+  --bg-raised: #1e2331;
   --bg-input: #1d2129;
   --bg-hover: #232833;
   --bg-active: #2a303d;
@@ -91,7 +100,10 @@
   /* --- chrome --- */
   --titlebar-h: 38px;
   --rail-w: 60px;
-  --sidebar-w: 248px;
+  /* 248px truncated the things it exists to show: an enabled server carries a
+     badge, a chevron and two figures beside its name, so "playwright" became
+     "play…" and conversation titles lost their last few words. */
+  --sidebar-w: 272px;
   --panel-w: 340px;
   --hud-h: 34px;
 
@@ -99,8 +111,10 @@
 }
 
 :root[data-theme='light'] {
-  --bg-void: #eceef2;
-  --bg-app: #f6f7f9;
+  /* Same idea inverted: content takes the tint, chrome stays white, so the
+     sidebar reads as raised here too rather than merging into the page. */
+  --bg-void: #e2e6ec;
+  --bg-app: #eef0f4;
   --bg-panel: #ffffff;
   --bg-raised: #ffffff;
   --bg-input: #f1f3f6;

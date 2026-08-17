@@ -129,11 +129,16 @@ export function SkillsPanel(): JSX.Element | null {
       {skills.length > 0 ? (
         <div className="mcp-foot">
           <span className="section-label">Skill payload</span>
-          <span className="mcp-foot-figures">
-            <span className="mcp-foot-tok tnum">{formatTokens(totals.tokens)} tok</span>
+          {/* The MCP panel's own footer classes, so the two line up instead of
+              inventing a second layout that turned out to be no layout at all. */}
+          <span
+            className="mcp-foot-nums"
+            title="Only each skill's name and description are sent every message. The body is read only when the model invokes it."
+          >
+            <span className="mcp-foot-tokens tnum">{formatTokens(totals.tokens)} tok</span>
             <span className="mcp-foot-sep">·</span>
-            <span className="mcp-foot-note">
-              {totals.on} of {skills.length} on, names only
+            <span className="tnum">
+              {totals.on} of {skills.length} on
             </span>
           </span>
         </div>

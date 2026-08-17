@@ -89,7 +89,9 @@
   flex-direction: column;
   min-height: 0;
   background: var(--bg-panel);
-  border-right: 1px solid var(--line-subtle);
+  /* The full line, not the subtle one. This is the seam between chrome and
+     content — the one edge in the window that should never be ambiguous. */
+  border-right: 1px solid var(--line);
   overflow: hidden;
 }
 
@@ -367,7 +369,11 @@
 
 .mcp-tag {
   flex: none;
-  padding: 0 4px;
+  /* Sized for one glyph. Wide enough to read as a pill, narrow enough that the
+     server name keeps the space it needs. */
+  min-width: 13px;
+  text-align: center;
+  padding: 0 3px;
   border-radius: var(--r-sm);
   font-size: var(--fs-micro);
   font-weight: 500;

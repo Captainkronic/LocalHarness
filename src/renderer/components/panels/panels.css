@@ -12,7 +12,8 @@
   flex-direction: column;
   min-height: 0;
   background: var(--bg-panel);
-  border-left: 1px solid var(--line-subtle);
+  /* Mirrors the sidebar seam on the other side of the content. */
+  border-left: 1px solid var(--line);
   overflow: hidden;
 }
 
