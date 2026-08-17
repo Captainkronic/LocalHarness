@@ -137,6 +137,17 @@ export function McpPanel(): JSX.Element {
   const costOf = useCallback(
     (spec: McpServerSpec): { tokens: number; estimated: boolean } => {
       const st = stateById.get(spec.id)
+      // A server that FAILED sends nothing, so it costs nothing — it used to be
+      // billed its registry estimate into the payload total, inflating the very
+      // figure the user steers by on the strength of a server that is not there.
+      //
+      // Only 'error', though. A merely stopped server still shows its estimate,
+      // because that estimate is the answer to "what would switching this on
+      // cost me", which is the whole reason the column exists. An earlier
+      // version zeroed those too and blanked the entire list.
+      if (st?.status === 'error') {
+        return { tokens: 0, estimated: false }
+      }
       if (!st || st.status !== 'ready' || st.tools.length === 0) {
         return { tokens: spec.estimatedTokens, estimated: true }
       }

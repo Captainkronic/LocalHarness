@@ -225,7 +225,15 @@ export class TurnMeter {
       ttftMs,
       totalMs,
       prefillTps: ttftMs > 0 && promptTokens > 0 ? promptTokens / (ttftMs / 1000) : 0,
-      decodeTps: decodeMs > 0 && completionTokens > 0 ? completionTokens / (decodeMs / 1000) : 0,
+      // Floored by the same span the live gauge demands. A 16-token reply that
+      // finishes in three milliseconds divides out to "5333 tok/s", which is a
+      // division artifact wearing the costume of a measurement — and one
+      // absurd figure costs more trust than a missing one, since the reader
+      // cannot tell which of the other numbers to believe afterwards.
+      decodeTps:
+        decodeMs >= MIN_DECODE_SPAN_MS && completionTokens > 0
+          ? completionTokens / (decodeMs / 1000)
+          : 0,
       toolSchemaTokens: this.toolSchemaTokens,
       source: 'client',
       finishReason

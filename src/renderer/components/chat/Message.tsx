@@ -73,7 +73,7 @@ function AssistantMessage({
   return (
     <div className="msg msg-assistant">
       {message.reasoning !== undefined && message.reasoning !== '' ? (
-        <Reasoning text={message.reasoning} />
+        <Reasoning text={message.reasoning} tokens={message.metrics?.reasoningTokens} />
       ) : null}
 
       {hasBody ? (
@@ -104,9 +104,21 @@ function AssistantMessage({
 
 /** Reasoning is a separate channel and stays collapsed — it is never mixed
  *  into the answer. */
-function Reasoning({ text }: { text: string }) {
+/**
+ * `tokens` is the measured count from the turn's metrics; it is absent while the
+ * turn is still streaming.
+ *
+ * This header used to print `ceil(chars / 4)` labelled "tok", while the metrics
+ * footer of the SAME message printed the real per-delta count under the same
+ * word. Two numbers for one quantity, neither marked, on one screen — exactly
+ * what this app's metrics are supposed never to do. It now shows the measured
+ * figure once there is one, and marks the interim estimate with `~`, the way
+ * PrefillBar already marks its own.
+ */
+function Reasoning({ text, tokens }: { text: string; tokens?: number }) {
   const [open, setOpen] = useState(false)
   const lines = text.split('\n').length
+  const measured = typeof tokens === 'number' && tokens > 0
   return (
     <div className="reasoning">
       <button
@@ -130,8 +142,17 @@ function Reasoning({ text }: { text: string }) {
           <path d="M6 4l4 4-4 4" />
         </svg>
         Reasoning
-        <span className="reasoning-count tnum">
-          {formatTokens(Math.ceil(text.length / 4))} tok · {lines} lines
+        <span
+          className="reasoning-count tnum"
+          title={
+            measured
+              ? 'Measured while the turn streamed'
+              : 'Estimated from character count — the measured figure appears when the turn finishes'
+          }
+        >
+          {measured ? '' : '~'}
+          {formatTokens(measured ? (tokens as number) : Math.ceil(text.length / 4))} tok · {lines}{' '}
+          lines
         </span>
       </button>
       {open ? <div className="reasoning-body scroll-y">{text}</div> : null}
