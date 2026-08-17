@@ -161,6 +161,38 @@ and was in Adam's original request.
 A spoken Live turn cannot be driven at all: mic audio cannot be synthesised into
 the renderer's capture graph.
 
+## The next humanising moves (Adam's reframe, 2026-08-17)
+
+> A very capable, lightweight harness for a novice learning to interface with
+> locally hosted LLMs without thinking about the abstractions or how to steer a
+> model — while still learning to measure and maximise performance. The main
+> focus is the content of the chat itself, and making it feel human: as if
+> talking to a coder, a digital image artist, a musician, a general assistant.
+> Humanise it, but let me dig into the numbers and watch them as things happen.
+
+Done: personas per workflow, blurbs that introduce a person, skills scoped so a
+workflow's tools and its self-description agree.
+
+Still mechanism-forward, in rough priority:
+
+1. **The sidebar leads with "MCP SERVERS" and token counts.** That is the first
+   thing a novice meets and it is an implementation detail. Consider a human
+   header ("What it can do") with the server ids kept underneath — the ids must
+   stay, since finding "playwright" by name already cost one fix.
+2. **Progressive disclosure of the numbers.** They should stay glanceable and
+   stay honest, but a first-run user does not need payload tokens before their
+   first message. A "show me the numbers" affordance would let the HUD earn its
+   place rather than assume it.
+3. **Teach through the numbers, not beside them.** The HUD says `prefill 469
+   tok/s`; nothing says what good looks like on this hardware. A tooltip
+   comparing against the model's own measured history would turn the readout
+   into a lesson.
+4. **The Image quality menu.** Asked for a picture, the model returns a prompt
+   plus a five-way choice (draft → max with timings). Review-before-render is
+   intended and was Adam's own request, but five options with a paragraph of
+   prose is the model asking him to steer. A sensible default with "higher?"
+   offered afterwards may fit the brief better. Product call — ask first.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
