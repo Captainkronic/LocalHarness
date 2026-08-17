@@ -53,6 +53,8 @@ export const WORKFLOWS: WorkflowDefinition[] = [
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Chat',
     blurb: 'Minimal payload. Nothing loaded you did not ask for.',
+    firstMove:
+      'Ask anything. Nothing is loaded here, so this is the cheapest turn the app can send.',
     glyph: '◇',
     accent: '#8b93a7',
     mcpServers: [],
@@ -93,6 +95,8 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Live',
     blurb: 'Talk to the model. It hears you, sees you, and can look things up.',
+    firstMove:
+      'Press Start call and just talk. He can check the weather, the news, scores and your mail while you do.',
     glyph: '◉',
     accent: '#e0645f',
     // Spoken assistance needs something to be assistant about. fastfacts answers
@@ -207,6 +211,8 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     preferredModel: 'qwen/qwen3.8-27b',
     label: 'Code',
     blurb: 'Agentic file editing, search and shell against a workspace.',
+    firstMove:
+      'Add a workspace folder, then describe the change you want. Nothing outside that folder can be touched.',
     glyph: '⌘',
     accent: '#5b9dd9',
     mcpServers: ['websearch'],
@@ -243,6 +249,8 @@ You are doing software engineering with direct filesystem and shell access.
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Image',
     blurb: 'ComfyUI generation and editing with a critique loop.',
+    firstMove:
+      'Describe the picture. You see the prompt the model writes before anything renders.',
     glyph: '❖',
     accent: '#c77dbb',
     mcpServers: ['comfy-image'],
@@ -270,6 +278,8 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Edit',
     blurb: 'Attach a photo, say what to change, render the edit.',
+    firstMove:
+      'Attach a photo, then say what to change about it.',
     glyph: '◐',
     accent: '#b07ad4',
     mcpServers: ['comfy-image'],
@@ -304,6 +314,8 @@ description of the whole scene as it should end up, with the purple sky in it.
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Audio',
     blurb: 'Music, sound effects, speech and transcription.',
+    firstMove:
+      'Describe the sound or the music you want. A cold render takes a few minutes.',
     glyph: '♪',
     accent: '#5fb49c',
     mcpServers: ['comfy-audio', 'voice'],
@@ -331,6 +343,8 @@ You are generating audio locally: music and sound effects through ComfyUI, speec
     // Short enough for the 60px rail — "Documents" truncated to "Docume…".
     label: 'Docs',
     blurb: 'PDF, Word, PowerPoint and Excel generation.',
+    firstMove:
+      'Say what document you need and who is going to read it.',
     glyph: '▤',
     accent: '#d99a5b',
     mcpServers: ['docgen', 'websearch'],
@@ -358,6 +372,8 @@ You are producing real document files — PDF, .docx, .pptx and .xlsx — throug
     preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Research',
     blurb: 'Web search, page fetch and browser interaction.',
+    firstMove:
+      'Ask something worth looking up. Answers arrive with the sources they came from.',
     glyph: '◎',
     accent: '#7f8ee0',
     mcpServers: ['websearch', 'fastfacts', 'playwright'],
@@ -385,6 +401,8 @@ You are researching with live web access.
     preferredModel: 'qwen/qwen3.8-27b',
     label: 'Data',
     blurb: 'DuckDB over local CSV, Excel and Parquet.',
+    firstMove:
+      'Attach a CSV, Excel or Parquet file, then ask questions about it in plain English.',
     glyph: '▦',
     accent: '#c9694e',
     mcpServers: ['data', 'docgen'],

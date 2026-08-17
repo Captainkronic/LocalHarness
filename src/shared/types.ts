@@ -51,6 +51,17 @@ export interface WorkflowDefinition {
   /** MCP server ids enabled by default in this workflow. */
   mcpServers: string[]
   /**
+   * What to do first, in one sentence, for someone looking at this workflow
+   * with nothing in it yet.
+   *
+   * Required, not optional: the empty state used to repeat `label` and `blurb`,
+   * both of which are already on screen in the sidebar a couple of hundred
+   * pixels away, so the one moment a user is deciding what to ask was spent
+   * telling them what they had already read. Making this mandatory means a new
+   * workflow cannot ship without answering the question.
+   */
+  firstMove: string
+  /**
    * Optional per-server tool allowlist: `{ gmail: ['read_email'] }` offers only
    * those tools from that server. Servers absent from this map are offered
    * whole.
