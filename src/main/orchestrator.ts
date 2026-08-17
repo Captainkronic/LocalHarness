@@ -83,6 +83,42 @@ interface ActiveTurn {
   metricTimer: NodeJS.Timeout
 }
 
+/**
+ * "bpm 96 -> 88 · seed held" — what turns two rows in a panel into a take and
+ * its successor.
+ *
+ * Deliberately reports a held seed as well as a changed one, because with this
+ * model a held seed does NOT preserve the song: every musical parameter feeds
+ * the same autoregressive composer, so holding it removes one source of
+ * variance rather than pinning the music. Saying "seed held" out loud is what
+ * stops that being mistaken for a surgical edit.
+ */
+function describeTakeDiff(
+  before: Record<string, string | number>,
+  after: Record<string, string | number>
+): string | null {
+  const parts: string[] = []
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  keys.delete('changed')
+  for (const key of keys) {
+    if (key === 'seed') continue
+    const a = before[key]
+    const b = after[key]
+    if (a === b) continue
+    if (a === undefined) parts.push(`${key} set to ${truncateValue(b)}`)
+    else if (b === undefined) parts.push(`${key} dropped`)
+    else parts.push(`${key} ${truncateValue(a)} -> ${truncateValue(b)}`)
+  }
+  if (parts.length === 0) return null
+  parts.push(before['seed'] !== undefined && before['seed'] === after['seed'] ? 'seed held' : 'new seed')
+  return parts.join(' · ')
+}
+
+function truncateValue(v: string | number | undefined): string {
+  const text = String(v ?? '')
+  return text.length > 42 ? `${text.slice(0, 41)}…` : text
+}
+
 export class Orchestrator {
   private readonly d: OrchestratorDeps
   private readonly calibrator = new RateCalibrator()
@@ -460,11 +496,69 @@ export class Orchestrator {
     }
 
     call.finishedAt = Date.now()
+    this.stampAudioTake(conv, call, args)
     for (const artifact of call.artifacts ?? []) {
       this.recordArtifact(conv.workflowId, artifact)
     }
     this.appendToolResult(conv, call)
   }
+
+  /**
+   * Records what produced a rendered take, and what changed since the last one.
+   *
+   * A song cannot be edited — ACE-Step has no audio-to-audio path, so refining
+   * means rendering again with one lever moved. That makes the parameter set
+   * the only thing connecting take 2 to take 1, and it was being thrown away:
+   * the seed comes back as prose inside the result text, and the artifact
+   * carried no record of the tags, tempo or key that produced it. Without this
+   * the panel is a pile of unrelated mp3s and "hold the seed" is unusable,
+   * because nobody knows what the seed was.
+   */
+  private stampAudioTake(conv: Conversation, call: ToolCall, args: unknown): void {
+    if (call.status === 'error') return
+    if (!/generate_(music|sound)$/.test(call.name)) return
+    const a = (args ?? {}) as Record<string, unknown>
+
+    // The server reports the seed only in prose: "... · seed 1834729382 · ...".
+    // Parsing it here beats asking a local model to retype ten digits.
+    const seed = /\bseed (\d+)/.exec(call.result ?? '')?.[1]
+
+    const recipe: Record<string, string | number> = {}
+    for (const key of ['tags', 'bpm', 'key', 'timesignature', 'language', 'prompt'] as const) {
+      const v = a[key]
+      if (typeof v === 'string' && v.trim() !== '') recipe[key] = v
+      else if (typeof v === 'number') recipe[key] = v
+    }
+    if (seed) recipe['seed'] = seed
+    if (typeof a['seconds'] === 'number') {
+      // NOT "duration": AudioPanel prefers meta over the length it measures off
+      // the file, so the REQUESTED seconds would masquerade as the real one.
+      recipe['requested'] = `${a['seconds']}s`
+    }
+    if (typeof a['lyrics'] === 'string') {
+      recipe['voice'] = a['lyrics'].trim() === '' ? 'instrumental' : 'sung'
+    }
+
+    const prev = this.lastAudioTake.get(conv.id)
+    const changed = prev ? describeTakeDiff(prev.recipe, recipe) : null
+    if (changed !== null) recipe['changed'] = changed
+
+    for (const artifact of call.artifacts ?? []) {
+      if (artifact.kind !== 'audio') continue
+      artifact.meta = { ...artifact.meta, ...recipe }
+      // Chained unconditionally rather than guessed at. Any heuristic for "is
+      // this the same song" would merge two different songs that share a tag or
+      // split one whose tags were rewritten; the diff is what carries the
+      // truth, and a brand-new song simply shows everything changed.
+      if (prev) artifact.parentId = prev.artifactId
+      this.lastAudioTake.set(conv.id, { recipe, artifactId: artifact.id })
+    }
+  }
+
+  /** The last rendered take per conversation, so the next one can diff against
+   *  it. In memory only — the durable record is `meta.changed` on the artifact,
+   *  which rides along with the conversation. */
+  private readonly lastAudioTake = new Map<string, { recipe: Record<string, string | number>; artifactId: string }>()
 
   private appendToolResult(conv: Conversation, call: ToolCall): void {
     conv.messages.push({

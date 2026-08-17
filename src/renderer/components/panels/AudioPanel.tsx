@@ -18,17 +18,22 @@ function metaDuration(meta: Artifact['meta']): string | null {
   return null
 }
 
-function AudioRow({ artifact }: { artifact: Artifact }): JSX.Element {
+/** Keys that are presentation or lineage rather than part of the recipe. */
+const NOT_RECIPE = new Set(['changed', 'duration', 'durationMs'])
+
+function AudioRow({ artifact, take }: { artifact: Artifact; take: number | null }): JSX.Element {
   const src = useArtifactSrc(artifact)
   // Fallback when the artifact carried no duration: ask the element once it has
   // loaded its metadata. That is a measurement, not a guess.
   const [probed, setProbed] = useState<number | null>(null)
   const duration = metaDuration(artifact.meta) ?? (probed !== null ? formatMs(probed) : null)
   const ext = extname(artifact.path ?? artifact.url ?? '')
+  const recipe = Object.entries(artifact.meta ?? {}).filter(([k]) => !NOT_RECIPE.has(k))
 
   return (
     <div className="aud-row">
       <div className="aud-head">
+        {take !== null ? <span className="aud-take">Take {take}</span> : null}
         <span className="aud-label" title={artifact.label}>
           {artifact.label}
         </span>
@@ -38,6 +43,28 @@ function AudioRow({ artifact }: { artifact: Artifact }): JSX.Element {
           <span className="aud-time">{clockTime(artifact.createdAt)}</span>
         </span>
       </div>
+
+      {/* What produced this take, and what moved since the last one. Without
+          these two lines the panel is a pile of unrelated mp3s: a song cannot
+          be edited, only rendered again, so the parameters ARE the lineage. */}
+      {recipe.length > 0 ? (
+        <dl className="aud-recipe">
+          {recipe.map(([k, v]) => (
+            <div key={k} className="aud-recipe-cell">
+              <dt>{k}</dt>
+              <dd className="tnum" title={String(v)}>
+                {String(v)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      {typeof artifact.meta?.['changed'] === 'string' ? (
+        <p className="aud-changed" title="What moved since the previous take">
+          {artifact.meta['changed']}
+        </p>
+      ) : null}
 
       {src ? (
         <audio
@@ -99,10 +126,30 @@ export function AudioPanel(): JSX.Element {
     )
   }
 
+  // Take numbers come from the parentId chain, counted oldest-first, so "Take 3"
+  // means the third render in that lineage rather than the third row on screen.
+  const takeOf = new Map<string, number>()
+  const byId = new Map(clips.map((c) => [c.id, c]))
+  for (const clip of clips) {
+    let depth = 1
+    let cursor: Artifact | undefined = clip
+    const seen = new Set<string>()
+    while (cursor?.parentId && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId)
+      cursor = byId.get(cursor.parentId)
+      if (!cursor) break
+      depth += 1
+    }
+    // A lone render is not "Take 1 of 1" — the label only earns its place once
+    // there is something to compare against.
+    takeOf.set(clip.id, depth)
+  }
+  const hasChain = [...takeOf.values()].some((d) => d > 1)
+
   return (
     <div className="aud-list">
       {clips.map((a) => (
-        <AudioRow key={a.id} artifact={a} />
+        <AudioRow key={a.id} artifact={a} take={hasChain ? (takeOf.get(a.id) ?? null) : null} />
       ))}
     </div>
   )

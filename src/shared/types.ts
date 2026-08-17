@@ -260,6 +260,14 @@ export interface Artifact {
   label: string
   /** Free-form details shown in the panel (dimensions, duration, row count...). */
   meta?: Record<string, string | number>
+  /**
+   * The artifact this one follows, for take-to-take lineage.
+   *
+   * Audio needs it because a song is refined by rendering again — there is no
+   * audio-to-audio path — so the only thing connecting take 2 to take 1 is a
+   * pointer and a recorded diff of the parameters. Mirrors EditJob.parentId.
+   */
+  parentId?: string
   createdAt: number
 }
 

@@ -67,7 +67,14 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     env: {
       COMFY_HOST: 'http://127.0.0.1:8188',
       AUDIO_AUTOSTART: '1',
-      AUDIO_GEN_TIMEOUT: '1800'
+      AUDIO_GEN_TIMEOUT: '1800',
+      // Pinned, because unset the server guesses: it shells out to lsof against
+      // the parent process, takes whatever directory Electron happens to hold
+      // open, and caches that for twenty seconds. Take 2 could land somewhere
+      // else than take 1, which makes a lineage of takes impossible to follow.
+      // Same folder the voice server writes to, so music and speech from one
+      // conversation stay together.
+      AUDIO_PROJECT_DIR: `${HOME}/Documents/llm-audio`
     },
     callTimeoutMs: 1_860_000,
     estimatedTokens: 859,

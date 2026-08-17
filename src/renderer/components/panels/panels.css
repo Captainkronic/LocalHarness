@@ -761,3 +761,61 @@
 .fil-root-x:hover {
   color: var(--danger);
 }
+
+/* --- audio takes --- */
+
+/* The recipe that produced a take. A song cannot be edited, only rendered
+   again, so these parameters are the only thing that connects one take to the
+   next — they belong on the card, not in a tooltip. */
+.aud-recipe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm);
+  background: var(--bg-app);
+  font-size: var(--fs-micro);
+}
+
+.aud-recipe-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.aud-recipe dt {
+  color: var(--fg-faint);
+  text-transform: lowercase;
+}
+
+.aud-recipe dd {
+  margin: 0;
+  color: var(--fg-muted);
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What moved since the previous take. This single line is what turns two rows
+   into a take and its successor, so it gets the accent rather than the muted
+   grey the rest of the metadata wears. */
+.aud-changed {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s2);
+  border-left: 2px solid var(--accent-line);
+  font-size: var(--fs-tiny);
+  color: var(--fg-muted);
+}
+
+.aud-take {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
