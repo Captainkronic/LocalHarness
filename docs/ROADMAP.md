@@ -59,7 +59,15 @@ resources", so swapping means unloading first, which the app does itself.
 |---|---|
 | `qwen/qwen3.8-27b` | Code, Docs, Data — his best coding model |
 | `google/gemma-4-26b-a4b-qat` | Chat, Image, Edit, Audio, Research — speed/intelligence sweet spot |
-| `google/gemma-4-e4b` | Live — smallest and fastest, real-time speech |
+| `google/gemma-4-e4b` | was Live; see below |
+
+**Live moved off e4b.** Given mail access it repeatedly skipped the search and
+spoke invented messages aloud — confident names, subjects and counts with no
+tool call behind them. It recited a worked example out of the system prompt as
+fact; removing the example and naming the tool explicitly did not stop it. 26b
+called both tools correctly on every run and is what Adam keeps resident, so
+Live no longer forces a swap on the way in. Adam is testing an 8-bit e4b — see
+open work.
 
 Each workflow carries `preferredModel` and swaps to it on the first turn.
 
@@ -67,40 +75,44 @@ Each workflow carries `preferredModel` and swaps to it on the first turn.
 
 ## Open work, in priority order
 
-### 1. Live workflow needs MCP access  ← NEXT
-Adam wants JARVIS to read his email and check news and weather aloud. Today
-`live` has `mcpServers: []` and `nativeTools: []`, so it cannot do anything but
-talk.
+### 1. Retest gemma-4-e4b when the 8-bit quant finishes downloading  ← NEXT
+Adam is installing an 8-bit e4b, on the theory that quantisation damage is what
+broke its tool calling. That is a good hypothesis and worth one command:
 
-- Add `gmail` and `fastfacts` to the `live` workflow in `src/shared/workflows.ts`.
-  `gmail` is already in `src/shared/mcp-registry.ts`? **CHECK — it is in
-  `~/.config/mcp-profiles/registry.json` and LM Studio's config but may not be in
-  ours.** Command is `/opt/homebrew/bin/gmail-mcp`, no args.
-- **The catch:** `LiveSession.runTurn` calls `streamChat` directly and does NOT
-  run a tool loop. Tool calls in a spoken turn need handling — either route the
-  Live turn through the Orchestrator, or give LiveSession its own small loop.
-  Prefer the second: the Orchestrator's loop is text-shaped and would break
-  sentence-wise TTS.
-- Spoken tool results need summarising, not reading verbatim. An email list read
-  literally is unbearable; JARVIS should say "three new messages, the newest from
-  X about Y".
-- Watch the payload: fastfacts is 516 tokens and gmail is unmeasured. Live is
-  latency-critical, so measure before adding.
+```bash
+node scripts/live-tools-test.mjs google/gemma-4-e4b
+```
 
-### 2. Make Live look like a JARVIS assistant
-Voice and persona are done (`bm_daniel`, chosen by ear; the persona is in the
-`live` system prompt). The **visual** is still a generic orb. Wanted: an
-instrument-panel feel — concentric arcs, a HUD register, readouts around the orb
-rather than a chat transcript underneath.
-Constraints that must survive: reduced-motion support, and never animating a
-number that is not measured.
+If it calls `search_emails` instead of inventing senders, switch `live`'s
+`preferredModel` back to e4b — it is faster and it already got the weather
+right. If it still fabricates, leave Live on 26b and say so.
+**Pass condition is the tool call, not the answer.** A fluent, confident,
+entirely invented list of emails is exactly the failure being tested for, and
+it reads as a pass if you only look at the prose.
 
-### 3. Overnight UI review — STARTED, NOT FINISHED
+### 2. Finish the overnight UI review — STARTED, NOT FINISHED
 Drive real scenarios per workflow against the testbed at
-`~/Documents/AI/CaptainLlama-testbed`, screenshot every state, fix what is found,
-commit separately. Only the Code and Live workflows have had real use.
+`~/Documents/AI/CaptainLlama-testbed`, screenshot every state, fix what is
+found, commit separately. Only Code and Live have had real use.
 
----
+Live's own states can now be photographed one at a time:
+
+```bash
+LH_LIVE_STATE=tool node scripts/shoot.mjs live shots/live-tool.png
+```
+
+States: `off starting listening capturing transcribing thinking tool speaking
+error`. Photographing them is what found the contradictory "say something"
+prompt and the uncoloured tool state.
+
+### 3. Live's dead space
+The core sits in a lot of empty middle, and the transcript rail is mostly
+empty until a few turns have landed. Neither is wrong, but an instrument panel
+wants readouts around the instrument — first-audio, ttft, turns, the model —
+rather than a large dark gap. Not started.
+
+Constraints that must survive anything done here: reduced-motion support, and
+never animating a number that is not measured.
 
 ## Traps that have already cost time — do not rediscover
 
@@ -124,6 +136,24 @@ commit separately. Only the Code and Live workflows have had real use.
   headphones.
 - **A python `str.replace` that does not match fails silently.** Assert every
   anchor, or a change looks applied and is not.
+- **A model copies the example instead of reading the instruction.** Asked for
+  the weather with no city named, it passed `"Austin, Texas"` — the literal
+  example in `get_weather`'s schema. Pushed to omit the field it sent
+  `"current_location"`, then `""`. `dropEmptyArgs()` in `live/session.ts`
+  strips empty strings at the call site. The same failure is why the system
+  prompt must not contain a plausible worked example: e4b spoke one back as
+  fact.
+- **MCP overrides are absolute lists, so they go stale.** A workflow that gains
+  a server keeps it switched off for anyone with an override, showing "0 tools"
+  and no reason why. `settings.ts` drops empty overrides for workflows that
+  ship servers; a non-empty stale override would still shadow a new addition.
+- **A workflow may be handed part of a server** (`WorkflowDefinition.mcpTools`),
+  so a server's cost is not what the workflow pays. All payload arithmetic goes
+  through `renderer/lib/payload.ts` — three components each doing their own is
+  what put "3.8k tokens, 15.2s" on a screen that was really sending 746.
+- **The MCP manager's option is `onStates`, not `onState`.** Passing the wrong
+  name leaves every server stuck in `starting` for good, with no log line —
+  the throw happens inside a transition that `allSettled` swallows.
 
 ---
 
