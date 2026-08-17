@@ -1,0 +1,15 @@
+node_modules/
+out/
+release/
+dist/
+.DS_Store
+*.log
+.vite/
+.env
+.env.*
+!.env.example
+
+# Local runtime state that must never be committed
+config.local.json
+*.local.json
+sessions/
