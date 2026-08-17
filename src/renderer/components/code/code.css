@@ -16,11 +16,11 @@
   /* syntax */
   --code-com: #616a7e;
   --code-str: #7fbf87;
-  --code-num: #d9a441;
+  --code-num: var(--warn);
   --code-kw: #c08adf;
   --code-typ: #e0c07a;
-  --code-fn: #5b9dd9;
-  --code-prop: #7f8ee0;
+  --code-fn: var(--info);
+  --code-prop: var(--metric-context);
   --code-punc: #737b8d;
 
   /* Change indicators, derived from the semantic pair. Opaque on purpose: the
@@ -84,6 +84,8 @@
 }
 
 .cw-tabstrip {
+  /* offsetLeft of a tab is measured against this, for keep-in-view. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -92,6 +94,11 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
+}
+
+/* The app-wide 10px scrollbar is half the height of a tab. */
+.cw-tabstrip::-webkit-scrollbar {
+  height: 4px;
 }
 
 .cw-tab {
@@ -174,7 +181,7 @@
 
 .cw-tab-stat {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--s1);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
 }
@@ -214,17 +221,16 @@
   font-weight: 500;
   color: var(--ok);
   background: var(--bg-raised);
-  cursor: default;
 }
 
 .cw-follow.is-pinned {
   color: var(--accent);
   border-color: var(--accent-line);
-  cursor: pointer;
 }
 
-.cw-follow.is-pinned:hover {
+.cw-follow:hover {
   background: var(--bg-hover);
+  border-color: var(--line-strong);
 }
 
 /* ------------------------------------------------------------------ */
@@ -659,7 +665,7 @@
 .cw-tick-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--s1);
   flex: 1 1 auto;
   min-width: 0;
   justify-content: flex-start;

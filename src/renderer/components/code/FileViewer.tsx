@@ -41,6 +41,9 @@ export interface FileViewerProps {
   path: string | null
   /** Newest write/edit that produced it, when there is one. */
   activity: FileActivity | null
+  /** False when the user has pinned this tab to read it — the viewer then stops
+   *  scrolling itself to each new change. Defaults to following. */
+  following?: boolean
 }
 
 /** Rows rendered at once. Beyond this the viewer windows around the change
@@ -49,6 +52,39 @@ const MAX_ROWS = 2400
 /** Whole sequenced reveal, however many lines changed. */
 const SEQ_TOTAL_MS = 640
 const SEQ_MAX_STEP_MS = 26
+/**
+ * Width limits. A single line wider than this is truncated for display, and its
+ * presence drops the whole window to the plain path — one enormous line costs
+ * far more than many ordinary ones, and no one reads column 40,000 anyway.
+ */
+const MAX_LINE_CHARS = 2000
+/** Total characters in the rendered window before highlighting is abandoned. */
+const MAX_WINDOW_CHARS = 200_000
+
+function clampLine(raw: string | undefined): string {
+  const s = raw ?? ''
+  if (s === '') return ' '
+  if (s.length <= MAX_LINE_CHARS) return s
+  return `${s.slice(0, MAX_LINE_CHARS)}  … ${s.length - MAX_LINE_CHARS} more characters`
+}
+
+function charsIn(lines: string[], start: number, end: number): number {
+  let n = 0
+  for (let i = start; i < end; i++) {
+    n += lines[i]?.length ?? 0
+    // Stop counting once the answer cannot change the decision.
+    if (n > MAX_WINDOW_CHARS) return n
+  }
+  return n
+}
+
+function anyLineExceeds(lines: string[], start: number, end: number, width: number): boolean {
+  for (let i = start; i < end; i++) {
+    if ((lines[i]?.length ?? 0) > width) return true
+  }
+  return false
+}
+
 /** Past this the file is rendered as plain text — see tokenizeRange. */
 const MAX_TOKENIZE_LINES = 20_000
 /** Per-path text cache, kept across mounts so tab-flipping is instant. */
@@ -69,7 +105,13 @@ type ViewState =
 
 interface Flash {
   gen: number
+  /** Lines the activity changed. These stay marked for as long as the file is
+   *  open — they are the record, not the animation. */
   lines: Set<number>
+  /** True only for a change that landed while this view was mounted, and only
+   *  the first time it is shown. Opening an old file must not claim its lines
+   *  just changed. */
+  animate: boolean
   /** Lowest changed line, kept rather than derived — `Math.min(...set)` on a
    *  5,000-line change is an argument-list overflow waiting to happen. */
   first: number
@@ -80,7 +122,11 @@ interface Flash {
   sequenced: boolean
 }
 
-export function FileViewer({ path, activity }: FileViewerProps): JSX.Element {
+export function FileViewer({
+  path,
+  activity,
+  following = true
+}: FileViewerProps): JSX.Element {
   const [state, setState] = useState<ViewState>({ kind: 'idle' })
   const [mode, setMode] = useState<'after' | 'diff'>('after')
   const [flash, setFlash] = useState<Flash | null>(null)
@@ -89,6 +135,9 @@ export function FileViewer({ path, activity }: FileViewerProps): JSX.Element {
   const genRef = useRef(0)
   const shownPathRef = useRef<string | null>(null)
   const pendingScrollRef = useRef<number | null>(null)
+  const mountedAt = useRef(Date.now())
+  /** Ids already animated, so flipping back to a file does not replay it. */
+  const animated = useRef(new Set<string>())
 
   const activityId = activity?.id ?? null
   /** A write with neither diff nor content is the executor's binary path. */
@@ -161,15 +210,20 @@ export function FileViewer({ path, activity }: FileViewerProps): JSX.Element {
     const ordered = [...changed].sort((a, b) => a - b)
     const rank = new Map<number, number>()
     ordered.forEach((ln, i) => rank.set(ln, i))
+    // An activity from before this view existed is history: mark it, never
+    // perform it. Anything else animates exactly once.
+    const isNew = activity.at >= mountedAt.current && !animated.current.has(activity.id)
+    if (isNew) animated.current.add(activity.id)
     genRef.current += 1
     setFlash({
       gen: genRef.current,
       lines: new Set(ordered),
+      animate: isNew,
       first: ordered[0],
       rank,
       stepMs: Math.min(SEQ_MAX_STEP_MS, SEQ_TOTAL_MS / Math.max(ordered.length, 1)),
       // Nothing to reveal on a file the user has not been looking at.
-      sequenced: shownPathRef.current === path
+      sequenced: isNew && shownPathRef.current === path
     })
     pendingScrollRef.current = ordered[0] ?? null
   }, [activityId, path, activity])
@@ -208,16 +262,24 @@ export function FileViewer({ path, activity }: FileViewerProps): JSX.Element {
   useLayoutEffect(() => {
     const line = pendingScrollRef.current
     if (line === null || state.kind !== 'text' || mode !== 'after') return
+    // Pinning a tab means "let me read this". Freezing which tab is shown but
+    // still yanking the reader to the newest hunk on every edit defeats it.
+    if (!following) {
+      pendingScrollRef.current = null
+      return
+    }
     const box = scrollRef.current
     if (!box) return
     const el = box.querySelector<HTMLElement>(`[data-ln="${line}"]`)
-    if (!el) return
+    // Cleared BEFORE the missing-element bail-out: a target that cannot be
+    // resolved is discarded, not left armed to fire on an unrelated re-render.
     pendingScrollRef.current = null
+    if (!el) return
     box.scrollTo({
       top: Math.max(0, el.offsetTop - box.clientHeight / 3),
       behavior: reducedMotion() ? 'auto' : 'smooth'
     })
-  }, [state, mode, flash])
+  }, [state, mode, flash, following])
 
   /* ---- chrome -------------------------------------------------------- */
 
@@ -400,7 +462,9 @@ function AfterView(props: {
         <div className="cw-lines">
           {tokens.map((toks, i) => {
             const n = window0.start + i + 1
-            const fresh = flash?.lines.has(n) ?? false
+            const changed = flash?.lines.has(n) ?? false
+            // Only a line that changed *just now* animates; the rest are marked.
+            const fresh = changed && (flash?.animate ?? false)
             const cut = cuts.get(n)
             const delay = fresh && flash ? (flash.rank.get(n) ?? 0) * flash.stepMs : 0
             return (
@@ -409,7 +473,8 @@ function AfterView(props: {
                 data-ln={n}
                 className={
                   'cw-ln' +
-                  (fresh ? ' is-changed is-fresh' : '') +
+                  (changed ? ' is-changed' : '') +
+                  (fresh ? ' is-fresh' : '') +
                   (cut ? ' has-cut' : '')
                 }
                 style={fresh ? ({ '--cw-d': `${Math.round(delay)}ms` } as CSSProperties) : undefined}
@@ -705,8 +770,23 @@ export function tokenizeRange(
   // something enormous that is real work on the render path, and a generated
   // 40,000-line file is exactly where a scanner is least likely to be right —
   // so it goes out plain rather than slow and wrong.
-  if (spec.id === 'txt' || lines.length > MAX_TOKENIZE_LINES) {
-    for (let i = start; i < end; i++) out.push([{ k: null, s: lines[i] === '' ? ' ' : lines[i] }])
+  //
+  // The LINE COUNT is not sufficient on its own. A minified bundle, a one-line
+  // JSON, a lockfile or a base64 blob is a handful of enormous lines: it passes
+  // both the row cap and the line cap, then emits one span per token into a
+  // single flex row. Measured on a 2MB single-line file — the exact worst case
+  // code:readFile can produce, since it truncates at 2MB and not at line width —
+  // that is 1,125,000 spans mounted synchronously and the renderer hangs. So the
+  // real gate is characters.
+  const windowChars = charsIn(lines, start, end)
+  const tooWide = anyLineExceeds(lines, start, end, MAX_LINE_CHARS)
+  if (
+    spec.id === 'txt' ||
+    lines.length > MAX_TOKENIZE_LINES ||
+    windowChars > MAX_WINDOW_CHARS ||
+    tooWide
+  ) {
+    for (let i = start; i < end; i++) out.push([{ k: null, s: clampLine(lines[i]) }])
     return out
   }
   const st: ScanState = { block: false, multi: -1, fence: false }
@@ -714,9 +794,23 @@ export function tokenizeRange(
     const collect = i >= start
     const toks =
       spec.id === 'md' ? scanMarkdown(lines[i], st, collect) : scanLine(lines[i], spec, st, collect)
-    if (collect) out.push(toks.length === 0 ? [{ k: null, s: ' ' }] : toks)
+    // Belt and braces: even inside the width gate, never let one row emit more
+    // spans than a person could read. A row that hits this renders the rest of
+    // itself as one plain span rather than thousands.
+    if (collect) out.push(toks.length === 0 ? [{ k: null, s: ' ' }] : capTokens(toks))
   }
   return out
+}
+
+/** Maximum spans in a single rendered row. */
+const MAX_TOKENS_PER_LINE = 1200
+
+function capTokens(toks: Tok[]): Tok[] {
+  if (toks.length <= MAX_TOKENS_PER_LINE) return toks
+  const head = toks.slice(0, MAX_TOKENS_PER_LINE)
+  const restChars = toks.slice(MAX_TOKENS_PER_LINE).reduce((n, t) => n + t.s.length, 0)
+  head.push({ k: null, s: `  … ${restChars} more characters` })
+  return head
 }
 
 function scanLine(line: string, spec: Lang, st: ScanState, collect: boolean): Tok[] {

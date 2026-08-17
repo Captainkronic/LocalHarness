@@ -28,14 +28,15 @@ import type { FileActivity, FileOpKind } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, clockTime, formatMs, shortenPath } from '@renderer/lib/format'
 import FileViewer from './FileViewer'
+import ActivityTicker from './ActivityTicker'
+import CodeStats from './CodeStats'
 import './code.css'
+import './ticker.css'
 
 /** How long a burst of cross-file edits has to settle before the viewer moves. */
 const JUMP_DEBOUNCE_MS = 260
 /** How long the sweep stays on a newly focused tab. */
 const SWEEP_MS = 900
-/** Ticker depth. Enough to see the shape of a run, not a log file. */
-const TICKER_ROWS = 40
 
 export interface Tab {
   path: string
@@ -62,6 +63,8 @@ export function CodeWorkspace(): JSX.Element {
   const [sweep, setSweep] = useState<{ path: string; gen: number } | null>(null)
   const [tickerOpen, setTickerOpen] = useState(true)
   const sweepGen = useRef(0)
+  const stripRef = useRef<HTMLDivElement | null>(null)
+  const mountedAt = useRef(Date.now())
 
   /* The store is app-wide; the workspace is per conversation. */
   const activities = useMemo(
@@ -86,6 +89,8 @@ export function CodeWorkspace(): JSX.Element {
 
   const tabs = useMemo(() => buildTabs(rows), [rows])
   const tabIndex = useMemo(() => new Map(tabs.map((t) => [t.path, t])), [tabs])
+  /** Identity of the strip's order, for effects that must re-run when it moves. */
+  const tabOrder = useMemo(() => tabs.map((t) => t.path).join('\0'), [tabs])
 
   /* What auto-jump follows: the newest change with a file behind it. A write
      that has only started still counts — being taken to the file as it opens is
@@ -110,6 +115,9 @@ export function CodeWorkspace(): JSX.Element {
 
   useEffect(() => {
     if (!jump || pinnedPath) return
+    // Work that predates this view is history. Opening the workspace on an old
+    // conversation shows the last file touched — it does not jump to it.
+    if (jump.at < mountedAt.current) return
     if (jump.target === autoPath) return
     const target = jump.target
     const timer = window.setTimeout(() => setAutoPath(target), JUMP_DEBOUNCE_MS)
@@ -127,6 +135,26 @@ export function CodeWorkspace(): JSX.Element {
     const timer = window.setTimeout(() => setSweep(null), SWEEP_MS)
     return () => window.clearTimeout(timer)
   }, [autoPath, pinnedPath])
+
+  /* A tab strip long enough to scroll can leave the file you were just moved to
+     off-screen, sweep and all. Keep the active tab in view. */
+  useEffect(() => {
+    const strip = stripRef.current
+    if (!strip || !activePath) return
+    const el = strip.querySelector<HTMLElement>('[data-active="true"]')
+    if (!el) return
+    const left = el.offsetLeft
+    const right = left + el.offsetWidth
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)')
+      .matches
+      ? 'auto'
+      : 'smooth'
+    if (left < strip.scrollLeft) strip.scrollTo({ left: Math.max(0, left - 8), behavior })
+    else if (right > strip.scrollLeft + strip.clientWidth)
+      strip.scrollTo({ left: right - strip.clientWidth + 8, behavior })
+    // Keyed on the ORDER, not the count. Tabs are stable now, but a count-only
+    // dependency would still miss a new file arriving after one was replaced.
+  }, [activePath, tabOrder])
 
   const totals = useMemo(
     () =>
@@ -152,7 +180,12 @@ export function CodeWorkspace(): JSX.Element {
     <div className="cw">
       {tabs.length > 0 ? (
         <div className="cw-tabs">
-          <div className="cw-tabstrip" role="tablist" aria-label="Touched files">
+          <div
+            className="cw-tabstrip"
+            role="tablist"
+            aria-label="Touched files"
+            ref={stripRef}
+          >
             {tabs.map((t) => {
               const isActive = t.path === activePath
               // Narrowed here rather than inline, so the glyph can follow the
@@ -165,6 +198,7 @@ export function CodeWorkspace(): JSX.Element {
                   type="button"
                   role="tab"
                   aria-selected={isActive}
+                  data-active={isActive}
                   className={
                     'cw-tab' +
                     (isActive ? ' is-active' : '') +
@@ -197,12 +231,18 @@ export function CodeWorkspace(): JSX.Element {
           <button
             type="button"
             className={pinnedPath ? 'cw-follow is-pinned' : 'cw-follow'}
-            onClick={pinnedPath ? resumeFollowing : undefined}
+            onClick={
+              pinnedPath
+                ? resumeFollowing
+                : activePath
+                  ? () => setPinnedPath(activePath)
+                  : undefined
+            }
             aria-pressed={pinnedPath !== null}
             title={
               pinnedPath
                 ? `Pinned to ${basename(pinnedPath)}. The viewer stays here while the agent works elsewhere. Click to follow again.`
-                : 'Following the agent. The viewer jumps to each file as it is written.'
+                : 'Following the agent: the viewer jumps to each file as it is written. Click to pin this one.'
             }
           >
             {pinnedPath ? <PinIcon /> : <FollowIcon />}
@@ -236,163 +276,43 @@ export function CodeWorkspace(): JSX.Element {
             )}
           </div>
         ) : (
-          <FileViewer path={activePath} activity={activeTab?.latest ?? null} />
+          <FileViewer
+            path={activePath}
+            activity={activeTab?.latest ?? null}
+            following={pinnedPath === null}
+          />
         )}
       </div>
 
-      <Ticker
-        rows={rows}
-        liveId={liveRow?.id ?? null}
-        open={tickerOpen}
-        onToggle={() => setTickerOpen((v) => !v)}
-        files={tabs.length}
-        totals={totals}
-      />
+      {/* The real ActivityTicker, not the inline one this file used to carry:
+          it freezes its window when the reader scrolls up and counts arrivals
+          instead of letting the rows they are reading fall off the head, and
+          its file rows open in the viewer. */}
+      <section className="cw-ticker-dock" data-open={tickerOpen}>
+        <header className="cw-tick-head">
+          <button
+            type="button"
+            className="cw-tick-toggle"
+            onClick={() => setTickerOpen((v) => !v)}
+            aria-expanded={tickerOpen}
+          >
+            <span className={tickerOpen ? 'cw-chev is-open' : 'cw-chev'} aria-hidden="true">
+              ›
+            </span>
+            <span className="section-label">Activity</span>
+          </button>
+          <CodeStats activities={activities} />
+        </header>
+        {tickerOpen ? (
+          <ActivityTicker activities={activities} onSelect={setPinnedPath} max={200} />
+        ) : null}
+      </section>
     </div>
   )
 }
 
 export default CodeWorkspace
 
-/* ------------------------------------------------------------------ */
-/* Ticker                                                              */
-/* ------------------------------------------------------------------ */
-
-function Ticker(props: {
-  rows: FileActivity[]
-  liveId: string | null
-  open: boolean
-  onToggle(): void
-  files: number
-  totals: { added: number; removed: number }
-}): JSX.Element {
-  const { rows, liveId, open, onToggle, files, totals } = props
-  const listRef = useRef<HTMLOListElement | null>(null)
-  const stickRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
-
-  const shown = useMemo(() => rows.slice(-TICKER_ROWS), [rows])
-  const tail = shown[shown.length - 1]
-  const tailKey = `${shown.length}:${tail?.id ?? ''}:${tail?.phase ?? ''}`
-
-  useEffect(() => {
-    const el = listRef.current
-    if (!el || !stickRef.current) return
-    el.scrollTop = el.scrollHeight
-  }, [tailKey, open])
-
-  const onScroll = (): void => {
-    const el = listRef.current
-    if (!el) return
-    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 12
-    stickRef.current = bottom
-    if (bottom !== atBottom) setAtBottom(bottom)
-  }
-
-  const jump = (): void => {
-    const el = listRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-    stickRef.current = true
-    setAtBottom(true)
-  }
-
-  return (
-    <section className={open ? 'cw-tick' : 'cw-tick is-collapsed'} aria-label="Activity">
-      <header className="cw-tick-head">
-        <button
-          type="button"
-          className="cw-tick-toggle"
-          onClick={onToggle}
-          aria-expanded={open}
-          title={open ? 'Collapse the ticker' : 'Expand the ticker'}
-        >
-          <Chevron open={open} />
-          <span className="section-label">Activity</span>
-        </button>
-        <span className="cw-tick-counts tnum">
-          <span>{rows.length} ops</span>
-          <span className="cw-tick-sep" />
-          <span>
-            {files} file{files === 1 ? '' : 's'}
-          </span>
-          {totals.added > 0 || totals.removed > 0 ? (
-            <>
-              <span className="cw-tick-sep" />
-              <span className="cw-stat-add">+{totals.added}</span>
-              <span className="cw-stat-del">-{totals.removed}</span>
-            </>
-          ) : null}
-        </span>
-        {open && !atBottom ? (
-          <button type="button" className="cw-tick-jump" onClick={jump}>
-            Latest ↓
-          </button>
-        ) : null}
-      </header>
-
-      {open ? (
-        <ol className="cw-tick-list scroll-y" ref={listRef} onScroll={onScroll}>
-          {shown.length === 0 ? (
-            <li className="cw-tick-empty">
-              No filesystem activity yet. Reads, writes, edits, searches and shell
-              commands all appear here in the order they happen.
-            </li>
-          ) : (
-            shown.map((a) => <TickRow key={a.id} a={a} live={a.id === liveId} />)
-          )}
-        </ol>
-      ) : null}
-    </section>
-  )
-}
-
-function TickRow({ a, live }: { a: FileActivity; live: boolean }): JSX.Element {
-  const label =
-    a.kind === 'shell' || a.kind === 'grep' || a.kind === 'glob'
-      ? a.target
-      : shortenPath(a.displayPath, 3)
-
-  const stat =
-    a.added !== undefined || a.removed !== undefined
-      ? `+${a.added ?? 0} -${a.removed ?? 0}`
-      : null
-
-  return (
-    <li
-      className={`cw-tick-row is-${a.kind} is-${a.phase}${live ? ' is-live' : ''}`}
-      title={`${a.target}${a.summary ? `\n${a.summary}` : ''}${a.error ? `\n${a.error}` : ''}`}
-    >
-      <span className="cw-tick-time tnum">{clockTime(a.at)}</span>
-      <span className="cw-tick-glyph">
-        <KindIcon kind={a.kind} />
-      </span>
-      <span className="cw-tick-path">{label}</span>
-      <span className="cw-tick-meta">
-        {live ? (
-          <span className="cw-tick-run">
-            <span className="dot dot-busy" />
-            running
-          </span>
-        ) : a.phase === 'start' ? (
-          <span className="cw-tick-dim">unresolved</span>
-        ) : a.phase === 'error' ? (
-          <span className="cw-tick-err">{a.error ?? 'failed'}</span>
-        ) : stat ? (
-          <span className="tnum">
-            <span className="cw-stat-add">+{a.added ?? 0}</span>
-            <span className="cw-stat-del">-{a.removed ?? 0}</span>
-          </span>
-        ) : (
-          <span className="cw-tick-dim">{a.summary ?? a.kind}</span>
-        )}
-      </span>
-      <span className="cw-tick-dur tnum">
-        {a.durationMs !== undefined ? formatMs(a.durationMs) : ''}
-      </span>
-    </li>
-  )
-}
 
 /* ------------------------------------------------------------------ */
 /* Derivation                                                          */
@@ -471,7 +391,11 @@ export function buildTabs(rows: FileActivity[]): Tab[] {
     byPath.set(a.target, tab)
   }
 
-  return [...byPath.values()].sort((a, b) => b.lastAt - a.lastAt)
+  // FIRST-TOUCH order, deliberately not recency. Re-sorting on every activity
+  // made each tab a moving target: the one you were reaching for slid sideways
+  // whenever the agent touched a different file. Recency is already carried by
+  // the sweep and the is-live styling, which do not move anything.
+  return [...byPath.values()]
 }
 
 /* ------------------------------------------------------------------ */
