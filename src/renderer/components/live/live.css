@@ -833,3 +833,141 @@
   font-size: var(--fs-tiny);
   color: var(--fg-faint);
 }
+
+/* ------------------------------------------------------------------ */
+/* Instrument frame                                                    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The bezel around the core. Everything here is ornament, and it is labelled
+ * as such on purpose: the arc meter and the equaliser bars report real
+ * measurements, so they may not be decorated, while ticks, sweeps and brackets
+ * encode nothing and are therefore free to move.
+ *
+ * The frame keeps ONE colour through every state rather than tracking
+ * --orb-c. An instrument's bezel does not change colour with its reading, and
+ * holding it steady is what lets the core's colour still mean something.
+ */
+.orb-ticks {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.orb-tick {
+  opacity: 0.5;
+}
+
+.orb-tick-major {
+  stroke: var(--fg-faint);
+  opacity: 0.85;
+}
+
+.orb[data-state='off'] .orb-ticks {
+  opacity: 0.45;
+}
+
+.orb-sweep {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  opacity: 0;
+  transform-origin: 100px 100px;
+}
+
+/* Only while a call is up: a sweep on a dead session suggests activity that is
+   not happening. */
+.orb:not([data-state='off']) .orb-sweep-cw {
+  opacity: 0.55;
+  animation: orb-spin 9s linear infinite;
+}
+
+.orb:not([data-state='off']) .orb-sweep-ccw {
+  opacity: 0.3;
+  animation: orb-spin 14s linear infinite reverse;
+}
+
+/* The one state where the frame speaks: a tool call is a wait the user cannot
+   attribute to the model, so the sweeps quicken and brighten to say the pause
+   is work rather than a stall. */
+.orb[data-state='tool'] .orb-sweep-cw {
+  stroke: var(--metric-payload);
+  opacity: 0.9;
+  animation-duration: 2.6s;
+}
+
+.orb[data-state='tool'] .orb-sweep-ccw {
+  stroke: var(--metric-payload);
+  opacity: 0.55;
+  animation-duration: 4s;
+}
+
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.orb-brackets {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.orb[data-state='off'] .orb-brackets {
+  opacity: 0.35;
+}
+
+/* The scanning reticle for a tool call. The ring pulses; the crosshair and the
+   centre dot hold still, so the shape stays legible while it moves. */
+.orb-scan circle:first-of-type {
+  animation: orb-scan-pulse 1.6s ease-in-out infinite;
+  transform-origin: 100px 100px;
+}
+
+@keyframes orb-scan-pulse {
+  0%,
+  100% {
+    transform: scale(0.86);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+/*
+ * Reduced motion. The frame stays — it is what makes the thing an instrument —
+ * but nothing in it moves. The arc meter and the level-driven bars are
+ * untouched by this block because they are static geometry already: they
+ * report the microphone by their SHAPE, so they keep working when every
+ * animation here is switched off.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .orb-sweep-cw,
+  .orb-sweep-ccw,
+  .orb-scan circle:first-of-type {
+    animation: none !important;
+  }
+
+  /* Held at a fixed angle so the sweeps still read as a bezel rather than
+     collapsing into an accidental index mark at twelve o'clock. */
+  .orb-sweep-cw {
+    transform: rotate(35deg);
+  }
+
+  .orb-sweep-ccw {
+    transform: rotate(-120deg);
+  }
+}
+
+/* A tool call gets its own colour, matched to the payload metric it is
+   spending: this pause is MCP work, and the HUD names that cost in the same
+   hue. Without it the state fell through to the 'off' grey and read as a
+   stalled call. */
+.orb[data-state='tool'] {
+  --orb-c: var(--metric-payload);
+}

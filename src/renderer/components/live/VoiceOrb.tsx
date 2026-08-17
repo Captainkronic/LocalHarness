@@ -28,6 +28,36 @@ export interface VoiceOrbProps {
 const BAR_OFFSETS = [-24, -12, 0, 12, 24]
 const BAR_WEIGHTS = [0.55, 0.85, 1, 0.85, 0.55]
 
+/**
+ * The instrument frame.
+ *
+ * JARVIS reads as precision instrumentation rather than as an assistant blob,
+ * and precision is drawn with ticks and brackets, not with glow. These are
+ * fixed marks on a dial: they do NOT encode anything, which is exactly why they
+ * are allowed to move — an ornament that rotates is honest, whereas a number
+ * that animates without being measured is not.
+ */
+const TICK_COUNT = 60
+/** Every fifth tick is long, the way a dial marks its fifths. */
+const TICKS = Array.from({ length: TICK_COUNT }, (_, i) => {
+  const angle = (i / TICK_COUNT) * Math.PI * 2 - Math.PI / 2
+  const major = i % 5 === 0
+  const outer = 94
+  const inner = major ? 87 : 90.5
+  return {
+    key: i,
+    major,
+    x1: 100 + Math.cos(angle) * inner,
+    y1: 100 + Math.sin(angle) * inner,
+    x2: 100 + Math.cos(angle) * outer,
+    y2: 100 + Math.sin(angle) * outer
+  }
+})
+
+/** Corner brackets, as a fraction of the box. Drawn as four rotations of one
+ *  path so the shape can never drift between corners. */
+const BRACKET = 'M4 26V8a4 4 0 014-4h18'
+
 const LABELS: Record<LiveSessionState, string> = {
   off: 'Not in a call',
   starting: 'Opening the microphone',
@@ -67,6 +97,52 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
             <feGaussianBlur stdDeviation="9" />
           </filter>
         </defs>
+
+        {/* ---- instrument frame ---- */}
+        {/* A graduated dial. Static: it is the bezel, not a reading. */}
+        <g className="orb-ticks">
+          {TICKS.map((t) => (
+            <line
+              key={t.key}
+              className={t.major ? 'orb-tick orb-tick-major' : 'orb-tick'}
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+            />
+          ))}
+        </g>
+
+        {/* Two sweeps, counter-rotating, on their own radii. Ornament — they
+            run whenever a call is up and stop dead under reduced motion. */}
+        <g className="orb-sweeps">
+          <circle
+            className="orb-sweep orb-sweep-cw"
+            cx="100"
+            cy="100"
+            r="88"
+            pathLength="100"
+            strokeDasharray="13 87"
+          />
+          <circle
+            className="orb-sweep orb-sweep-ccw"
+            cx="100"
+            cy="100"
+            r="83"
+            pathLength="100"
+            strokeDasharray="5 45"
+          />
+        </g>
+
+        {/* Corner brackets. They frame the core the way a reticle frames a
+            target, and they are what makes the whole thing read as an
+            instrument rather than a bubble. */}
+        <g className="orb-brackets">
+          <path className="orb-bracket" d={BRACKET} />
+          <path className="orb-bracket" d={BRACKET} transform="rotate(90 100 100)" />
+          <path className="orb-bracket" d={BRACKET} transform="rotate(180 100 100)" />
+          <path className="orb-bracket" d={BRACKET} transform="rotate(270 100 100)" />
+        </g>
 
         {/* Bloom. Scales with level, so a loud room is visibly a loud room. */}
         <circle
@@ -144,6 +220,22 @@ function StateGlyph({
           <circle className="orb-dot orb-dot-1" cx="88" cy="100" r="4" />
           <circle className="orb-dot orb-dot-2" cx="100" cy="100" r="4" />
           <circle className="orb-dot orb-dot-3" cx="112" cy="100" r="4" />
+        </g>
+      )
+    case 'tool':
+      // Deliberately not the thinking dots. Reaching for a tool is the one
+      // pause in a spoken turn the user cannot attribute to the model, so it
+      // has to be distinguishable at a glance and not merely a different
+      // colour: a scanning reticle, which is also what it is doing.
+      return (
+        <g className="orb-glyph orb-scan">
+          <circle className="orb-stroke" cx="100" cy="100" r="13" />
+          <path
+            className="orb-stroke"
+            d="M100 81v6M100 113v6M81 100h6M113 100h6"
+            strokeLinecap="round"
+          />
+          <circle className="orb-solid" cx="100" cy="100" r="2.4" />
         </g>
       )
     case 'speaking':

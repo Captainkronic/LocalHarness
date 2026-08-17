@@ -32,7 +32,12 @@ import {
   type RefObject
 } from 'react'
 
-import type { LiveAudioChunk, LiveSettings, LiveTurnTimings } from '@shared/types'
+import type {
+  LiveAudioChunk,
+  LiveSessionState,
+  LiveSettings,
+  LiveTurnTimings
+} from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, formatMs } from '@renderer/lib/format'
 import { VOICE_PRESETS } from '@shared/workflows'
@@ -56,6 +61,16 @@ const NOTICE_MS = 4000
 const SPEED_MIN = 0.6
 const SPEED_MAX = 1.6
 const SPEED_COMMIT_MS = 180
+
+/**
+ * States where "say something" is true.
+ *
+ * It used to show whenever a call was up and nothing had been transcribed yet,
+ * which meant the very first turn told the user to speak while JARVIS was
+ * plainly thinking, looking something up, or talking back at them. A prompt
+ * that contradicts the state right above it is worse than no prompt.
+ */
+const WAITING_STATES = new Set<LiveSessionState>(['listening', 'capturing'])
 
 export function LiveWorkspace(): JSX.Element {
   const status = useStore((s) => s.liveStatus)
@@ -92,7 +107,13 @@ export function LiveWorkspace(): JSX.Element {
     statusRef.current = status
   })
 
-  const state = status.state
+  // A spoken turn moves through six states in about two seconds, which is not
+  // long enough to photograph one. LH_LIVE_STATE pins it so every state can be
+  // screenshotted and reviewed — the same escape hatch LH_CODE_MODE gives the
+  // Code pane, and for the same reason: looking at a state is how its bugs get
+  // found. Ignored unless the variable is set, so it cannot affect a real call.
+  const forcedState = document.documentElement.dataset.liveState as LiveSessionState | undefined
+  const state = forcedState ?? status.state
   const inCall = state !== 'off'
 
   /* ---- speech playback -------------------------------------------- */
@@ -332,7 +353,7 @@ export function LiveWorkspace(): JSX.Element {
               <span className="lv-said">{reply.slice(0, spokenTo)}</span>
               <span className="lv-rest">{reply.slice(spokenTo)}</span>
             </p>
-          ) : inCall && status.lastUserText.trim() === '' ? (
+          ) : WAITING_STATES.has(state) && status.lastUserText.trim() === '' ? (
             <p className="lv-prompt">
               Say something. The turn ends when you stop talking.
             </p>

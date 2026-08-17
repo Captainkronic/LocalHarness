@@ -16,6 +16,13 @@ if (forcedCodeMode === 'chat' || forcedCodeMode === 'watch') {
   document.documentElement.dataset.codeMode = forcedCodeMode
 }
 
+// Same idea, for the Live workspace: pins the call state so each one can be
+// photographed. See LiveWorkspace.
+const forcedLiveState = new URLSearchParams(window.location.search).get('liveState')
+if (forcedLiveState !== null && forcedLiveState !== '') {
+  document.documentElement.dataset.liveState = forcedLiveState
+}
+
 const container = document.getElementById('root')
 if (!container) throw new Error('LocalHarness: #root is missing from index.html')
 

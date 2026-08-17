@@ -43,7 +43,11 @@ const child = spawn('npm', ['run', 'dev'], {
     LH_SHOT_NAME: outFile.split('/').pop(),
     LH_SHOT_AFTER_MS: process.env.LH_SHOT_AFTER_MS ?? '7000',
     LH_SHOT_EXIT: '1',
-    LH_START_WORKFLOW: workflow
+    LH_START_WORKFLOW: workflow,
+    // Pass through so a caller can pin a Live call state:
+    //   LH_LIVE_STATE=tool node scripts/shoot.mjs live shots/live-tool.png
+    ...(process.env.LH_LIVE_STATE ? { LH_LIVE_STATE: process.env.LH_LIVE_STATE } : {}),
+    ...(process.env.LH_CODE_MODE ? { LH_CODE_MODE: process.env.LH_CODE_MODE } : {})
   },
   stdio: ['ignore', 'pipe', 'pipe']
 })

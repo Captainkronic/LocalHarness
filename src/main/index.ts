@@ -103,17 +103,24 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  // LH_CODE_MODE drives which half of the Code workflow is shown, so the
-  // screenshot driver can photograph either without clicking.
+  // Screenshot hooks. LH_CODE_MODE picks which half of the Code workflow is
+  // shown; LH_LIVE_STATE pins a call state that a real turn passes through in
+  // a fraction of a second. Both exist so the driver can photograph a state
+  // without clicking, and neither does anything unless set.
+  const query: Record<string, string> = {}
   const codeMode = process.env['LH_CODE_MODE']
-  const query = codeMode ? { codeMode } : undefined
+  const liveState = process.env['LH_LIVE_STATE']
+  if (codeMode) query['codeMode'] = codeMode
+  if (liveState) query['liveState'] = liveState
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL'])
-    if (codeMode) url.searchParams.set('codeMode', codeMode)
+    for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value)
     void win.loadURL(url.toString())
   } else {
-    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), { query })
+    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), {
+      query: Object.keys(query).length > 0 ? query : undefined
+    })
   }
 
   return win
