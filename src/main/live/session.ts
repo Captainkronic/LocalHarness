@@ -493,9 +493,12 @@ export class LiveSession {
      */
     let streamDoneAt = 0
     let roundRequestAt = Date.now()
-    let toolRounds = 0
+    /** Everything said across every round. `content` is cleared per round so a
+     *  preamble is not repeated in the next round's message, which means the
+     *  final transcript entry would otherwise lose it. */
+    let spokenAll = ''
 
-    for (let round = 0; ; round++) {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       firstTokenAt = 0
       finishReason = ''
       /** Accumulated by index, exactly as the OpenAI streaming shape delivers. */
@@ -567,6 +570,19 @@ export class LiveSession {
       const calls = [...pendingCalls.values()].filter((c) => c.name.length > 0)
       if (calls.length === 0) break
 
+      // The cap, actually enforced. Withholding the schemas above only asks the
+      // model to stop; a model that keeps emitting calls anyway had them run,
+      // round after round, with the user hearing nothing and the conversation
+      // growing on disk each time. The only way out was End call.
+      if (round >= MAX_TOOL_ROUNDS) {
+        this.o.onLog(
+          'warn',
+          SCOPE,
+          `ignored ${calls.length} tool call(s) past the round cap: ${calls.map((c) => c.name).join(', ')}`
+        )
+        break
+      }
+
       /* ---- 3b. run the tools, out loud ---- */
       // Anything the model said before reaching for a tool is a natural "one
       // moment" and covers the wait, so it is spoken now rather than held
@@ -574,22 +590,31 @@ export class LiveSession {
       const preamble = splitter.flush()
       if (preamble !== null) this.enqueueSpeech(turn, preamble)
 
-      toolRounds += 1
       const assistantCall = chatMessage('assistant', content)
       assistantCall.toolCalls = calls
       conv.messages.push(assistantCall)
-      // The spoken text has been committed to a message of its own; letting it
-      // accumulate further would repeat it in the final transcript entry.
+      // Committed to a message of its own, so it must not accumulate into the
+      // next round — but it still belongs in the turn's record.
+      if (content.trim() !== '') spokenAll += (spokenAll === '' ? '' : ' ') + content.trim()
       content = ''
       this.setState('tool')
       this.toolLabel = calls.map((c) => c.name).join(', ')
       this.pushStatus()
 
-      for (const call of calls) await this.runTool(conv, call)
+      for (const call of calls) {
+        if (this.isStale(generation)) break
+        await this.runTool(conv, call, generation)
+      }
 
+      // Staleness FIRST, before any state is written. An MCP call cannot be
+      // cancelled (gmail's timeout is 120s and callTool takes no signal), so a
+      // turn abandoned mid-call resumes here long after the user moved on —
+      // and writing 'thinking' over the 'listening' that interrupt() set left
+      // the session deaf, or over the 'off' that stop() set, which reopened
+      // the microphone after the user had ended the call.
+      if (this.isStale(generation)) return { ok: true }
       this.toolLabel = ''
       this.setState('thinking')
-      if (this.isStale(generation)) return { ok: true }
 
       messages.length = 0
       messages.push(...buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision))
@@ -638,7 +663,7 @@ export class LiveSession {
       totalMs: finishedAt - arrivedAt
     }
 
-    const spoken = content.trim()
+    const spoken = [spokenAll, content.trim()].filter((p) => p !== '').join(' ')
     this.assistantText = spoken
     this.lastTimings = timings
     this.turnCount += 1
@@ -747,6 +772,9 @@ export class LiveSession {
   private cancelTurn(): void {
     this.generation += 1
     this.turnActive = false
+    // Otherwise an interrupt during a tool call leaves the tool's name in the
+    // status that gets pushed, naming work that is no longer happening.
+    this.toolLabel = ''
     const controller = this.abort
     this.abort = null
     controller?.abort()
@@ -910,7 +938,7 @@ export class LiveSession {
    * A failure is appended as text rather than thrown, so the model can say
    * what went wrong in its own voice instead of the turn dying silently.
    */
-  private async runTool(conv: Conversation, call: ToolCall): Promise<void> {
+  private async runTool(conv: Conversation, call: ToolCall, generation: number): Promise<void> {
     const startedAt = Date.now()
     let text: string
     try {
@@ -945,6 +973,22 @@ export class LiveSession {
     }
     call.result = text
     call.finishedAt = Date.now()
+
+    // An MCP call cannot be cancelled, so this can return long after the turn
+    // was abandoned — and by then the user may have spoken again, meaning a new
+    // user message is already on the conversation. Appending here would put the
+    // tool result AFTER it, and buildMessages faithfully reproduces that order:
+    // every later request in this conversation would carry a user message
+    // between an assistant tool_calls message and its reply, which the chat
+    // template rejects. conversations.save would then make it permanent.
+    if (this.isStale(generation)) {
+      this.o.onLog(
+        'info',
+        SCOPE,
+        `discarded a late ${call.name} result (${text.length} chars) — its turn was abandoned`
+      )
+      return
+    }
 
     conv.messages.push({
       id: randomUUID(),

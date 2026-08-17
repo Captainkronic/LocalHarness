@@ -175,7 +175,7 @@ export function LiveWorkspace(): JSX.Element {
     // 'speaking' when the last sentence is synthesised, seconds before it has
     // finished coming out of the speaker.
     const stillTalking = phase === 'speaking' || playback.isPlaying()
-    const busy = phase === 'transcribing' || phase === 'thinking' || stillTalking
+    const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'tool' || stillTalking
     if (busy) {
       if (!live.bargeIn) {
         // Speech heard during playback is overwhelmingly the reply itself

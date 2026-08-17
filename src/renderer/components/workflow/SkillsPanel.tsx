@@ -68,21 +68,21 @@ export function SkillsPanel(): JSX.Element | null {
           <code> .agents/skills</code>.
         </p>
       ) : (
-        <ul className="mcp-list">
+        <ul className="mcp-list scroll-y">
           {skills.map((s) => {
             const isOpen = open === s.path
             return (
-              <li key={s.path} className="mcp-row">
-                <div className="mcp-row-main">
+              <li key={s.path} className={s.enabled ? 'mcp-item is-on' : 'mcp-item'}>
+                <div className="mcp-row">
                   <button
                     type="button"
                     role="switch"
                     aria-checked={s.enabled}
                     aria-label={`${s.name}: ${s.enabled ? 'enabled' : 'disabled'}`}
-                    className={s.enabled ? 'mcp-switch is-on' : 'mcp-switch'}
+                    className={s.enabled ? 'sw is-on' : 'sw'}
                     onClick={() => void setSkillEnabled(s.path, !s.enabled)}
                   >
-                    <span className="mcp-knob" />
+                    <span className="sw-knob" />
                   </button>
 
                   <button
