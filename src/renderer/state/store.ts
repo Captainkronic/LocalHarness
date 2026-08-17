@@ -197,7 +197,7 @@ const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   silenceMs: 700,
   minUtteranceMs: 350,
   video: false,
-  bargeIn: true,
+  bargeIn: false,
   speak: true
 }
 

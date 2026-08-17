@@ -28,7 +28,7 @@ import type {
   Settings
 } from '@shared/types'
 
-import { isInsideAny } from '../store/paths'
+import { augmentedPath, isInsideAny } from '../store/paths'
 import { changedLinesFromDiff, type ActivityInput } from './activity'
 import { diffStat, unifiedDiff } from './diff'
 import { nativeToolInfo } from './tools'
@@ -1310,7 +1310,15 @@ function spawnCollect(
       stdio: ['ignore', 'pipe', 'pipe'],
       // Own process group, so a timeout can take the whole tree with it.
       detached: true,
-      env: { ...process.env, NO_COLOR: '1', GIT_TERMINAL_PROMPT: '0' }
+      // Same reason the MCP client repairs PATH: launched from Finder this app
+      // inherits launchd's minimal PATH, so `git`, `npm` and `rg` would all be
+      // "command not found" while working fine under `npm run dev`.
+      env: {
+        ...process.env,
+        PATH: augmentedPath(),
+        NO_COLOR: '1',
+        GIT_TERMINAL_PROMPT: '0'
+      }
     })
 
     const out: string[] = []

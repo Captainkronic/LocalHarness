@@ -155,6 +155,29 @@ if (speech.available()) {
 
   const voices = await speech.voices().catch(() => [])
   check('voice list is available', voices.length > 0, `${voices.length} voices${voices.length ? `, e.g. ${voices.slice(0, 4).join(', ')}` : ''}`)
+
+  /* --- the REAL pipeline path -------------------------------------- */
+  // The checks above transcribe Kokoro's own wav. The app never does that: it
+  // transcribes OUR encodeWav output from microphone PCM. Testing the former
+  // and claiming the latter works is how the ffmpeg failure reached the user.
+  {
+    const tone = new Int16Array(16000)
+    for (let i = 0; i < tone.length; i++) {
+      tone[i] = Math.round(2500 * Math.sin((i / 16000) * 2 * Math.PI * 220))
+    }
+    let ok = true
+    let detail = ''
+    try {
+      // Silence/tone is expected to transcribe to nothing useful; what is being
+      // proven is that the DECODE path works at all, not the words.
+      await speech.transcribe(encodeWav(tone, 16000))
+      detail = 'our own encodeWav output decodes'
+    } catch (err) {
+      ok = false
+      detail = String(err)
+    }
+    check('transcribe accepts audio from our own encoder', ok, detail)
+  }
 }
 
 await speech.stop().catch(() => undefined)

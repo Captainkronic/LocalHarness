@@ -289,6 +289,14 @@ app.whenReady().then(async () => {
   // server that does not exit on stdin EOF, so the quit is held until shutdown
   // finishes and then forced.
   let quitting = false
+  // Closing the window does not quit on macOS, so without this a live session
+  // kept the microphone open and the speech models resident with nothing on
+  // screen — and an audio feedback loop, once started, had no way to be seen or
+  // stopped. A call belongs to the window that started it.
+  mainWindow.on('close', () => {
+    void live.stop().catch(() => undefined)
+  })
+
   app.on('before-quit', (event) => {
     if (quitting) return
     quitting = true

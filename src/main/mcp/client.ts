@@ -18,7 +18,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, extname } from 'node:path'
 import type { Artifact, ArtifactKind, JsonSchema, McpToolInfo } from '@shared/types'
-import { expandEnv, expandTilde } from '../store/paths'
+import { augmentedPath, expandEnv, expandTilde } from '../store/paths'
 import { sanitizeSchema, toolSchemaTokens } from './tokens'
 
 const PROTOCOL_VERSION = '2024-11-05'
@@ -127,7 +127,11 @@ export class McpClient {
     try {
       child = spawn(command, args, {
         cwd: homedir(),
-        env: { ...process.env, ...env },
+        // PATH is repaired for every server, not just the one that needed it:
+        // these are Python processes that shell out (ffmpeg, rg, sips, git), and
+        // a Finder-launched app hands them launchd's minimal PATH. An explicit
+        // PATH in a server's own env still wins, since `env` is spread last.
+        env: { ...process.env, PATH: augmentedPath(), ...env },
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false
       })

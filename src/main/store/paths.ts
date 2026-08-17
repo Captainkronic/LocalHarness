@@ -93,6 +93,47 @@ export function isInsideAny(target: string, roots: string[]): boolean {
   }
 }
 
+/**
+ * Directories a login shell has but a Finder-launched app does not.
+ *
+ * An app opened from Spotlight, Launchpad or the Dock inherits launchd's PATH —
+ * roughly /usr/bin:/bin:/usr/sbin:/sbin — NOT the PATH from a login shell. Every
+ * child it spawns inherits that too, so a helper that shells out to a Homebrew
+ * binary fails with a bare "No such file or directory".
+ *
+ * That is not hypothetical: mlx_whisper always invokes `ffmpeg`, so the Live
+ * workflow's transcription died with "[Errno 2] No such file or directory:
+ * 'ffmpeg'" when the app was launched from the icon — while working perfectly
+ * from `npm run dev`, because a terminal has the full PATH.
+ */
+const EXTRA_PATH_DIRS = [
+  '/opt/homebrew/bin',
+  '/opt/homebrew/sbin',
+  '/usr/local/bin',
+  '/usr/local/sbin',
+  '/usr/bin',
+  '/bin',
+  '/usr/sbin',
+  '/sbin'
+]
+
+/**
+ * PATH for a spawned child: the inherited one plus the places tools actually
+ * live, de-duplicated and with the inherited entries kept in front so a user's
+ * own ordering still wins.
+ */
+export function augmentedPath(inherited = process.env['PATH'] ?? ''): string {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const dir of [...inherited.split(':'), ...EXTRA_PATH_DIRS]) {
+    const d = dir.trim()
+    if (d === '' || seen.has(d)) continue
+    seen.add(d)
+    out.push(d)
+  }
+  return out.join(':')
+}
+
 export async function ensureDir(dir: string): Promise<void> {
   await mkdir(expandTilde(dir), { recursive: true })
 }

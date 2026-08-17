@@ -68,7 +68,11 @@ export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   silenceMs: 700,
   minUtteranceMs: 350,
   video: false,
-  bargeIn: true,
+  // OFF by default. With speakers, barge-in is an audio feedback loop: the
+  // microphone hears the assistant, scores it as speech, interrupts, starts a
+  // new turn, and that turn speaks again. Observed doing exactly that. It is
+  // genuinely useful on headphones, so it stays available — just not assumed.
+  bargeIn: false,
   speak: true
 }
 
