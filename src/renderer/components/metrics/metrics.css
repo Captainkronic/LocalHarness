@@ -31,7 +31,7 @@
   /* Completes the well. The sidebar and the context panel already cast onto the
      conversation from the sides; without this the top edge was the one place
      the chrome sat flush with the content it frames. */
-  box-shadow: 0 3px 10px -2px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--cast-down);
   font-size: var(--fs-tiny);
   color: var(--fg-muted);
   white-space: nowrap;

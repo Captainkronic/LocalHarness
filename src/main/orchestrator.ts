@@ -503,6 +503,12 @@ export class Orchestrator {
     }
 
     call.finishedAt = Date.now()
+    // Cleared, or the last reported step stays on the call forever. It is
+    // invisible today because the bar only renders in the 'running' branch, but
+    // it persists to disk with the conversation and would reappear if a call
+    // ever went running -> error -> running again.
+    call.progressFraction = undefined
+    call.progressMessage = undefined
     this.stampAudioTake(conv, call, args)
     for (const artifact of call.artifacts ?? []) {
       this.recordArtifact(conv.workflowId, artifact)

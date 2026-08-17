@@ -95,6 +95,17 @@
   --r-full: 999px;
 
   /* --- depth --- */
+  /* Chrome casting onto the conversation. One token per direction so the three
+     panels that frame the chat cannot drift apart, and so the light theme can
+     soften them — a shadow tuned for a near-black ground is far too heavy on a
+     white one. */
+  --cast-right: 3px 0 10px -2px rgba(0, 0, 0, 0.55);
+  --cast-left: -3px 0 10px -2px rgba(0, 0, 0, 0.55);
+  --cast-down: 0 3px 10px -2px rgba(0, 0, 0, 0.55);
+  /* Behind a modal. Was hardcoded in four places at three different opacities. */
+  --scrim: rgba(6, 7, 10, 0.62);
+  --scrim-strong: rgba(6, 7, 10, 0.86);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
@@ -121,6 +132,14 @@
   /* The same three zones, inverted. Chrome is white and near-white — one
      material, rail a step under sidebar — and the conversation takes the tint,
      so it reads as the well rather than as another panel. */
+  /* Lighter grounds need a lighter cast, or the panels look like they are
+     floating an inch off the page. */
+  --cast-right: 2px 0 8px -3px rgba(15, 20, 30, 0.18);
+  --cast-left: -2px 0 8px -3px rgba(15, 20, 30, 0.18);
+  --cast-down: 0 2px 8px -3px rgba(15, 20, 30, 0.18);
+  --scrim: rgba(20, 26, 36, 0.4);
+  --scrim-strong: rgba(20, 26, 36, 0.62);
+
   --bg-void: #f4f6f9;
   --bg-app: #e6e9ef;
   --bg-panel: #ffffff;

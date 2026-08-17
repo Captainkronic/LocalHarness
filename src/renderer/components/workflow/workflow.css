@@ -100,7 +100,7 @@
      cue that makes the left side read as something laid OVER the chat rather
      than as another region of it. Kept tight and one-directional: it is depth,
      not a glow. */
-  box-shadow: 3px 0 10px -2px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--cast-right);
   /* Above the content it casts onto, or the shadow lands underneath it. */
   position: relative;
   z-index: 2;
@@ -597,7 +597,7 @@
   display: grid;
   place-items: center;
   padding: var(--s6);
-  background: rgba(6, 7, 10, 0.62);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
   animation: fade-in var(--dur-fast) var(--ease);
 }
