@@ -285,7 +285,14 @@ export class TurnMeter {
     // Drop samples that have fallen out of the window so this stays O(window).
     if (keepFrom > 0) this.samples = this.samples.slice(keepFrom)
 
-    if (tokens === 0) return 0
+    // No tokens in the window is NOT a rate of zero — it is a gap, and in an
+    // agentic turn most of the wall clock is gaps: between tool calls the model
+    // re-prefills for twenty seconds or more and emits nothing. Returning 0
+    // made formatTps render "—", so decode read as dead at exactly the moments
+    // the user is wondering whether the app has hung. null means "unknown",
+    // which the gauge already handles by holding the last measured rate and
+    // marking it as not-current.
+    if (tokens === 0) return null
     return tokens / (span / 1000)
   }
 }
