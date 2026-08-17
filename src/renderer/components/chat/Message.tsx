@@ -6,7 +6,9 @@
 
 import { useState } from 'react'
 import type { Attachment, ChatMessage } from '@shared/types'
+import { WORKFLOW_BY_ID } from '@shared/workflows'
 import { basename, formatMs, formatTokens, formatTps } from '@renderer/lib/format'
+import { useStore } from '@renderer/state/store'
 import Markdown from './Markdown'
 import ToolCallCard from './ToolCallCard'
 import './chat.css'
@@ -67,13 +69,19 @@ function AssistantMessage({
   message: ChatMessage
   toolResults?: ReadonlyMap<string, string>
 }) {
+  const activeWorkflow = useStore((st) => st.activeWorkflow)
   const toolCalls = message.toolCalls ?? []
   const hasBody = message.content !== ''
 
   return (
     <div className="msg msg-assistant">
       {message.reasoning !== undefined && message.reasoning !== '' ? (
-        <Reasoning text={message.reasoning} tokens={message.metrics?.reasoningTokens} />
+        <Reasoning
+          text={message.reasoning}
+          tokens={message.metrics?.reasoningTokens}
+          budget={WORKFLOW_BY_ID[activeWorkflow]?.sampling.maxTokens}
+          answered={message.content.trim() !== ''}
+        />
       ) : null}
 
       {hasBody ? (
@@ -115,12 +123,38 @@ function AssistantMessage({
  * figure once there is one, and marks the interim estimate with `~`, the way
  * PrefillBar already marks its own.
  */
-function Reasoning({ text, tokens }: { text: string; tokens?: number }) {
+/**
+ * Past this share of the output ceiling with nothing written yet, the turn is
+ * very likely to end in `length` having produced no answer at all. Measured the
+ * hard way: a Code turn spent all 16,384 of its tokens reasoning and returned
+ * nothing after twenty minutes.
+ */
+const REASONING_ALARM = 0.6
+
+function Reasoning({
+  text,
+  tokens,
+  budget,
+  answered
+}: {
+  text: string
+  tokens?: number
+  /** The workflow's maxTokens — reasoning is billed against the same ceiling. */
+  budget?: number
+  /** True once any answer text has arrived. */
+  answered: boolean
+}) {
   const [open, setOpen] = useState(false)
   const lines = text.split('\n').length
   const measured = typeof tokens === 'number' && tokens > 0
+  const used = measured ? tokens : Math.ceil(text.length / 4)
+  // Only a warning while it is still true: once an answer has arrived the
+  // budget was evidently sufficient, whatever it cost to get there.
+  const runaway =
+    !answered && typeof budget === 'number' && budget > 0 && used / budget >= REASONING_ALARM
+  const share = typeof budget === 'number' && budget > 0 ? used / budget : null
   return (
-    <div className="reasoning">
+    <div className={runaway ? 'reasoning is-runaway' : 'reasoning'}>
       <button
         type="button"
         className="reasoning-toggle"
@@ -151,9 +185,19 @@ function Reasoning({ text, tokens }: { text: string; tokens?: number }) {
           }
         >
           {measured ? '' : '~'}
-          {formatTokens(measured ? (tokens as number) : Math.ceil(text.length / 4))} tok · {lines}{' '}
+          {formatTokens(used)}
+          {/* Against the ceiling, because reasoning is billed from the same
+              budget as the answer — a bare count cannot tell you it is about to
+              run out, and the whole failure is that the answer never arrives. */}
+          {share !== null ? ` / ${formatTokens(budget as number)} tok` : ' tok'} · {lines}{' '}
           lines
         </span>
+        {runaway ? (
+          <span className="reasoning-warn">
+            {Math.round((share as number) * 100)}% of the budget, still no answer — Stop and ask
+            something narrower
+          </span>
+        ) : null}
       </button>
       {open ? <div className="reasoning-body scroll-y">{text}</div> : null}
     </div>

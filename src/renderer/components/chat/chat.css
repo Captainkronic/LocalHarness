@@ -1341,3 +1341,27 @@
     transition: none;
   }
 }
+
+/* --- reasoning that is about to run out of room --- */
+
+/*
+ * Reasoning is billed from the same ceiling as the answer, so a turn can spend
+ * its whole budget thinking and return nothing. That happened for real: twenty
+ * minutes, 16.4k tokens, finish_reason 'length', no answer. The count alone
+ * could not warn anyone, because a bare number gives no sense of how close the
+ * cliff is.
+ */
+.reasoning.is-runaway {
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+}
+
+.reasoning-warn {
+  margin-left: auto;
+  padding-left: var(--s2);
+  color: var(--warn);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
