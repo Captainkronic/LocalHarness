@@ -621,6 +621,17 @@ export function EditCard({ job }: EditCardProps): JSX.Element {
         </div>
       ) : null}
 
+      {/* The pipeline also writes to `error` on NON-error statuses: a cancelled
+          refine, a cancelled render (which explains ComfyUI will finish the
+          image anyway), and the note that a prompt was written without the model
+          seeing the photo. Gating this on status === 'error' threw all three
+          away — including the one whose whole purpose was to not be silent. */}
+      {job.status !== 'error' && job.error ? (
+        <p className="ed-warn ed-note" role="status">
+          {job.error}
+        </p>
+      ) : null}
+
       {job.status === 'error' ? (
         <div className="ed-error" role="alert">
           <pre className="ed-error-msg">{job.error ?? 'The job failed without a message.'}</pre>

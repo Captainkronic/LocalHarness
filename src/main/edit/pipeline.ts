@@ -28,6 +28,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 
 import type { EditJob, EditParams, ModelInfo, Settings } from '@shared/types'
+import { EDIT_IMAGE_MIME } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
@@ -42,18 +43,15 @@ import type { EditJobStore } from './store'
 const COMFY_SERVER_ID = 'comfy-image'
 const EDIT_TOOL_NAME = 'edit_image'
 
-/** Extensions we will accept as a source photo, with the mime each maps to. */
-const IMAGE_MIME: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
-  bmp: 'image/bmp'
-}
+/** Shared with the drop zone and the file dialog so the three cannot drift. */
+const IMAGE_MIME = EDIT_IMAGE_MIME
 
-/** Ceiling on a source photo. Above this the data: URL alone is ~43MB of IPC. */
-const MAX_IMAGE_BYTES = 32 * 1024 * 1024
+/**
+ * Ceiling on a source photo. Must not exceed the renderer's own re-read cap in
+ * `artifacts:readDataUrl`, or a file is accepted here and then shows as broken
+ * on the next state push when the preview is re-derived.
+ */
+export const MAX_IMAGE_BYTES = 16 * 1024 * 1024
 
 /** Preview cache bounds: only modest images are held, and only for the most
  *  recently touched handful of jobs, so this cannot grow without limit. */
@@ -221,7 +219,11 @@ export class EditPipeline {
     if (text.length > 0) {
       // A hand-written prompt is as renderable as a refined one.
       if (job.status === 'draft' || job.status === 'error') job.status = 'ready'
-    } else if (job.status === 'ready') {
+    } else if (job.status === 'ready' && job.timings === undefined && job.outputPath === undefined) {
+      // Only a job that has never done real work falls back to 'draft'. The feed
+      // hides drafts, so demoting a refined or rendered card because its prompt
+      // box was momentarily emptied unmounted the card out from under the caret
+      // — which is exactly what select-all-and-retype does.
       job.status = 'draft'
     }
     return this.commit(job)

@@ -329,6 +329,15 @@
   border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
 }
 
+/* A non-fatal note on an otherwise fine job: cancelled stage, or a prompt
+   written without the model seeing the photo. Full width, unlike the inline
+   .ed-warn chip it borrows its colours from. */
+.ed-note {
+  margin: var(--s2) var(--s4) 0;
+  padding: var(--s2) var(--s3);
+  line-height: 1.5;
+}
+
 .ed-draft-actions {
   display: flex;
   align-items: center;

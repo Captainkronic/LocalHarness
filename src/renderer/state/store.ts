@@ -545,9 +545,11 @@ export const useStore = create<AppState>()((set, get) => {
     cancelEdit: async (id) => {
       await call('edit', 'edit:cancel', id)
     },
+    // No optimistic removal: main now emits event:editJobDeleted, so the event
+    // handler stays the single writer. A failed delete leaves the row on screen,
+    // which is honest — it is still on disk.
     deleteEdit: async (id) => {
       await call('edit', 'edit:delete', id)
-      set((s) => ({ editJobs: s.editJobs.filter((j) => j.id !== id) }))
     },
     readImageDataUrl: async (path) => call('edit', 'artifacts:readDataUrl', path),
 

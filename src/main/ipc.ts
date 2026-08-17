@@ -10,7 +10,13 @@ import { dialog, ipcMain, shell, app, BrowserWindow } from 'electron'
 import { readFile, stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 
-import type { IpcApi, BootstrapPayload } from '@shared/ipc'
+import type {
+  IpcApi,
+  BootstrapPayload,
+  IpcEventChannel,
+  IpcEvents
+} from '@shared/ipc'
+import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
 import type {
   Attachment,
   EditJob,
@@ -29,6 +35,7 @@ import type { ApprovalBroker } from './agent/approval'
 import type { LabFeed } from './telemetry/lab'
 import type { LmStudioControl } from './llm/control'
 import type { EditPipeline } from './edit/pipeline'
+import { MAX_IMAGE_BYTES } from './edit/pipeline'
 import type { ActivityTracker } from './agent/activity'
 import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
@@ -48,6 +55,7 @@ export interface IpcDeps {
   activity: ActivityTracker
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
+  emit: <K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]) => void
 }
 
 /** Implementations, keyed by channel. Types are enforced against IpcApi. */
@@ -57,7 +65,12 @@ type Handlers = {
   ) => ReturnType<IpcApi[K]> | Awaited<ReturnType<IpcApi[K]>>
 }
 
+/** Chat attachments may be any image the model can look at, SVG included. */
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'])
+
+/** The edit source picker is narrower: only what the img2img pipeline accepts,
+ *  so the dialog cannot offer a file that is then silently refused. */
+const EDIT_SOURCE_EXT = EDIT_IMAGE_EXTENSIONS
 
 export function registerIpc(d: IpcDeps): void {
   const handlers: Handlers = {
@@ -223,7 +236,10 @@ export function registerIpc(d: IpcDeps): void {
       const ext = extname(path).slice(1).toLowerCase()
       if (!IMAGE_EXT.has(ext)) return null
       const info = await stat(path).catch(() => null)
-      if (!info || info.size > 16 * 1024 * 1024) return null
+      // Same ceiling the edit pipeline enforces, so a file it accepts can always
+      // be re-read for display. These drifting apart made 16-32MB sources render
+      // once and then show as broken on the next state push.
+      if (!info || info.size > MAX_IMAGE_BYTES) return null
       const buf = await readFile(path).catch(() => null)
       if (!buf) return null
       const mime = ext === 'svg' ? 'svg+xml' : ext === 'jpg' ? 'jpeg' : ext
@@ -259,7 +275,7 @@ export function registerIpc(d: IpcDeps): void {
       const win = d.getWindow()
       const opts: Electron.OpenDialogOptions = {
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Images', extensions: [...IMAGE_EXT] }]
+        filters: [{ name: 'Images', extensions: EDIT_SOURCE_EXT }]
       }
       const result = win
         ? await dialog.showOpenDialog(win, opts)
@@ -283,6 +299,10 @@ export function registerIpc(d: IpcDeps): void {
     'edit:cancel': (jobId: string) => d.edit.cancel(jobId),
     'edit:delete': (jobId: string) => {
       d.edit.delete(jobId)
+      // The contract declares this event and the store handles it; without the
+      // emission the store's optimistic removal was the only thing working, so
+      // a failed delete cleared the row locally and it came back on restart.
+      d.emit('event:editJobDeleted', { jobId })
     },
 
     /* ---- live code workspace ---- */

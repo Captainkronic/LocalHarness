@@ -191,7 +191,8 @@ app.whenReady().then(async () => {
     edit,
     activity,
     orchestrator,
-    getWindow: () => mainWindow
+    getWindow: () => mainWindow,
+    emit
   })
 
   models.start()

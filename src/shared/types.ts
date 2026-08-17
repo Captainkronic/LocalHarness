@@ -355,6 +355,25 @@ export interface TouchedFile {
  * comfy-image's `edit_image` with `confirm: true`, which makes the server use it
  * VERBATIM instead of running its own local-VLM rewrite over it again.
  */
+/**
+ * The single source of truth for what counts as an editable source image.
+ *
+ * Three separate lists used to disagree — the drop zone, the file dialog and the
+ * pipeline — so a file could pass one gate and be rejected silently by another.
+ * Dropping an iPhone .heic did nothing at all on screen. Everything derives from
+ * here now.
+ */
+export const EDIT_IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp'
+}
+
+export const EDIT_IMAGE_EXTENSIONS = Object.keys(EDIT_IMAGE_MIME)
+
 export type EditJobStatus =
   | 'draft'
   | 'refining'

@@ -11,14 +11,19 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
 
 import type { EditJob } from '@shared/types'
+import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename } from '@renderer/lib/format'
 import { EditImage, useEditImage, useSyncedValue } from './EditCard'
 import './edit.css'
 
-/** Files a drop can plausibly hand to an img2img renderer. Checked by extension
- *  as well as MIME, because a drag out of some apps carries an empty type. */
-const IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i
+/**
+ * Derived from the shared allow-list so the drop zone cannot accept a file the
+ * pipeline will reject. It previously took heic/avif/tiff, which the pipeline
+ * refuses — and the refusal had nowhere to surface, so dropping an iPhone photo
+ * did nothing at all.
+ */
+const IMAGE_RE = new RegExp(`\\.(${EDIT_IMAGE_EXTENSIONS.join('|')})$`, 'i')
 
 /** Plain English for the one knob that decides how much of the photo survives. */
 const DENOISE_SCALE: Array<{ upTo: number; label: string }> = [
