@@ -272,9 +272,14 @@ app.whenReady().then(async () => {
     models.stop()
     lab.stop()
     control.stop()
-    // Releases the microphone-adjacent speech server too; a live session must
-    // not survive the window that owns it.
     await live.stop().catch(() => undefined)
+    // SpeechServices owns its own McpClient rather than going through
+    // McpManager, so mcp.shutdown() does not reach it and it must be stopped
+    // explicitly. Without this a Python process holding Kokoro and
+    // whisper-large-v3-turbo — several GB — outlives every quit, because MCP
+    // children are spawned detached:false, which does NOT kill them with the
+    // parent.
+    await speech.stop().catch(() => undefined)
     await mcp.shutdown().catch(() => undefined)
   }
 

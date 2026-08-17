@@ -175,6 +175,10 @@ export function useAudioCapture(opts: CaptureOptions): {
         if (!speaking) return
 
         // The turn starts with the pre-roll, not with the frame that crossed.
+        // NOTE the pre-roll ALREADY CONTAINS this frame — it was pushed at the
+        // top of this call. Falling through to the shared `chunks.push(samples)`
+        // below would append it a second time, putting a 32ms stutter on exactly
+        // the syllable onset the pre-roll exists to protect.
         chunks = preroll
         captured = prerollSamples
         lead = prerollSamples
@@ -182,6 +186,8 @@ export function useAudioCapture(opts: CaptureOptions): {
         prerollSamples = 0
         capturing = true
         silenceRun = 0
+        voicedEnd = captured
+        return
       }
 
       chunks.push(samples)

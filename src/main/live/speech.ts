@@ -188,16 +188,23 @@ export class SpeechServices {
       output_dir: dir
     })
 
-    const path = parseCreatedPath(this.textOf(result, 'speak'))
-    if (path === null) {
-      throw new Error('voice-mcp did not report where it wrote the audio')
-    }
+    // The stem is ours, so the file's location is predictable even if the
+    // reply cannot be parsed. Cleaning up only the REPORTED path meant that any
+    // drift in voice-mcp's wording leaked one wav per sentence of every turn,
+    // and the hourly sweep would not reclaim them until long after the session.
+    const expected = join(dir, `${stem}.wav`)
+    let reported: string | null = null
     try {
-      const bytes = await readFile(path)
-      if (bytes.length === 0) throw new Error(`voice-mcp wrote an empty file at ${path}`)
+      reported = parseCreatedPath(this.textOf(result, 'speak'))
+      if (reported === null) {
+        throw new Error('voice-mcp did not report where it wrote the audio')
+      }
+      const bytes = await readFile(reported)
+      if (bytes.length === 0) throw new Error(`voice-mcp wrote an empty file at ${reported}`)
       return bytes
     } finally {
-      await this.discard(path)
+      await this.discard(expected)
+      if (reported !== null && reported !== expected) await this.discard(reported)
     }
   }
 

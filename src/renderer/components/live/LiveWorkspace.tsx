@@ -149,12 +149,16 @@ export function LiveWorkspace(): JSX.Element {
   // so a fresh closure per render costs nothing and can never go stale.
   const handleUtterance = (pcm: ArrayBuffer, rate: number): void => {
     const phase = statusRef.current.state
-    const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'speaking'
+    // playback.isPlaying() and not just the session state: main drops out of
+    // 'speaking' when the last sentence is synthesised, seconds before it has
+    // finished coming out of the speaker.
+    const stillTalking = phase === 'speaking' || playback.isPlaying()
+    const busy = phase === 'transcribing' || phase === 'thinking' || stillTalking
     if (busy) {
       if (!live.bargeIn) {
         // Speech heard during playback is overwhelmingly the reply itself
         // coming back through the microphone, so that one goes quietly.
-        if (phase !== 'speaking') {
+        if (!stillTalking) {
           showNotice('That was not sent — the previous turn is still running.')
         }
         return
@@ -176,7 +180,7 @@ export function LiveWorkspace(): JSX.Element {
     }
     speechRunRef.current += 1
     if (
-      statusRef.current.state === 'speaking' &&
+      (statusRef.current.state === 'speaking' || playback.isPlaying()) &&
       live.bargeIn &&
       speechRunRef.current >= BARGE_FRAMES
     ) {
@@ -321,7 +325,7 @@ export function LiveWorkspace(): JSX.Element {
             </p>
           ) : null}
 
-          {state === 'speaking' ? (
+          {state === 'speaking' || playback.isPlaying() ? (
             <button
               type="button"
               className="btn btn-sm lv-hush"
@@ -438,6 +442,18 @@ interface Playback {
   stop: () => void
   /** Output level, 0..1, for the orb while the assistant is speaking. */
   readLevel: () => number
+  /**
+   * True while audio is still scheduled to come out of the speaker.
+   *
+   * This is NOT the same as main's 'speaking' state and must not be replaced by
+   * it. Main leaves 'speaking' when the last sentence has been SYNTHESISED, and
+   * Kokoro synthesises far faster than realtime — about 394ms per sentence warm.
+   * So for a three-sentence reply main reports 'listening' after roughly a
+   * second while some seven seconds of audio is still queued against the
+   * AudioContext clock. Anything that means "the assistant is still talking" —
+   * barge-in, the stop control — has to ask the audio clock, not the session.
+   */
+  isPlaying: () => boolean
 }
 
 /**
@@ -546,6 +562,10 @@ function usePlayback(onChunkStart: (chunk: LiveAudioChunk) => void): Playback {
     }
 
     return {
+      isPlaying: () => {
+        const ctx = ctxRef.current
+        return ctx !== null && ctx.state !== 'closed' && cursorRef.current > ctx.currentTime
+      },
       push: (chunk) => {
         if (deadRef.current.has(chunk.turnId)) return
         if (turnRef.current !== chunk.turnId) {
