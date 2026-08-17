@@ -50,6 +50,18 @@ export interface WorkflowDefinition {
   accent: string
   /** MCP server ids enabled by default in this workflow. */
   mcpServers: string[]
+  /**
+   * Optional per-server tool allowlist: `{ gmail: ['read_email'] }` offers only
+   * those tools from that server. Servers absent from this map are offered
+   * whole.
+   *
+   * Two jobs, both load-bearing. Payload: gmail alone is 19 tools and 3,245
+   * tokens, and a workflow that only ever reads mail should not pay for filter
+   * management on every turn. Safety: a spoken turn cannot show an approval
+   * dialog, so Live must not be handed `send_email` or `delete_email` at all —
+   * withholding the schema is the gate.
+   */
+  mcpTools?: Record<string, string[]>
   /** Native (in-process) tool ids enabled by default in this workflow. */
   nativeTools: NativeToolId[]
   /** Which contextual panel to render alongside the conversation. */
@@ -327,6 +339,10 @@ export type LiveSessionState =
   | 'capturing'
   | 'transcribing'
   | 'thinking'
+  /** Running an MCP tool mid-turn. Distinct from 'thinking' because it is the
+   *  one pause the user cannot attribute to the model, and an unexplained
+   *  silence in a conversation reads as a failure. */
+  | 'tool'
   | 'speaking'
   | 'error'
 
@@ -344,6 +360,8 @@ export interface LiveSessionStatus {
   assistantText: string
   /** Turns completed this session. */
   turns: number
+  /** Names of the tools running right now; empty unless `state` is 'tool'. */
+  toolLabel: string
   error?: string
   timings: LiveTurnTimings | null
 }

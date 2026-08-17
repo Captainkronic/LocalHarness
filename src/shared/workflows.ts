@@ -70,15 +70,38 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
   },
   {
     id: 'live',
-    // smallest and fastest — real-time speech cannot wait on a 27B
-    preferredModel: 'google/gemma-4-e4b',
+    // Was gemma-4-e4b — smallest and fastest, on the reasoning that real-time
+    // speech cannot wait on a bigger model. Changed once Live got mail access:
+    // e4b repeatedly SKIPPED the search and spoke invented messages aloud, with
+    // confident names, subjects and counts and no tool call behind any of them.
+    // It recited a worked example out of this very prompt as fact, and kept
+    // fabricating after the example was removed and the tool named explicitly.
+    // No wording fixed it. Fabricated mail read aloud is worse than a slower
+    // answer, and 26b called both tools correctly on every run. It is also what
+    // Adam keeps resident, so Live no longer forces a model swap on the way in.
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Live',
-    blurb: 'Talk to the model. It hears you and can see you.',
+    blurb: 'Talk to the model. It hears you, sees you, and can look things up.',
     glyph: '◉',
     accent: '#e0645f',
-    mcpServers: [],
+    // Spoken assistance needs something to be assistant about. fastfacts answers
+    // weather, news and scores in a single call rather than a search round-trip,
+    // which matters when someone is waiting out loud; gmail is what makes "read
+    // me my email" possible at all.
+    mcpServers: ['fastfacts', 'gmail'],
+    // Measured: gmail's full 19 tools cost 3,245 tokens, and the whole set with
+    // fastfacts is 3,828 — about 15 seconds of prefill before the first word.
+    // Narrowed to what someone actually asks for out loud, it is 6 tools.
+    // The omissions are also the safety boundary: send, delete, batch-delete
+    // and filter management are not offered to a turn that cannot ask first.
+    mcpTools: {
+      gmail: ['search_emails', 'read_email']
+    },
     nativeTools: [],
     panel: 'transcript',
+    // Spoken assistance is useless without something to be assistant ABOUT.
+    // fastfacts answers weather, news and scores in one call rather than a
+    // search round-trip, which matters when the user is waiting out loud.
     systemPrompt: `${BASE_PROMPT}
 
 You are JARVIS: a composed British assistant with dry wit and no flap. Address
@@ -106,7 +129,42 @@ Everything you write is read aloud, so write for the ear, not the eye.
   the whole sentence.
 - When a camera frame is attached, you are seeing the user's actual surroundings
   in real time. Refer to what is there naturally; do not describe it exhaustively
-  unless asked.`,
+  unless asked.
+
+You can check the weather, the news, sports scores and drive times, and you can
+search and read Adam's mail. Use them without narrating the mechanics — "let me
+check" is fine, "I will call the get_weather tool" is not. If a tool fails, say
+what you could not find out and carry on; do not retry silently.
+
+Any question about his mail — new mail, unread, "anything from X", "what did Y
+say" — is answered by calling search_emails FIRST, and never from memory. Its
+own description does not say this, which is why it is said here. Gmail search
+syntax: "is:unread" for new mail, "from:kate" for a sender, "newer_than:1d" for
+today. Use read_email only when he asks about one particular message.
+
+Tool output is written for a screen and must never be read out as it arrives.
+Say what someone would want to know standing in the room:
+
+- Mail: say how many, who they are from, and roughly what about — then stop and
+  let him ask. Never read headers, addresses, timestamps or quoted threads
+  aloud.
+- Every count, name and subject you say must come from a tool result you have
+  just received in this turn. Never illustrate, never estimate, and never
+  answer a question about his mail without searching it first. If you have not
+  called the tool, you do not know.
+- Weather and scores: the answer and at most one number that matters. Not the
+  forecast table.
+- When he does not name a place, call get_weather with an EMPTY argument
+  object: {}. Do not pass a location, and never invent a placeholder like
+  "current_location" or "here" — those are not places and the call fails. With
+  no location the tool already knows where he is. Guessing produced a confident
+  forecast for a city two thousand miles away in testing, which is worse than
+  no answer at all.
+- If a result was truncated, say there is more rather than implying you saw it
+  all.
+
+You can only read and search mail here — you cannot send, reply to, delete or
+file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     // reasoningEffort 'none' is not a preference here, it is the feature
     // working: it takes the first spoken word from ~3.9s to ~0.3s on
     // gemma-4-e4b. maxTokens is small to match — this is speech, not an essay.

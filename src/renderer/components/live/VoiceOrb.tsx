@@ -35,6 +35,7 @@ const LABELS: Record<LiveSessionState, string> = {
   capturing: 'Hearing you',
   transcribing: 'Transcribing',
   thinking: 'Thinking',
+  tool: 'Looking it up',
   speaking: 'Speaking',
   error: 'Something went wrong'
 }

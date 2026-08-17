@@ -44,6 +44,7 @@ import type {
   LiveTurnTimings,
   ModelInfo,
   Settings,
+  ToolCall,
   TurnMetrics
 } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
@@ -51,7 +52,7 @@ import { WORKFLOW_BY_ID } from '@shared/workflows'
 import { streamChat, type WireMessage } from '../llm/client'
 import type { ModelRegistry } from '../llm/models'
 import { buildMessages } from '../llm/prompt'
-import type { LogFn } from '../mcp/manager'
+import type { LogFn, McpManager } from '../mcp/manager'
 import { estimateTokens } from '../mcp/tokens'
 import type { ConversationStore } from '../store/conversations'
 
@@ -114,12 +115,35 @@ const MIN_CHUNK_CHARS = 60
  *  ended. Past this, break at a word boundary. */
 const MAX_CHUNK_CHARS = 320
 
+/**
+ * How many times a single spoken turn may go out to tools before it must
+ * answer with what it has.
+ *
+ * Deliberately small. Every round is another full prefill of a conversation
+ * that already carries a system prompt and tool schemas, and the user is
+ * WAITING OUT LOUD — silence past a few seconds reads as the assistant having
+ * died, not as diligence. Two rounds covers "check the weather", and
+ * "search the mail, then read that one message", which is the real ceiling of
+ * what anyone asks for by voice.
+ */
+const MAX_TOOL_ROUNDS = 2
+
+/**
+ * Tool output is truncated to this before it enters the conversation.
+ *
+ * A mail search returns headers, snippets and quoted threads; unclipped, one
+ * call can outweigh the entire spoken conversation and every later turn pays
+ * that prefill again. The model only needs enough to say a sentence about it.
+ */
+const MAX_TOOL_RESULT_CHARS = 4_000
+
 const SPEECH_UNAVAILABLE =
   'Speech is unavailable — voice-mcp did not start, so nothing can be heard or spoken.'
 
 export interface LiveSessionOptions {
   speech: SpeechServices
   models: ModelRegistry
+  mcp: McpManager
   conversations: ConversationStore
   getSettings: () => Settings
   onStatus: (s: LiveSessionStatus) => void
@@ -153,6 +177,8 @@ export class LiveSession {
   private state: LiveSessionState = 'off'
   private conversationId: string | null = null
 
+  /** Tools running right now, comma-joined for the HUD. */
+  private toolLabel = ''
   private lastUserText = ''
   private assistantText = ''
   private turnCount = 0
@@ -252,6 +278,7 @@ export class LiveSession {
       lastUserText: this.lastUserText,
       assistantText: this.assistantText,
       turns: this.turnCount,
+      toolLabel: this.toolLabel,
       error: this.errorText,
       timings: this.lastTimings
     }
@@ -451,51 +478,130 @@ export class LiveSession {
     let firstTokenAt = 0
 
     const settings = this.o.getSettings()
-    const requestAt = Date.now()
+    const tools = this.o.mcp.wireTools(WORKFLOW.mcpTools)
+    const toolSchemaCost = tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
 
-    await streamChat(
-      {
-        baseUrl: settings.baseUrl,
-        apiKey: settings.apiKey,
-        model: model.id,
-        messages,
-        temperature: WORKFLOW.sampling.temperature,
-        topP: WORKFLOW.sampling.topP,
-        maxTokens: WORKFLOW.sampling.maxTokens,
-        // The single biggest lever on perceived latency here. Measured on
-        // gemma-4-e4b: without it the first speakable word is ~3.9s away
-        // because the model reasons first; with it, ~0.3s.
-        reasoningEffort: WORKFLOW.sampling.reasoningEffort,
-        signal: controller.signal
-      },
-      {
-        onFirstToken: () => {
-          firstTokenAt = Date.now()
+    /**
+     * The spoken turn's own tool loop.
+     *
+     * The Orchestrator has one already, but its shape is wrong here: it
+     * finalises a text message per round and knows nothing about the speech
+     * queue, so routing a spoken turn through it would break sentence-wise TTS
+     * — the thing that makes the reply start in 300ms instead of at the end.
+     * So Live runs its own, smaller loop, with a hard round cap and truncated
+     * results, because the cost of a round is paid in silence.
+     */
+    let streamDoneAt = 0
+    let roundRequestAt = Date.now()
+    let toolRounds = 0
+
+    for (let round = 0; ; round++) {
+      firstTokenAt = 0
+      finishReason = ''
+      /** Accumulated by index, exactly as the OpenAI streaming shape delivers. */
+      const pendingCalls = new Map<number, ToolCall>()
+      roundRequestAt = Date.now()
+
+      await streamChat(
+        {
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          model: model.id,
+          messages,
+          temperature: WORKFLOW.sampling.temperature,
+          topP: WORKFLOW.sampling.topP,
+          maxTokens: WORKFLOW.sampling.maxTokens,
+          // The single biggest lever on perceived latency here. Measured on
+          // gemma-4-e4b: without it the first speakable word is ~3.9s away
+          // because the model reasons first; with it, ~0.3s.
+          reasoningEffort: WORKFLOW.sampling.reasoningEffort,
+          // Withheld on the last permitted round: offering tools the loop will
+          // refuse to run invites a call that can only be answered with an
+          // apology, and the user hears the silence either way.
+          tools: round < MAX_TOOL_ROUNDS ? tools : undefined,
+          signal: controller.signal
         },
-        onContent: (delta) => {
-          content += delta
-          this.assistantText = content
-          this.pushStatusThrottled()
-          /* ---- 3. speak each sentence as it completes ---- */
-          for (const sentence of splitter.push(delta)) this.enqueueSpeech(turn, sentence)
-        },
-        // Reasoning is not part of the answer and must never be spoken or
-        // recorded as one; it is kept only so the turn's cost is honest.
-        onReasoning: (delta) => {
-          reasoning += delta
-        },
-        onToolCallDelta: () => undefined,
-        onUsage: (u) => {
-          usage = u
-        },
-        onDone: (reason) => {
-          finishReason = reason
+        {
+          onFirstToken: () => {
+            firstTokenAt = Date.now()
+          },
+          onContent: (delta) => {
+            content += delta
+            this.assistantText = content
+            this.pushStatusThrottled()
+            /* ---- 3. speak each sentence as it completes ---- */
+            for (const sentence of splitter.push(delta)) this.enqueueSpeech(turn, sentence)
+          },
+          // Reasoning is not part of the answer and must never be spoken or
+          // recorded as one; it is kept only so the turn's cost is honest.
+          onReasoning: (delta) => {
+            reasoning += delta
+          },
+          onToolCallDelta: (index, id, name, argsDelta) => {
+            let call = pendingCalls.get(index)
+            if (!call) {
+              call = {
+                id: id ?? `call_${index}_${Date.now()}`,
+                name: name ?? '',
+                arguments: '',
+                origin: 'mcp',
+                status: 'pending'
+              }
+              pendingCalls.set(index, call)
+            }
+            if (id) call.id = id
+            if (name) call.name = name
+            call.arguments += argsDelta
+          },
+          onUsage: (u) => {
+            usage = u
+          },
+          onDone: (reason) => {
+            finishReason = reason
+          }
         }
-      }
-    )
+      )
+      streamDoneAt = Date.now()
+      if (this.isStale(generation)) return { ok: true }
 
-    const streamDoneAt = Date.now()
-    const ttftMs = firstTokenAt === 0 ? 0 : firstTokenAt - requestAt
+      const calls = [...pendingCalls.values()].filter((c) => c.name.length > 0)
+      if (calls.length === 0) break
+
+      /* ---- 3b. run the tools, out loud ---- */
+      // Anything the model said before reaching for a tool is a natural "one
+      // moment" and covers the wait, so it is spoken now rather than held
+      // until the answer arrives.
+      const preamble = splitter.flush()
+      if (preamble !== null) this.enqueueSpeech(turn, preamble)
+
+      toolRounds += 1
+      const assistantCall = chatMessage('assistant', content)
+      assistantCall.toolCalls = calls
+      conv.messages.push(assistantCall)
+      // The spoken text has been committed to a message of its own; letting it
+      // accumulate further would repeat it in the final transcript entry.
+      content = ''
+      this.setState('tool')
+      this.toolLabel = calls.map((c) => c.name).join(', ')
+      this.pushStatus()
+
+      for (const call of calls) await this.runTool(conv, call)
+
+      this.toolLabel = ''
+      this.setState('thinking')
+      if (this.isStale(generation)) return { ok: true }
+
+      messages.length = 0
+      messages.push(...buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision))
+      if (frame !== undefined) attachFrame(messages, frame)
+    }
+
+    // Measured from the round that actually spoke, not from the top of the
+    // turn: a tool round's wall clock is not prefill, and folding it in here
+    // would feed the rate calibrator a rate the server never achieved. The
+    // waiting the user really did is in `timings.firstAudioMs` below, which is
+    // measured end to end and includes every round.
+    const ttftMs = firstTokenAt === 0 ? 0 : firstTokenAt - roundRequestAt
     if (this.isStale(generation)) return { ok: true }
 
     const tail = splitter.flush()
@@ -535,7 +641,8 @@ export class LiveSession {
       ttftMs,
       decodeMs: firstTokenAt === 0 ? 0 : streamDoneAt - firstTokenAt,
       totalMs: timings.totalMs,
-      finishReason
+      finishReason,
+      toolSchemaTokens: toolSchemaCost
     })
     conv.messages.push(assistant)
     this.o.conversations.save(conv)
@@ -741,6 +848,80 @@ export class LiveSession {
     return frameDataUrl
   }
 
+  /**
+   * Whether a tool name is one this workflow is allowed to call.
+   *
+   * Mirrors the filter in `McpManager.wireTools`, deliberately: exposure and
+   * execution are separate decisions, and only one of them is the safety
+   * boundary.
+   */
+  private toolPermitted(name: string): boolean {
+    const allow = WORKFLOW.mcpTools
+    if (!allow) return true
+    return this.o.mcp.wireTools(allow).some((t) => t.function.name === name)
+  }
+
+  /**
+   * Runs one MCP tool for a spoken turn and appends its result.
+   *
+   * Deliberately unlike the Orchestrator's version: no approval gate, no
+   * artifact recording, and the output is clipped hard. Live only ever offers
+   * read-only servers (weather, news, mail), so there is nothing here worth
+   * stopping to ask about — and a spoken turn cannot show a dialog anyway.
+   * A failure is appended as text rather than thrown, so the model can say
+   * what went wrong in its own voice instead of the turn dying silently.
+   */
+  private async runTool(conv: Conversation, call: ToolCall): Promise<void> {
+    const startedAt = Date.now()
+    let text: string
+    try {
+      // Withholding a schema stops an honest model, not a confused one: the
+      // routing map still resolves every tool on every running server, so a
+      // hallucinated `send_email` would otherwise go through. The allowlist is
+      // re-checked here, where the call actually happens.
+      if (!this.toolPermitted(call.name)) {
+        throw new Error(
+          `"${call.name}" is not available in a spoken conversation. Tell the user what you cannot do here.`
+        )
+      }
+      let args: unknown = {}
+      if (call.arguments.trim().length > 0) args = dropEmptyArgs(JSON.parse(call.arguments))
+      const result = await this.o.mcp.callTool(call.name, args)
+      text = result.text
+      call.status = result.isError ? 'error' : 'ok'
+      if (result.isError) call.error = result.text
+    } catch (err) {
+      text = `The tool failed: ${messageOf(err)}`
+      call.status = 'error'
+      call.error = messageOf(err)
+    }
+
+    if (text.length > MAX_TOOL_RESULT_CHARS) {
+      // Said plainly, because a model handed a silently truncated list will
+      // confidently tell the user it is the whole list.
+      const dropped = text.length - MAX_TOOL_RESULT_CHARS
+      text =
+        text.slice(0, MAX_TOOL_RESULT_CHARS) +
+        `\n\n[truncated — ${dropped} more characters. Summarise what is here and say there is more.]`
+    }
+    call.result = text
+    call.finishedAt = Date.now()
+
+    conv.messages.push({
+      id: randomUUID(),
+      role: 'tool',
+      toolCallId: call.id,
+      content: text.length > 0 ? text : '(no output)',
+      createdAt: Date.now()
+    })
+    this.o.conversations.save(conv)
+    this.o.onLog(
+      call.status === 'error' ? 'warn' : 'info',
+      SCOPE,
+      `tool ${call.name} ${call.status} in ${Date.now() - startedAt}ms (${text.length} chars)`
+    )
+  }
+
   private metricsFor(args: {
     model: ModelInfo
     usage: { promptTokens: number; completionTokens: number }
@@ -749,6 +930,7 @@ export class LiveSession {
     decodeMs: number
     totalMs: number
     finishReason: string
+    toolSchemaTokens: number
   }): TurnMetrics {
     const metrics: TurnMetrics = {
       modelId: args.model.id,
@@ -758,9 +940,7 @@ export class LiveSession {
       totalMs: args.totalMs,
       prefillTps: rate(args.usage.promptTokens, args.ttftMs),
       decodeTps: rate(args.usage.completionTokens, args.decodeMs),
-      // The live workflow ships no tools, by design — a spoken turn cannot
-      // afford a tool round trip.
-      toolSchemaTokens: 0,
+      toolSchemaTokens: args.toolSchemaTokens,
       source: 'client',
       finishReason: args.finishReason
     }
@@ -942,6 +1122,30 @@ function attachFrame(messages: WireMessage[], frameDataUrl: string): void {
 
 function chatMessage(role: 'user' | 'assistant', content: string): ChatMessage {
   return { id: randomUUID(), role, content, createdAt: Date.now() }
+}
+
+/**
+ * Removes empty-string arguments before a call.
+ *
+ * Models are very bad at leaving an optional parameter out. Asked for the
+ * weather with no city named, this one tried `"Austin, Texas"` (a confident
+ * forecast for the wrong side of the country), then the literal placeholder
+ * `"current_location"`, and only then `""`. An empty string is never a
+ * meaningful value for an optional parameter, and a server that treats it as
+ * one rather than as absent will fail or, worse, answer about nothing. Dropping
+ * the key is what the model meant.
+ *
+ * Only the top level, and only empty strings: a nested object may legitimately
+ * carry one, and `0`, `false` and `null` all mean something.
+ */
+function dropEmptyArgs(args: unknown): unknown {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return args
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim().length === 0) continue
+    out[key] = value
+  }
+  return out
 }
 
 /** The renderer sends 16-bit PCM; an odd byte count means a truncated frame. */

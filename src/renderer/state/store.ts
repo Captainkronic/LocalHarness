@@ -195,6 +195,7 @@ const IDLE_LIVE_SESSION: LiveSessionStatus = {
   lastUserText: '',
   assistantText: '',
   turns: 0,
+  toolLabel: '',
   timings: null
 }
 

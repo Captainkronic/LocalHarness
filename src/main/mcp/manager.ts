@@ -253,11 +253,25 @@ export class McpManager {
     return this.states()
   }
 
-  wireTools(): WireTool[] {
+  /**
+   * Tools to put on the wire, optionally narrowed per server.
+   *
+   * The routing map is always rebuilt from the FULL set, never the narrowed
+   * one: routing answers "what does this name mean", which does not change
+   * with who is asking. Narrowing the routes here would mean a Live turn
+   * rebuilding them could break a Chat call already in flight.
+   */
+  wireTools(allow?: Record<string, string[]>): WireTool[] {
     const { tools, routes } = this.buildWire()
     // Keep the routing map in step with what the model was actually shown.
     this.routes = routes
-    return tools
+    if (!allow) return tools
+    return tools.filter((tool) => {
+      const route = routes.get(tool.function.name)
+      if (!route) return false
+      const permitted = allow[route.serverId]
+      return permitted === undefined || permitted.includes(route.toolName)
+    })
   }
 
   tokenCost(): number {

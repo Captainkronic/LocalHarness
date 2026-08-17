@@ -142,6 +142,22 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     autoStart: false
   },
   {
+    id: 'gmail',
+    label: 'Gmail',
+    blurb: 'Read and search Adam\'s mail.',
+    // A node CLI on the Homebrew path, not a Python server like the others.
+    // Reached through augmentedPath(), since a Finder-launched app does not
+    // inherit /opt/homebrew/bin.
+    command: 'gmail-mcp',
+    args: [],
+    env: {},
+    callTimeoutMs: 120_000,
+    // Unmeasured — the registry figure is a placeholder until the server has
+    // reported its tools, at which point the panel shows the real count.
+    estimatedTokens: 900,
+    autoStart: false
+  },
+  {
     id: 'webassets',
     label: 'Web assets',
     blurb: 'Real SVG icons and responsive WebP/AVIF image sets.',

@@ -211,6 +211,7 @@ app.whenReady().then(async () => {
   const live = new LiveSession({
     speech,
     models,
+    mcp,
     conversations,
     getSettings: () => settings.get(),
     onStatus: (s: LiveSessionStatus) => emit('event:liveStatus', s),
