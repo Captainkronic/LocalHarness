@@ -1402,3 +1402,65 @@
     opacity: 0.9;
   }
 }
+
+/* --- working, before the first token --- */
+
+/*
+ * Prefill is the longest silence in an agentic turn — twenty-plus seconds
+ * between tool calls while the model re-reads the conversation — and it used
+ * to be a blinking caret, which looks the same as a hang.
+ *
+ * The dots move because something is genuinely happening; the text says WHAT,
+ * which is also the cheapest lesson in the app about where the time goes.
+ */
+.working {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--fg-dim);
+  font-size: var(--fs-small);
+}
+
+/* Wraps, because "Reading 15.3k tokens of context — about 24s left, estimated"
+   is longer than a narrow chat column. */
+.working-text {
+  min-width: 0;
+}
+
+.working-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  animation: working-bounce 1.2s ease-in-out infinite;
+}
+
+.working-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.working-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes working-bounce {
+  0%,
+  70%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Reduced motion keeps the text, which is the part carrying the information,
+   and drops the movement that was only ever reassurance. */
+@media (prefers-reduced-motion: reduce) {
+  .working-dot {
+    animation: none;
+    opacity: 0.8;
+  }
+}
