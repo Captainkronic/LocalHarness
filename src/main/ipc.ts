@@ -229,6 +229,9 @@ export function registerIpc(d: IpcDeps): void {
 
   for (const [channel, handler] of Object.entries(handlers)) {
     ipcMain.handle(channel, async (_event, ...args: unknown[]) => {
+      if (process.env['LH_TRACE_IPC'] === '1') {
+        console.log(`[ipc] ${channel} ${JSON.stringify(args).slice(0, 160)}`)
+      }
       try {
         return await (handler as (...a: unknown[]) => unknown)(...args)
       } catch (err) {

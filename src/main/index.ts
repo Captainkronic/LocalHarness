@@ -9,7 +9,6 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
 import type { IpcEventChannel, IpcEvents } from '@shared/ipc'
 import type { LabRecord, LabStatus, McpServerState, ModelInfo, ServerHealth } from '@shared/types'
-import { DEFAULT_WORKFLOW } from '@shared/workflows'
 
 import { SettingsStore } from './store/settings'
 import { ConversationStore } from './store/conversations'
@@ -161,11 +160,13 @@ app.whenReady().then(async () => {
     onReload: () => mainWindow?.webContents.reload()
   })
 
-  // Bring up the default workflow's servers once the window exists, so the MCP
-  // panel is populated by the time the user looks at it.
-  void orchestrator.applyWorkflow(DEFAULT_WORKFLOW).catch((err: unknown) => {
-    log('warn', 'mcp', `initial workflow apply failed: ${String(err)}`)
-  })
+  // Deliberately NOT applying a workflow here. Main does not know which
+  // workflow the user is actually in — that comes from the last conversation,
+  // which only the renderer resolves during bootstrap. Starting DEFAULT_WORKFLOW
+  // speculatively spawned one set of servers and had the renderer kill them and
+  // spawn another a few hundred ms later; comfy-image was observed starting and
+  // being SIGTERMed three times before the app had painted. The renderer's
+  // bootstrap owns the first and only apply.
 
   // Focus drives the model poller's cadence — see the adaptive backoff in
   // ModelRegistry. An unfocused app must not keep polling at the fast interval.

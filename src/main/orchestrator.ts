@@ -91,6 +91,11 @@ export class Orchestrator {
     const wf = this.workflow(workflowId)
     const override = this.d.settings.get().workflowMcpOverrides[workflowId]
     const ids = override ?? wf.mcpServers
+    this.log(
+      'info',
+      'mcp',
+      `applyWorkflow(${workflowId}) -> [${ids.join(', ') || 'none'}]${override ? ' (override)' : ''}`
+    )
     return this.d.mcp.applySet(ids)
   }
 
