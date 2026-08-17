@@ -22,18 +22,32 @@ export function SkillsPanel(): JSX.Element | null {
   const skills = useStore((s) => s.skills)
   const setSkillEnabled = useStore((s) => s.setSkillEnabled)
   const refreshSkills = useStore((s) => s.refreshSkills)
+  const workflows = useStore((s) => s.workflows)
+  const activeWorkflow = useStore((s) => s.activeWorkflow)
+  const definition = useMemo(
+    () => workflows.find((w) => w.id === activeWorkflow),
+    [workflows, activeWorkflow]
+  )
 
   const [open, setOpen] = useState<string | null>(null)
   const [body, setBody] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
+  // Only the skills this workflow offers. A panel listing three skills while
+  // the turn carries none is the same class of lie as the payload figures that
+  // summed whole servers.
+  const scoped = useMemo(
+    () => (definition?.skills === undefined ? skills : skills.filter((s) => definition.skills?.includes(s.name))),
+    [skills, definition]
+  )
+
   const totals = useMemo(() => {
-    const on = skills.filter((s) => s.enabled)
+    const on = scoped.filter((s) => s.enabled)
     return {
       on: on.length,
       tokens: on.reduce((n, s) => n + s.catalogTokens, 0)
     }
-  }, [skills])
+  }, [scoped])
 
   const expand = async (path: string): Promise<void> => {
     setOpen((prev) => (prev === path ? null : path))
@@ -60,16 +74,26 @@ export function SkillsPanel(): JSX.Element | null {
         </button>
       </div>
 
-      {skills.length === 0 ? (
-        <p className="mcp-empty">
-          No skills found. A skill is a folder containing a SKILL.md with
-          <code> name</code> and <code> description</code> frontmatter, in
-          <code> ~/.claude/skills</code> or any workspace root&apos;s
-          <code> .agents/skills</code>.
-        </p>
+      {scoped.length === 0 ? (
+        // Two different nothings, and conflating them was its own small lie:
+        // "no skills found" told the user to go and write one while three sat
+        // installed and simply not offered here.
+        skills.length > 0 ? (
+          <p className="mcp-empty">
+            None of your {skills.length} skills apply to {definition?.label ?? 'this workflow'}.
+            Skills are scoped so a workflow only advertises what belongs to its job.
+          </p>
+        ) : (
+          <p className="mcp-empty">
+            No skills found. A skill is a folder containing a SKILL.md with
+            <code> name</code> and <code> description</code> frontmatter, in
+            <code> ~/.claude/skills</code> or any workspace root&apos;s
+            <code> .agents/skills</code>.
+          </p>
+        )
       ) : (
         <ul className="mcp-list scroll-y">
-          {skills.map((s) => {
+          {scoped.map((s) => {
             const isOpen = open === s.path
             return (
               <li key={s.path} className={s.enabled ? 'mcp-item is-on' : 'mcp-item'}>
@@ -126,7 +150,7 @@ export function SkillsPanel(): JSX.Element | null {
         </ul>
       )}
 
-      {skills.length > 0 ? (
+      {scoped.length > 0 ? (
         <div className="mcp-foot">
           <span className="section-label">Skill payload</span>
           {/* The MCP panel's own footer classes, so the two line up instead of
@@ -138,7 +162,7 @@ export function SkillsPanel(): JSX.Element | null {
             <span className="mcp-foot-tokens tnum">{formatTokens(totals.tokens)} tok</span>
             <span className="mcp-foot-sep">·</span>
             <span className="tnum">
-              {totals.on} of {skills.length} on
+              {totals.on} of {scoped.length} on
             </span>
           </span>
         </div>

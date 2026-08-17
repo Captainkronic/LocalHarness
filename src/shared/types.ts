@@ -62,6 +62,17 @@ export interface WorkflowDefinition {
    */
   firstMove: string
   /**
+   * Skills this workflow offers, by name. Omit to offer every enabled skill.
+   *
+   * Skills were global, so `web-game-dev` and `photography` were advertised in
+   * Research and Data alongside everything else — and asked what it could do,
+   * the model in Research answered that it could design interfaces and develop
+   * games. It believed the catalogue over the workflow. Each workflow is
+   * supposed to be one coherent function; the skills on offer have to say the
+   * same thing as the tools.
+   */
+  skills?: string[]
+  /**
    * Optional per-server tool allowlist: `{ gmail: ['read_email'] }` offers only
    * those tools from that server. Servers absent from this map are offered
    * whole.

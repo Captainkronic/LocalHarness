@@ -497,8 +497,18 @@ export class Orchestrator {
       // One tool carrying the catalogue of enabled skills. Only their names and
       // descriptions ride along on every message; a body is fetched only when
       // the model decides a skill applies. That is what keeps skills cheap.
-      ...skillTools(this.d.skills.list()),
-      ...this.d.mcp.wireTools()
+      // Scoped to the workflow: a skill that does not belong to this function
+      // is not merely wasted payload, it misinforms the model about its own
+      // job. `undefined` still means "offer everything enabled".
+      ...skillTools(
+        wf.skills === undefined
+          ? this.d.skills.list()
+          : this.d.skills.list().filter((s) => wf.skills?.includes(s.name))
+      ),
+      // The workflow's tool allowlist applies here too. It was honoured only in
+      // the Live session, so every other workflow silently offered whole
+      // servers — including gmail's send and delete — wherever gmail was on.
+      ...this.d.mcp.wireTools(wf.mcpTools)
     ]
   }
 
