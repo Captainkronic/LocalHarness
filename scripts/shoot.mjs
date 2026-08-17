@@ -36,7 +36,14 @@ if (existsSync(settingsPath)) {
 mkdirSync(dirname(outFile), { recursive: true })
 rmSync(outFile, { force: true })
 
+// detached puts the child in its OWN process group, which is the only way to
+// reap what it spawns: `npm run dev` starts electron-vite which starts Electron,
+// and killing npm leaves the Electron window running forever. Four of them
+// accumulated on Adam's screen over an hour of driven runs before this was
+// noticed, each showing an error because the settings file kept changing under
+// it. Kill the group, not the process.
 const child = spawn('npm', ['run', 'dev'], {
+  detached: true,
   env: {
     ...process.env,
     LH_SHOT_DIR: dirname(outFile),
@@ -70,12 +77,30 @@ child.stderr.on('data', (d) => {
 // seven minutes, and this deadline silently killed three attempts at verifying
 // take lineage, each time looking like the app had failed rather than the
 // harness. LH_SHOT_DEADLINE_MS raises it for those runs.
-const deadline = setTimeout(
-  () => {
-    child.kill('SIGTERM')
-  },
-  Number(process.env.LH_SHOT_DEADLINE_MS ?? 90_000)
-)
+/** SIGTERM the whole group, then SIGKILL anything still standing. Electron does
+ *  not always honour a TERM while a renderer is mid-frame. */
+function reap() {
+  if (child.pid === undefined) return
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch {
+    /* already gone */
+  }
+  setTimeout(() => {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
+  }, 4000).unref()
+}
+
+const deadline = setTimeout(reap, Number(process.env.LH_SHOT_DEADLINE_MS ?? 90_000))
+
+// A harness that leaks a window when IT is interrupted is the same bug wearing
+// a different hat.
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { reap(); process.exit(130) })
+process.on('exit', reap)
 
 child.on('exit', () => {
   clearTimeout(deadline)
