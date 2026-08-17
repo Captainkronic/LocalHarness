@@ -48,7 +48,7 @@ function PanelRow({ job }: { job: EditJob }): JSX.Element {
   const line = (job.refinedPrompt ?? job.userInstruction).trim()
 
   return (
-    <li className="ed-panel-item">
+    <li className="ed-panel-row">
       <button
         type="button"
         className="ed-panel-row"

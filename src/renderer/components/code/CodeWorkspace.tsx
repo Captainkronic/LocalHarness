@@ -234,7 +234,20 @@ export function CodeWorkspace(): JSX.Element {
         activePath={activePath}
         onSelect={setPinnedPath}
         pinned={pinnedPath !== null}
-        onPinnedChange={(p) => setPinnedPath(p ? activePath : null)}
+        // Un-pinning hands control back to the agent; it must not blank the
+        // screen. Clearing pinnedPath alone left activePath null whenever the
+        // agent had not touched a file yet, so browsing the tree and then
+        // clicking "Following" made the open file vanish behind "No file open".
+        // Seed autoPath from what is on screen FIRST, while pinnedPath still
+        // resolves it, then release the pin.
+        onPinnedChange={(p) => {
+          if (p) {
+            if (activePath) setPinnedPath(activePath)
+            return
+          }
+          setAutoPath((prev) => activePath ?? prev)
+          setPinnedPath(null)
+        }}
       />
     </div>
   )
@@ -311,7 +324,11 @@ function ModeBar(props: {
       <AutoApprove />
       {files > 0 ? (
         <span className="cw-modebar-stat tnum">
-          <span className="cw-add">+{added}</span> <span className="cw-del">−{removed}</span>{' '}
+          {/* cw-add / cw-del were defined in no stylesheet, so the only change
+              readout visible while typing rendered in inherited grey. Fourth
+              instance of this exact bug; these are the canonical pair. */}
+          <span className="cw-stat-add">+{added}</span>{' '}
+          <span className="cw-stat-del">-{removed}</span>{' '}
           across {files} file{files === 1 ? '' : 's'}
         </span>
       ) : null}

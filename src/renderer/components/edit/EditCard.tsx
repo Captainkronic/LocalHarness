@@ -266,8 +266,13 @@ function Lightbox({
       e.stopPropagation()
       onClose()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Capture phase, like ApprovalDialog. Without it this listener runs in the
+    // bubble phase alongside App's global Escape handler, whose chain does not
+    // know this overlay is open — so stopPropagation() comes too late and the
+    // same keypress that closes this ALSO aborts the turn in flight. Closing a
+    // lightbox should not throw away forty seconds of prefill.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
   return createPortal(
@@ -503,7 +508,7 @@ export function EditCard({ job }: EditCardProps): JSX.Element {
         <ArrowIcon />
 
         {/* --- prompt --- */}
-        <div className="ed-col ed-col-prompt">
+        <div className="ed-col">
           <span className="section-label">What you asked for</span>
           <p className="ed-said">
             {job.userInstruction.trim() === '' ? 'Nothing typed.' : job.userInstruction}
