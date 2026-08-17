@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
 import type { McpServerSpec, McpServerState, McpToolInfo } from '@shared/types'
+import { serverPayload } from '@renderer/lib/payload'
 import { useStore } from '@renderer/state/store'
 import { formatMs, formatTokens, formatTps } from '@renderer/lib/format'
 import { prefillRate } from '@renderer/lib/rates'
@@ -139,13 +140,13 @@ export function McpPanel(): JSX.Element {
       if (!st || st.status !== 'ready' || st.tools.length === 0) {
         return { tokens: spec.estimatedTokens, estimated: true }
       }
-      const asStored = st.tools.reduce((n, t) => n + (t.enabled ? t.tokens : 0), 0)
-      const asShown = st.tools.reduce((n, t) => n + (isToolOn(spec.id, t) ? t.tokens : 0), 0)
-      // Whatever tokenCost carries beyond the tool schemas is protocol overhead.
-      const overhead = Math.max(0, st.tokenCost - asStored)
-      return { tokens: asShown + overhead, estimated: false }
+      // Narrowed to what THIS workflow may call: showing gmail's full 3.2k in
+      // Live, which is handed two of its nineteen tools, overstates the turn
+      // by a factor of four.
+      const { tokens } = serverPayload(st, definition ?? undefined, isToolOn)
+      return { tokens, estimated: false }
     },
-    [stateById, isToolOn]
+    [stateById, isToolOn, definition]
   )
 
   const total = useMemo(() => {

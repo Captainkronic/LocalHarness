@@ -70,13 +70,32 @@ function asClampedNumber(v: unknown, min: number, max: number): number | undefin
   return Math.min(max, Math.max(min, v))
 }
 
+/**
+ * Per-workflow MCP overrides, with one migration applied on the way in.
+ *
+ * An override records that the user deviated from a workflow's own server set.
+ * The trouble is that it is stored as an absolute list, so it keeps winning
+ * after the workflow's defaults change — and a workflow that GAINS a server
+ * then silently withholds it, with the panel reading "0 tools" and nothing on
+ * screen to say why. That happened for real: Live shipped with no servers, an
+ * empty override was recorded for it, and when Live later gained mail and
+ * weather the override kept them switched off.
+ *
+ * So an EMPTY override for a workflow that ships servers is dropped. It cannot
+ * have been a considered choice about servers that did not exist yet, and if
+ * the user does want none, one toggle says so again. Non-empty overrides are
+ * left exactly as they are — those are real choices about real servers.
+ */
 function asWorkflowOverrides(v: unknown): Partial<Record<WorkflowId, string[]>> | undefined {
   if (!isRecord(v)) return undefined
   const out: Partial<Record<WorkflowId, string[]>> = {}
   for (const [key, value] of Object.entries(v)) {
     if (!(key in WORKFLOW_BY_ID)) continue
     const ids = asStringArray(value)
-    if (ids) out[key as WorkflowId] = ids
+    if (!ids) continue
+    const workflowId = key as WorkflowId
+    if (ids.length === 0 && WORKFLOW_BY_ID[workflowId].mcpServers.length > 0) continue
+    out[workflowId] = ids
   }
   return out
 }

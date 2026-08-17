@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { ReactElement } from 'react'
+import { workflowPayload } from '@renderer/lib/payload'
 import { useStore } from '@renderer/state/store'
 import { formatMs, formatTokens, formatTps } from '@renderer/lib/format'
 import { prefillRate } from '@renderer/lib/rates'
@@ -32,12 +33,11 @@ export function PayloadBudget({ onOpenMcp }: PayloadBudgetProps): ReactElement {
   const residentModelId = useStore((s) => s.health.residentModelId)
 
   const cost = useMemo(() => {
-    // Only ready servers have tools on the wire; starting/failed ones cost nothing yet.
-    const ready = mcpStates.filter((s) => s.status === 'ready')
-    const pending = mcpStates.filter((s) => s.status === 'starting').length
-    const mcpTokens = ready.reduce((n, s) => n + s.tokenCost, 0)
-
     const wf = workflows.find((w) => w.id === activeWorkflow)
+    // Only ready servers have tools on the wire; starting/failed ones cost
+    // nothing yet. Narrowed per workflow: a server's full cost is not what this
+    // workflow pays if it was handed only some of the server's tools.
+    const { servers, mcpTokens, pending } = workflowPayload(mcpStates, wf)
     const enabledNative = new Set<string>(wf ? wf.nativeTools : [])
     const native = nativeTools.filter((t) => enabledNative.has(t.id))
     const nativeTokens = native.reduce((n, t) => n + t.tokens, 0)
@@ -50,7 +50,9 @@ export function PayloadBudget({ onOpenMcp }: PayloadBudgetProps): ReactElement {
       nativeTokens,
       nativeCount: native.length,
       pending,
-      servers: ready.map((s) => ({ label: labelFor(s.id), tokens: s.tokenCost }))
+      servers: servers
+        .filter((s) => s.tokens > 0)
+        .map((s) => ({ label: labelFor(s.id), tokens: s.tokens }))
     }
   }, [mcpStates, mcpSpecs, nativeTools, workflows, activeWorkflow])
 

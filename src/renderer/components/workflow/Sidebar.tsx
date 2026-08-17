@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
 import type { WorkflowId } from '@shared/types'
+import { workflowPayload } from '@renderer/lib/payload'
 import { useStore } from '@renderer/state/store'
 import { relativeTime } from '@renderer/lib/format'
 import McpPanel from './McpPanel'
@@ -70,19 +71,13 @@ export function Sidebar(): JSX.Element {
   }, [workflows])
 
   /** What this profile actually puts on the wire: native tools it declares plus
-   *  every enabled tool on a server that has finished its handshake. */
+   *  the enabled tools it is ALLOWED on each server that finished its
+   *  handshake. A workflow may be given only part of a server, so counting the
+   *  server whole overstates it — Live is handed 2 of gmail's 19. */
   const toolCount = useMemo(() => {
     const native = definition?.nativeTools.length ?? 0
-    let mcp = 0
-    let pending = 0
-    for (const st of mcpStates) {
-      if (st.status === 'ready') {
-        mcp += st.tools.reduce((n, t) => n + (t.enabled ? 1 : 0), 0)
-      } else if (st.status === 'starting') {
-        pending += 1
-      }
-    }
-    return { native, mcp, pending, total: native + mcp }
+    const { mcpToolCount, pending } = workflowPayload(mcpStates, definition ?? undefined)
+    return { native, mcp: mcpToolCount, pending, total: native + mcpToolCount }
   }, [definition, mcpStates])
 
   // Scoped to the active workflow. A conversation belongs to where it was
