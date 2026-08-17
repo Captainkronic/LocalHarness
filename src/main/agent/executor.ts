@@ -48,6 +48,17 @@ export interface ToolExecutorOptions {
   /** Optional live effect stream for the Code workspace. Optional because the
    *  executor is fully usable without anyone watching. */
   onActivity?: (activity: ActivityInput) => void
+  /**
+   * Directories that may be READ but never written — today, the folders of the
+   * enabled skills.
+   *
+   * A skill is a folder: a SKILL.md plus the references and templates it tells
+   * the model to open. Those files live in ~/.claude/skills, which is outside
+   * any workspace, so following a skill's own instructions was refused every
+   * time. Injected rather than imported so the executor still works with no
+   * skill registry behind it.
+   */
+  readOnlyRoots?: () => string[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -556,27 +567,59 @@ export class ToolExecutor {
    * paths are taken against the first root; `~` is expanded; symlinks are
    * followed before the check so a link cannot be used to step outside.
    */
-  private async resolve(raw: string, settings: Settings, label = 'path'): Promise<string> {
+  private async resolve(
+    raw: string,
+    settings: Settings,
+    label = 'path',
+    mode: 'read' | 'write' = 'write'
+  ): Promise<string> {
     const roots = await this.roots(settings)
     if (roots.length === 0) {
       throw new ToolError(
         'Refused: no workspace roots are configured. Add a directory in Settings before using filesystem tools.'
       )
     }
+    // Skill folders are readable but never writable. A skill tells the model to
+    // open its own references and templates, so refusing them made every skill
+    // that ships files unusable — but the agent has no business EDITING the
+    // instructions it was given, so the extra reach stops at reading.
+    const extra = mode === 'read' ? await this.readOnly() : []
+    const allowed = [...roots, ...extra]
+
     const expanded = expandTilde(raw)
     const absolute = nodePath.isAbsolute(expanded)
       ? nodePath.resolve(expanded)
       : nodePath.resolve(roots[0], expanded)
     const real = await realpathish(absolute)
 
-    if (!isInsideAny(real, roots)) {
+    if (!isInsideAny(real, allowed)) {
       const list = roots.map((r) => `  ${r}`).join('\n')
+      const note =
+        extra.length > 0
+          ? `\nAlso readable (skills):\n${extra.map((r) => `  ${r}`).join('\n')}`
+          : ''
       throw new ToolError(
         `Refused: ${label} "${raw}" resolves to ${real}, which is outside every allowed workspace root.\n` +
-          `Allowed roots:\n${list}`
+          `Allowed roots:\n${list}${note}`
       )
     }
     return real
+  }
+
+  /** Realpathed skill directories, recomputed per call — skills can be
+   *  enabled, disabled or rescanned while a turn is in flight. */
+  private async readOnly(): Promise<string[]> {
+    const raw = this.opts.readOnlyRoots?.() ?? []
+    const out: string[] = []
+    for (const dir of raw) {
+      try {
+        out.push(await realpathish(nodePath.resolve(expandTilde(dir))))
+      } catch {
+        // A skill folder that has been deleted since the scan is simply not a
+        // root; it must not take the whole resolve down with it.
+      }
+    }
+    return out
   }
 
   private async display(absolute: string, settings: Settings): Promise<string> {
@@ -640,7 +683,7 @@ export class ToolExecutor {
     conversationId: string
   ): Promise<ToolResult> {
     const rawPath = reqString(args, 'path')
-    const target = await this.resolve(rawPath, settings)
+    const target = await this.resolve(rawPath, settings, 'path', 'read')
     const shown = await this.display(target, settings)
 
     if (isBinaryByName(target)) {
@@ -881,7 +924,7 @@ export class ToolExecutor {
     conversationId: string
   ): Promise<ToolResult> {
     const rawPath = reqString(args, 'path')
-    const target = await this.resolve(rawPath, settings)
+    const target = await this.resolve(rawPath, settings, 'path', 'read')
     const shown = await this.display(target, settings)
 
     const st = await statOrNull(target)
@@ -944,7 +987,7 @@ export class ToolExecutor {
       ? base
       : nodePath.join(pathArg ? expandTilde(pathArg) : '.', base)
 
-    const searchRoot = await this.resolve(rootRaw, settings, 'search root')
+    const searchRoot = await this.resolve(rootRaw, settings, 'search root', 'read')
     const shownRoot = await this.display(searchRoot, settings)
 
     const st = await statOrNull(searchRoot)
@@ -1042,7 +1085,7 @@ export class ToolExecutor {
       return fail(`Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    const target = await this.resolve(pathArg ?? '.', settings)
+    const target = await this.resolve(pathArg ?? '.', settings, 'path', 'read')
     const shown = await this.display(target, settings)
 
     const st = await statOrNull(target)

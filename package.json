@@ -18,7 +18,7 @@
     "test:calibration": "node scripts/calibration-test.mjs",
     "test:smoke": "node scripts/smoke.mjs",
     "test:activity": "node scripts/activity-test.mjs",
-    "test": "npm run typecheck && npm run test:sandbox && npm run test:calibration && npm run test:activity && node scripts/typed-call-test.mjs && node scripts/trim-test.mjs",
+    "test": "npm run typecheck && npm run test:sandbox && npm run test:calibration && npm run test:activity && node scripts/typed-call-test.mjs && node scripts/trim-test.mjs && node scripts/skillroot-test.mjs",
     "verify": "npm run test && npm run test:smoke",
     "package": "npm run build && electron-builder --mac --dir",
     "dist": "npm run build && electron-builder --mac"

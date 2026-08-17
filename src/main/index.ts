@@ -194,7 +194,11 @@ app.whenReady().then(async () => {
     getSettings: () => settings.get(),
     requestApproval: (req) => approvals.request(req),
     onLog: (level, scope, message) => log(level, scope, message),
-    onActivity: (input) => activity.record(input)
+    onActivity: (input) => activity.record(input),
+    // Enabled skills only: a disabled skill is not in play, so its folder is
+    // not readable either. Recomputed per call so toggling one takes effect
+    // immediately rather than at the next restart.
+    readOnlyRoots: () => skills.list().filter((s) => s.enabled).map((s) => s.dir)
   })
 
   // The Edit workflow is a deterministic refine-then-render pipeline rather than
