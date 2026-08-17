@@ -220,6 +220,41 @@ Measured once it was healthy: a 30-second ACE-Step song renders in **124
 seconds**. Budget roughly four seconds of render per second of music, and note
 that a shell timeout of two minutes is not enough to wait on one.
 
+## Open, from the regression audit (20 raised, 18 confirmed, 4 fixed)
+
+Full detail in the workflow output; these are the ones still standing, roughly
+in the product owner's order.
+
+1. **Edit lost its teaching step and should get it back properly.** The
+   "show your working" block was removed because Edit has NO chat view — its
+   system prompt has one consumer, the single-shot refiner, whose whole reply
+   becomes the img2img instruction (sent `confirm: true`, i.e. verbatim). The
+   narration was landing in the text encoder as image content. But per Adam the
+   confirm step exists precisely so he can watch the translation, so Edit needs
+   it back as a SECOND field: a short second call after the refine succeeds,
+   stored on a new optional `EditJob.protectedNote`, rendered under the textarea
+   in EditCard. Do NOT bodge it into `cleanPrompt` — heuristically stripping
+   prose from a free-text reply will eat real sentences of the description.
+2. **Numbers that disagree.** The empty-state cost line attributes MCP-only
+   tokens to a count that includes native tools; the HUD PAYLOAD omits the
+   `use_skill` schema that genuinely ships every message; Chat's empty state
+   says "nothing but your words goes to the server" while its own system prompt
+   is counted as context. All three are the house honesty rule.
+3. **`lastAudioTake` chains a sound effect onto a song.** `stampAudioTake`
+   matches `generate_(music|sound)` and keys lineage by conversation alone, so
+   a foley clip becomes "Take 2" of the track before it. Key by tool name too.
+4. **`conv.trimmedMessages` only ever increases.** Nothing resets it, so a
+   conversation permanently claims messages are missing after a single trim,
+   even once a bigger model makes it fit again.
+5. **The Live transcript rail goes blank during a tool call** — `pending` in
+   TranscriptPanel lists transcribing/thinking/speaking and never got 'tool'.
+6. **`.orb-scan` pulse transform-origin** is fighting `transform-box: fill-box`
+   from `.orb-svg circle`, so the scanning reticle pulses off-centre.
+7. **The empty-state swap warning can be wrong.** It compares
+   `workflow.preferredModel` against the resident model, but the main process
+   resolves `conv.modelId ?? settings.defaultModelId` FIRST and only falls
+   through to `preferredModel` — so it can promise a swap that will not happen.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
