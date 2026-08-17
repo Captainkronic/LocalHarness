@@ -1094,10 +1094,24 @@
 
 .appr-body {
   padding: var(--s4);
+  /* flex:1 + min-height:0 is load-bearing, not tidiness. A flex child defaults
+     to min-height:auto and will NOT shrink below its content, so a large diff —
+     a whole file going through write_file — grew the body past the panel's
+     max-height, and `overflow:hidden` on .appr then clipped the FOOTER. The
+     Allow and Deny buttons went off-screen and could not be clicked, so the
+     turn waited forever on a decision the user was unable to give. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+}
+
+/* The head and foot must never be squeezed by the body either. */
+.appr-head,
+.appr-foot {
+  flex: none;
 }
 
 .appr-summary {
@@ -1164,4 +1178,13 @@
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   color: var(--fg-dim);
+}
+
+/* Sits apart from Deny/Allow — it changes a setting, not just this one call. */
+.appr-auto {
+  margin-right: auto;
+  color: var(--fg-faint);
+}
+.appr-auto:hover {
+  color: var(--warn);
 }

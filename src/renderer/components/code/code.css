@@ -924,3 +924,32 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Approval mode, next to the work it governs. */
+.cw-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 4px var(--s3);
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+  color: var(--fg-muted);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.cw-auto:hover {
+  color: var(--fg);
+  border-color: var(--line-strong);
+}
+/* Amber, not green: running everything unattended is the riskier setting and
+   should read as a state you chose, not as "all good". */
+.cw-auto.is-on {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}

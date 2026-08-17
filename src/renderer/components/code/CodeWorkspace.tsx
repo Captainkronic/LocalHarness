@@ -358,6 +358,35 @@ export function CodeWorkspace(): JSX.Element {
 
 export default CodeWorkspace
 
+/**
+ * Approval mode, where the approving happens. Buried in Settings it was
+ * effectively undiscoverable mid-task, which is exactly when it is wanted.
+ */
+function AutoApprove(): JSX.Element {
+  const mode = useStore((s) => s.settings.approvalMode)
+  const updateSettings = useStore((s) => s.updateSettings)
+  const auto = mode === 'auto_all'
+  return (
+    <button
+      type="button"
+      className={auto ? 'cw-auto is-on' : 'cw-auto'}
+      role="switch"
+      aria-checked={auto}
+      title={
+        auto
+          ? 'Auto: every file write and shell command runs without asking. Click to require approval again.'
+          : 'Ask: every write and shell command needs your approval first. Click to run them automatically.'
+      }
+      onClick={() => {
+        void updateSettings({ approvalMode: auto ? 'always_ask' : 'auto_all' })
+      }}
+    >
+      <span className={auto ? 'dot dot-warn' : 'dot dot-ok'} />
+      {auto ? 'Auto-approve' : 'Ask first'}
+    </button>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* Mode bar                                                            */
 /* ------------------------------------------------------------------ */
@@ -395,6 +424,7 @@ function ModeBar(props: {
           {files > 0 ? <span className="cw-seg-badge tnum">{files}</span> : null}
         </button>
       </div>
+      <AutoApprove />
       {files > 0 ? (
         <span className="cw-modebar-stat tnum">
           <span className="cw-add">+{added}</span> <span className="cw-del">−{removed}</span>{' '}

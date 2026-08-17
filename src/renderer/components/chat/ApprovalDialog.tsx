@@ -13,6 +13,7 @@ import './chat.css'
 export default function ApprovalDialog() {
   const approvals = useStore((s) => s.approvals)
   const respondApproval = useStore((s) => s.respondApproval)
+  const updateSettings = useStore((s) => s.updateSettings)
   const cardRef = useRef<HTMLDivElement>(null)
 
   const request = approvals.length > 0 ? approvals[0] : null
@@ -90,6 +91,20 @@ export default function ApprovalDialog() {
             <kbd>esc</kbd> denies
           </span>
           <div className="appr-actions">
+            {/* The way out of being asked at all. Someone who has approved five
+                writes in a row wants this, and hunting through Settings for it
+                mid-turn is not a reasonable ask. */}
+            <button
+              type="button"
+              className="btn btn-ghost appr-auto"
+              title="Stop asking: run every tool automatically from now on. Change it back in Settings."
+              onClick={() => {
+                void updateSettings({ approvalMode: 'auto_all' })
+                void respondApproval(request.id, 'allow_once')
+              }}
+            >
+              Don't ask again
+            </button>
             <button
               type="button"
               className="btn btn-danger"
