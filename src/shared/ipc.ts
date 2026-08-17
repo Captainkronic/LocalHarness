@@ -168,6 +168,10 @@ export interface BootstrapPayload {
   conversations: ConversationSummary[]
   health: ServerHealth
   appVersion: string
+  /** Forces the starting workflow, from LH_START_WORKFLOW. Used by the
+   *  screenshot driver so a given workflow can be photographed on demand;
+   *  undefined in normal use, where the last conversation decides. */
+  startWorkflow?: WorkflowId
 }
 
 export type IpcChannel = keyof IpcApi

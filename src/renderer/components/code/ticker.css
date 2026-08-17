@@ -1,0 +1,403 @@
+/*
+ * Activity ticker + session stats.
+ *
+ * Rules this file exists to enforce:
+ *  - the log is a terminal, not a feed: one line per operation, monospaced,
+ *    columns that stay put as values arrive.
+ *  - one hue per operation kind, taken from the theme, so the eye learns the
+ *    shape of a session without reading a word: reads blue, writes magenta,
+ *    edits amber, searches periwinkle and green, shell on the workflow accent.
+ *    --danger is spent on failures alone and never on a kind.
+ *  - Chromium's scroll anchoring is off here. The component corrects scroll
+ *    position itself when rows drop off the head, and two anchoring systems
+ *    working the same problem produce double the correction.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Shell                                                               */
+/* ------------------------------------------------------------------ */
+
+.tk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-void);
+}
+
+.tk-log {
+  position: relative; /* the offsetParent every row is measured against */
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--s1) 0 var(--s2);
+  overflow-anchor: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------ */
+/* Row                                                                 */
+/* ------------------------------------------------------------------ */
+
+.tk-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0 var(--s2);
+  width: 100%;
+  padding: 1px var(--s3) 1px var(--s2);
+  border-left: 2px solid transparent;
+  text-align: left;
+  color: var(--fg-muted);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.tk-row.is-openable {
+  cursor: pointer;
+}
+.tk-row.is-openable:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.tk-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+/* New arrivals get a left-edge accent flash. A pseudo-element rather than the
+   border so it composes with the failure marker instead of fighting it. */
+.tk-row.is-new::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  animation: tk-flash 700ms var(--ease) forwards;
+}
+
+@keyframes tk-flash {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.tk-row.is-running {
+  color: var(--fg);
+}
+
+.tk-row.is-failed {
+  border-left-color: color-mix(in srgb, var(--danger) 65%, transparent);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.tk-row.is-failed.is-openable:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* ---- columns ---- */
+
+.tk-time {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+}
+
+.tk-kind {
+  flex: none;
+  min-width: 46px;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--k) 26%, transparent);
+}
+
+/* One stable hue per kind. */
+.tk-kind.is-read {
+  --k: var(--info);
+}
+.tk-kind.is-write {
+  --k: var(--metric-payload);
+}
+.tk-kind.is-edit {
+  --k: var(--warn);
+}
+.tk-kind.is-list {
+  --k: var(--fg-dim);
+}
+.tk-kind.is-glob {
+  --k: var(--metric-context);
+}
+.tk-kind.is-grep {
+  --k: var(--ok);
+}
+.tk-kind.is-shell {
+  --k: var(--accent);
+}
+
+.tk-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+.tk-row.is-shell .tk-target {
+  color: var(--fg-dim);
+}
+
+.tk-dur {
+  flex: none;
+  min-width: 52px;
+  text-align: right;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.tk-res {
+  justify-self: end;
+  max-width: 34ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.tk-stat {
+  display: inline-flex;
+  gap: var(--s2);
+}
+.tk-add {
+  color: var(--ok);
+}
+.tk-del {
+  color: var(--danger);
+}
+
+.tk-summary {
+  color: var(--fg-dim);
+}
+
+.tk-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+}
+
+.tk-failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* The whole width, wrapping, never clipped: an error truncated to fit is a
+   failure report with the useful half missing. */
+.tk-err {
+  grid-column: 1 / -1;
+  padding: 1px 0 3px 0;
+  margin-left: calc(46px + var(--s2) * 2 + 8ch);
+  color: color-mix(in srgb, var(--danger) 78%, var(--fg));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Back to live                                                        */
+/* ------------------------------------------------------------------ */
+
+.tk-jump {
+  position: absolute;
+  left: 50%;
+  bottom: var(--s3);
+  z-index: 2;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px var(--s3);
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  animation: fade-in var(--dur) var(--ease);
+}
+.tk-jump:hover {
+  filter: brightness(1.12);
+}
+.tk-jump svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Empty                                                               */
+/* ------------------------------------------------------------------ */
+
+.tk-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 56ch;
+  margin: var(--s4);
+  padding: var(--s4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+.tk-empty svg {
+  color: var(--fg-faint);
+}
+.tk-empty-head {
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.tk-empty-hint {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Session stats                                                       */
+/* ------------------------------------------------------------------ */
+
+.cs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  min-height: var(--hud-h);
+  padding: var(--s1) var(--s3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Tighter than the strip's own spacing: the bar belongs to the two numbers
+   beside it, not to the readouts on either side of them. */
+.cs-group {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.cs-sep {
+  width: 1px;
+  height: 15px;
+  flex: none;
+  background: var(--line);
+}
+
+.cs-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+}
+
+.cs-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/*
+ * Fixed slot, left aligned. Fixed because a total that widens as it counts
+ * would nudge everything after it across the strip; left because a number
+ * pushed to the right of its slot ends up nearer the next label than its own,
+ * and "3 SHELL" reads as a pair that does not exist.
+ */
+.cs-val {
+  min-width: 4ch;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  color: var(--fg);
+}
+
+.cs-val.is-add {
+  color: var(--ok);
+}
+.cs-val.is-del {
+  color: var(--danger);
+}
+.cs-val.is-read {
+  color: var(--info);
+}
+.cs-val.is-search {
+  color: var(--metric-context);
+}
+.cs-val.is-shell {
+  color: var(--accent);
+}
+
+.cs-bar {
+  display: flex;
+  width: 34px;
+  height: 4px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+/* Nothing changed yet: an inert hatched track, not a bar reading 0%. */
+.cs-bar.is-empty {
+  background-image: repeating-linear-gradient(45deg, var(--line) 0 3px, transparent 3px 6px);
+}
+.cs-bar-add {
+  height: 100%;
+  background: var(--ok);
+}
+.cs-bar-del {
+  height: 100%;
+  background: var(--danger);
+}
+
+/* ------------------------------------------------------------------ */
+/* Narrow                                                              */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 820px) {
+  .tk-dur {
+    display: none;
+  }
+  .tk-res {
+    max-width: 22ch;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion: rows simply appear.                                 */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-row.is-new::before {
+    display: none;
+  }
+  .tk-jump {
+    animation: none;
+  }
+}

@@ -155,7 +155,8 @@ You are generating audio locally: music and sound effects through ComfyUI, speec
   },
   {
     id: 'docs',
-    label: 'Documents',
+    // Short enough for the 60px rail — "Documents" truncated to "Docume…".
+    label: 'Docs',
     blurb: 'PDF, Word, PowerPoint and Excel generation.',
     glyph: '▤',
     accent: '#d99a5b',

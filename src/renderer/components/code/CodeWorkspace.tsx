@@ -1,0 +1,588 @@
+/**
+ * The Code workflow's centre column.
+ *
+ * The transcript tells you what the agent said it would do. This tells you what
+ * it is doing to the disk, while it does it: a strip of every file touched this
+ * session, the file currently under the cursor, and a ticker of every effect
+ * underneath.
+ *
+ * Two behaviours carry the whole thing:
+ *
+ *  - Auto-jump. A new write or edit pulls the viewer to that file and scrolls
+ *    to the first changed line. It is debounced, so a burst of edits across
+ *    several files resolves to one switch rather than a slideshow, and the tab
+ *    it lands on takes a short sweep so the move is explained rather than
+ *    merely happening.
+ *  - Pinning. Clicking a tab stops the jumping so the user can read. Following
+ *    and pinned are never ambiguous — the toggle at the end of the strip always
+ *    says which one is in force, and clicking it resumes following.
+ *
+ * The activity stream carries operations with no file behind them — shell
+ * commands, greps, globs. Those live in the ticker, which is the only place
+ * they can honestly be shown.
+ */
+
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+
+import type { FileActivity, FileOpKind } from '@shared/types'
+import { useStore } from '@renderer/state/store'
+import { basename, clockTime, formatMs, shortenPath } from '@renderer/lib/format'
+import FileViewer from './FileViewer'
+import './code.css'
+
+/** How long a burst of cross-file edits has to settle before the viewer moves. */
+const JUMP_DEBOUNCE_MS = 260
+/** How long the sweep stays on a newly focused tab. */
+const SWEEP_MS = 900
+/** Ticker depth. Enough to see the shape of a run, not a log file. */
+const TICKER_ROWS = 40
+
+export interface Tab {
+  path: string
+  displayPath: string
+  name: string
+  lastKind: FileOpKind
+  added: number
+  removed: number
+  touches: number
+  lastAt: number
+  /** Newest write/edit that produced content the viewer can show. */
+  latest: FileActivity | null
+  failed: boolean
+}
+
+export function CodeWorkspace(): JSX.Element {
+  const activityAll = useStore((s) => s.fileActivity)
+  const conversationId = useStore((s) => s.activeConversationId)
+  const phase = useStore((s) => s.live.phase)
+  const roots = useStore((s) => s.settings.workspaceRoots)
+
+  const [pinnedPath, setPinnedPath] = useState<string | null>(null)
+  const [autoPath, setAutoPath] = useState<string | null>(null)
+  const [sweep, setSweep] = useState<{ path: string; gen: number } | null>(null)
+  const [tickerOpen, setTickerOpen] = useState(true)
+  const sweepGen = useRef(0)
+
+  /* The store is app-wide; the workspace is per conversation. */
+  const activities = useMemo(
+    () =>
+      conversationId
+        ? activityAll.filter((a) => a.conversationId === conversationId)
+        : activityAll,
+    [activityAll, conversationId]
+  )
+
+  /* One row per operation: a 'done' replaces the 'start' it belongs to rather
+     than stacking a second row underneath it. */
+  const rows = useMemo(() => reconcile(activities), [activities])
+
+  /* Tools run one at a time, so only the last row can still be in flight — and
+     only while the turn is actually running. Anything else claiming to be
+     'start' was abandoned (a denied write never emits its 'done'). */
+  const liveRow =
+    phase !== 'idle' && rows.length > 0 && rows[rows.length - 1].phase === 'start'
+      ? rows[rows.length - 1]
+      : null
+
+  const tabs = useMemo(() => buildTabs(rows), [rows])
+  const tabIndex = useMemo(() => new Map(tabs.map((t) => [t.path, t])), [tabs])
+
+  /* What auto-jump follows: the newest change with a file behind it. A write
+     that has only started still counts — being taken to the file as it opens is
+     the point — but only when there is already something to render there, so
+     the viewer never lands on "cannot read" for a file about to be created. */
+  const jump = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const a = rows[i]
+      if (a.kind !== 'write' && a.kind !== 'edit') continue
+      if (a.phase === 'done') return a
+      if (a.phase === 'start') return tabIndex.get(a.target)?.latest ? a : null
+      return null
+    }
+    return null
+  }, [rows, tabIndex])
+  const jumpId = jump?.id ?? null
+
+  const activePath = pinnedPath ?? autoPath ?? tabs[0]?.path ?? null
+  const activeTab = activePath ? (tabIndex.get(activePath) ?? null) : null
+
+  /* ---- auto-jump ----------------------------------------------------- */
+
+  useEffect(() => {
+    if (!jump || pinnedPath) return
+    if (jump.target === autoPath) return
+    const target = jump.target
+    const timer = window.setTimeout(() => setAutoPath(target), JUMP_DEBOUNCE_MS)
+    // A newer activity re-runs this effect and cancels the pending move, so a
+    // burst coalesces into a single switch.
+    return () => window.clearTimeout(timer)
+  }, [jumpId, jump, pinnedPath, autoPath])
+
+  /* The sweep marks a move the user did not ask for. Clicking a tab needs no
+     explanation, so it gets none. */
+  useEffect(() => {
+    if (!autoPath || pinnedPath) return
+    sweepGen.current += 1
+    setSweep({ path: autoPath, gen: sweepGen.current })
+    const timer = window.setTimeout(() => setSweep(null), SWEEP_MS)
+    return () => window.clearTimeout(timer)
+  }, [autoPath, pinnedPath])
+
+  const totals = useMemo(
+    () =>
+      tabs.reduce(
+        (acc, t) => ({ added: acc.added + t.added, removed: acc.removed + t.removed }),
+        { added: 0, removed: 0 }
+      ),
+    [tabs]
+  )
+
+  const pinTab = (path: string): void => {
+    // Clicking the pinned tab again hands control back to the agent.
+    setPinnedPath((prev) => (prev === path ? null : path))
+    if (pinnedPath === path) setAutoPath(path)
+  }
+
+  const resumeFollowing = (): void => {
+    setPinnedPath(null)
+    setAutoPath(jump?.target ?? tabs[0]?.path ?? null)
+  }
+
+  return (
+    <div className="cw">
+      {tabs.length > 0 ? (
+        <div className="cw-tabs">
+          <div className="cw-tabstrip" role="tablist" aria-label="Touched files">
+            {tabs.map((t) => {
+              const isActive = t.path === activePath
+              // Narrowed here rather than inline, so the glyph can follow the
+              // in-flight operation without a non-null assertion.
+              const liveKind = liveRow && liveRow.target === t.path ? liveRow.kind : null
+              const isLive = liveKind !== null
+              return (
+                <button
+                  key={t.path}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={
+                    'cw-tab' +
+                    (isActive ? ' is-active' : '') +
+                    (isLive ? ' is-live' : '') +
+                    (t.failed ? ' is-failed' : '') +
+                    (pinnedPath === t.path ? ' is-pinned' : '')
+                  }
+                  title={`${t.path}\n${t.touches} touch${t.touches === 1 ? '' : 'es'} · ${
+                    pinnedPath === t.path ? 'click to unpin' : 'click to pin'
+                  }`}
+                  onClick={() => pinTab(t.path)}
+                >
+                  <KindIcon kind={liveKind ?? t.lastKind} />
+                  <span className="cw-tab-name">{t.name}</span>
+                  {t.added > 0 || t.removed > 0 ? (
+                    <span className="cw-tab-stat tnum">
+                      <span className="cw-stat-add">+{t.added}</span>
+                      <span className="cw-stat-del">-{t.removed}</span>
+                    </span>
+                  ) : null}
+                  {pinnedPath === t.path ? <PinIcon /> : null}
+                  {sweep && sweep.path === t.path ? (
+                    <span key={sweep.gen} className="cw-tab-sweep" aria-hidden="true" />
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            type="button"
+            className={pinnedPath ? 'cw-follow is-pinned' : 'cw-follow'}
+            onClick={pinnedPath ? resumeFollowing : undefined}
+            aria-pressed={pinnedPath !== null}
+            title={
+              pinnedPath
+                ? `Pinned to ${basename(pinnedPath)}. The viewer stays here while the agent works elsewhere. Click to follow again.`
+                : 'Following the agent. The viewer jumps to each file as it is written.'
+            }
+          >
+            {pinnedPath ? <PinIcon /> : <FollowIcon />}
+            <span>{pinnedPath ? 'Pinned' : 'Following'}</span>
+          </button>
+        </div>
+      ) : null}
+
+      <div className="cw-main">
+        {activities.length === 0 ? (
+          <div className="cw-idle">
+            <p className="cw-idle-title">
+              Standing by<span className="cw-caret" aria-hidden="true" />
+            </p>
+            <p className="cw-idle-body">
+              Every file the agent reads, writes or edits opens here as it happens,
+              with the changed lines marked. Shell commands and searches run past in
+              the ticker below.
+            </p>
+            {roots.length === 0 ? (
+              <p className="cw-idle-warn">
+                No workspace roots are configured, so every file tool and every shell
+                command will be refused before it is offered for approval. Add a root
+                in Settings.
+              </p>
+            ) : (
+              <p className="cw-idle-roots tnum">
+                {roots.length} sandbox root{roots.length === 1 ? '' : 's'} ·{' '}
+                {roots.map((r) => basename(r)).join(' · ')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <FileViewer path={activePath} activity={activeTab?.latest ?? null} />
+        )}
+      </div>
+
+      <Ticker
+        rows={rows}
+        liveId={liveRow?.id ?? null}
+        open={tickerOpen}
+        onToggle={() => setTickerOpen((v) => !v)}
+        files={tabs.length}
+        totals={totals}
+      />
+    </div>
+  )
+}
+
+export default CodeWorkspace
+
+/* ------------------------------------------------------------------ */
+/* Ticker                                                              */
+/* ------------------------------------------------------------------ */
+
+function Ticker(props: {
+  rows: FileActivity[]
+  liveId: string | null
+  open: boolean
+  onToggle(): void
+  files: number
+  totals: { added: number; removed: number }
+}): JSX.Element {
+  const { rows, liveId, open, onToggle, files, totals } = props
+  const listRef = useRef<HTMLOListElement | null>(null)
+  const stickRef = useRef(true)
+  const [atBottom, setAtBottom] = useState(true)
+
+  const shown = useMemo(() => rows.slice(-TICKER_ROWS), [rows])
+  const tail = shown[shown.length - 1]
+  const tailKey = `${shown.length}:${tail?.id ?? ''}:${tail?.phase ?? ''}`
+
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || !stickRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [tailKey, open])
+
+  const onScroll = (): void => {
+    const el = listRef.current
+    if (!el) return
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 12
+    stickRef.current = bottom
+    if (bottom !== atBottom) setAtBottom(bottom)
+  }
+
+  const jump = (): void => {
+    const el = listRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    stickRef.current = true
+    setAtBottom(true)
+  }
+
+  return (
+    <section className={open ? 'cw-tick' : 'cw-tick is-collapsed'} aria-label="Activity">
+      <header className="cw-tick-head">
+        <button
+          type="button"
+          className="cw-tick-toggle"
+          onClick={onToggle}
+          aria-expanded={open}
+          title={open ? 'Collapse the ticker' : 'Expand the ticker'}
+        >
+          <Chevron open={open} />
+          <span className="section-label">Activity</span>
+        </button>
+        <span className="cw-tick-counts tnum">
+          <span>{rows.length} ops</span>
+          <span className="cw-tick-sep" />
+          <span>
+            {files} file{files === 1 ? '' : 's'}
+          </span>
+          {totals.added > 0 || totals.removed > 0 ? (
+            <>
+              <span className="cw-tick-sep" />
+              <span className="cw-stat-add">+{totals.added}</span>
+              <span className="cw-stat-del">-{totals.removed}</span>
+            </>
+          ) : null}
+        </span>
+        {open && !atBottom ? (
+          <button type="button" className="cw-tick-jump" onClick={jump}>
+            Latest ↓
+          </button>
+        ) : null}
+      </header>
+
+      {open ? (
+        <ol className="cw-tick-list scroll-y" ref={listRef} onScroll={onScroll}>
+          {shown.length === 0 ? (
+            <li className="cw-tick-empty">
+              No filesystem activity yet. Reads, writes, edits, searches and shell
+              commands all appear here in the order they happen.
+            </li>
+          ) : (
+            shown.map((a) => <TickRow key={a.id} a={a} live={a.id === liveId} />)
+          )}
+        </ol>
+      ) : null}
+    </section>
+  )
+}
+
+function TickRow({ a, live }: { a: FileActivity; live: boolean }): JSX.Element {
+  const label =
+    a.kind === 'shell' || a.kind === 'grep' || a.kind === 'glob'
+      ? a.target
+      : shortenPath(a.displayPath, 3)
+
+  const stat =
+    a.added !== undefined || a.removed !== undefined
+      ? `+${a.added ?? 0} -${a.removed ?? 0}`
+      : null
+
+  return (
+    <li
+      className={`cw-tick-row is-${a.kind} is-${a.phase}${live ? ' is-live' : ''}`}
+      title={`${a.target}${a.summary ? `\n${a.summary}` : ''}${a.error ? `\n${a.error}` : ''}`}
+    >
+      <span className="cw-tick-time tnum">{clockTime(a.at)}</span>
+      <span className="cw-tick-glyph">
+        <KindIcon kind={a.kind} />
+      </span>
+      <span className="cw-tick-path">{label}</span>
+      <span className="cw-tick-meta">
+        {live ? (
+          <span className="cw-tick-run">
+            <span className="dot dot-busy" />
+            running
+          </span>
+        ) : a.phase === 'start' ? (
+          <span className="cw-tick-dim">unresolved</span>
+        ) : a.phase === 'error' ? (
+          <span className="cw-tick-err">{a.error ?? 'failed'}</span>
+        ) : stat ? (
+          <span className="tnum">
+            <span className="cw-stat-add">+{a.added ?? 0}</span>
+            <span className="cw-stat-del">-{a.removed ?? 0}</span>
+          </span>
+        ) : (
+          <span className="cw-tick-dim">{a.summary ?? a.kind}</span>
+        )}
+      </span>
+      <span className="cw-tick-dur tnum">
+        {a.durationMs !== undefined ? formatMs(a.durationMs) : ''}
+      </span>
+    </li>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Derivation                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Collapse the raw stream into one row per operation.
+ *
+ * Most tools emit start and done under the same id. write_file and edit_file do
+ * not — their rich 'done' is emitted from inside the tool with a fresh id — so
+ * a done is also matched back to a pending start by kind and target.
+ */
+export function reconcile(activities: FileActivity[]): FileActivity[] {
+  const rows: FileActivity[] = []
+  const byId = new Map<string, number>()
+  const pending = new Map<string, number>()
+
+  for (const a of activities) {
+    const key = `${a.kind}|${a.target}`
+    if (a.phase === 'start') {
+      byId.set(a.id, rows.length)
+      pending.set(key, rows.length)
+      rows.push(a)
+      continue
+    }
+    const at = byId.get(a.id) ?? pending.get(key)
+    if (at === undefined) {
+      rows.push(a)
+      continue
+    }
+    rows[at] = a
+    byId.delete(a.id)
+    pending.delete(key)
+  }
+  return rows
+}
+
+function isFileKind(kind: FileOpKind): boolean {
+  return kind === 'read' || kind === 'write' || kind === 'edit'
+}
+
+/** One tab per file, newest touch first, with the change stat accumulated. */
+export function buildTabs(rows: FileActivity[]): Tab[] {
+  const byPath = new Map<string, Tab>()
+
+  for (const a of rows) {
+    if (!isFileKind(a.kind)) continue
+    const prev = byPath.get(a.target)
+    const tab: Tab = prev ?? {
+      path: a.target,
+      displayPath: a.displayPath,
+      name: basename(a.target),
+      lastKind: a.kind,
+      added: 0,
+      removed: 0,
+      touches: 0,
+      lastAt: 0,
+      latest: null,
+      failed: false
+    }
+    tab.displayPath = a.displayPath
+    tab.lastKind = a.kind
+    tab.lastAt = Math.max(tab.lastAt, a.at)
+    if (a.phase === 'done') {
+      tab.touches += 1
+      tab.added += a.added ?? 0
+      tab.removed += a.removed ?? 0
+      tab.failed = false
+      // A read has no diff and no content; it must not displace the last write,
+      // or opening the file would lose the change markers.
+      if (a.kind === 'write' || a.kind === 'edit') tab.latest = a
+      else if (tab.latest === null) tab.latest = a
+    } else if (a.phase === 'error') {
+      tab.failed = true
+    }
+    byPath.set(a.target, tab)
+  }
+
+  return [...byPath.values()].sort((a, b) => b.lastAt - a.lastAt)
+}
+
+/* ------------------------------------------------------------------ */
+/* Icons                                                               */
+/* ------------------------------------------------------------------ */
+
+function Svg({ children }: { children: JSX.Element | JSX.Element[] }): JSX.Element {
+  return (
+    <svg
+      className="cw-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function KindIcon({ kind }: { kind: FileOpKind }): JSX.Element {
+  switch (kind) {
+    case 'read':
+      return (
+        <Svg>
+          <path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" />
+          <circle cx="8" cy="8" r="1.7" />
+        </Svg>
+      )
+    case 'write':
+      return (
+        <Svg>
+          <path d="M9 1.8H4.6A1.6 1.6 0 003 3.4v9.2a1.6 1.6 0 001.6 1.6h6.8a1.6 1.6 0 001.6-1.6V5.8L9 1.8z" />
+          <path d="M9 1.8v4h4" />
+        </Svg>
+      )
+    case 'edit':
+      return (
+        <Svg>
+          <path d="M11.4 2.3l2.3 2.3-7.4 7.4-3 .7.7-3 7.4-7.4z" />
+          <path d="M2.5 14h11" />
+        </Svg>
+      )
+    case 'list':
+      return (
+        <Svg>
+          <path d="M1.8 4.2a1 1 0 011-1h3.1l1.4 1.9h5.9a1 1 0 011 1v5.7a1 1 0 01-1 1h-10.4a1 1 0 01-1-1V4.2z" />
+        </Svg>
+      )
+    case 'glob':
+      return (
+        <Svg>
+          <path d="M8 2.2v11.6M3 5.1l10 5.8M13 5.1L3 10.9" />
+        </Svg>
+      )
+    case 'grep':
+      return (
+        <Svg>
+          <circle cx="7" cy="7" r="4.3" />
+          <path d="M10.2 10.2L14 14" />
+        </Svg>
+      )
+    case 'shell':
+    default:
+      return (
+        <Svg>
+          <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="1.4" />
+          <path d="M4.6 6.2L6.9 8l-2.3 1.8M8.6 10.2h3" />
+        </Svg>
+      )
+  }
+}
+
+function PinIcon(): JSX.Element {
+  return (
+    <Svg>
+      <path d="M6.2 1.8h3.6v4l1.8 2.4h-7.2l1.8-2.4v-4z" />
+      <path d="M8 8.2v6" />
+    </Svg>
+  )
+}
+
+function FollowIcon(): JSX.Element {
+  return (
+    <Svg>
+      <circle cx="8" cy="8" r="2.6" />
+      <path d="M8 1.4v2M8 12.6v2M1.4 8h2M12.6 8h2" />
+    </Svg>
+  )
+}
+
+function Chevron({ open }: { open: boolean }): JSX.Element {
+  return (
+    <svg
+      className={open ? 'cw-chev is-open' : 'cw-chev'}
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  )
+}

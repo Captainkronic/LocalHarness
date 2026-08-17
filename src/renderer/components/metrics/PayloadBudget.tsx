@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { ReactElement } from 'react'
 import { useStore } from '@renderer/state/store'
 import { formatMs, formatTokens, formatTps } from '@renderer/lib/format'
+import { prefillRate } from '@renderer/lib/rates'
 import './metrics.css'
 
 export interface PayloadBudgetProps {
@@ -10,17 +11,6 @@ export interface PayloadBudgetProps {
    * renders this readout non-interactive unless a handler is supplied.
    */
   onOpenMcp?: () => void
-}
-
-/** Last resort prefill rate, used only when nothing has been measured yet. */
-const FALLBACK_TPS = 250
-/** Recent Lab records to average the learned prefill rate over. */
-const RATE_WINDOW = 8
-
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b)
-  const mid = s.length >> 1
-  return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
 /**
@@ -64,23 +54,16 @@ export function PayloadBudget({ onOpenMcp }: PayloadBudgetProps): ReactElement {
     }
   }, [mcpStates, mcpSpecs, nativeTools, workflows, activeWorkflow])
 
-  // Prefer a rate somebody actually measured over anything we assume.
-  const rate = useMemo(() => {
-    const usable = labHistory.filter((r) => Number.isFinite(r.prefillTps) && r.prefillTps > 0)
-    const forModel = residentModelId ? usable.filter((r) => r.model === residentModelId) : []
-    const pool = (forModel.length > 0 ? forModel : usable).slice(-RATE_WINDOW)
-    if (pool.length > 0) {
-      return {
-        tps: median(pool.map((r) => r.prefillTps)),
-        measured: true,
-        source: `median of the last ${pool.length} completed request${pool.length === 1 ? '' : 's'}`
-      }
-    }
-    if (livePrefillTps !== null && livePrefillTps > 0 && !livePrefillEstimated) {
-      return { tps: livePrefillTps, measured: true, source: 'measured on the current turn' }
-    }
-    return { tps: FALLBACK_TPS, measured: false, source: 'assumed default — nothing measured yet' }
-  }, [labHistory, residentModelId, livePrefillTps, livePrefillEstimated])
+  // Shared with the sidebar's MCP panel — see lib/rates.ts for why the median,
+  // and why these must not be two implementations.
+  const rate = useMemo(
+    () =>
+      prefillRate(labHistory, residentModelId, {
+        tps: livePrefillTps,
+        estimated: livePrefillEstimated
+      }),
+    [labHistory, residentModelId, livePrefillTps, livePrefillEstimated]
+  )
 
   const addedMs = cost.total > 0 ? (cost.total / rate.tps) * 1000 : 0
 

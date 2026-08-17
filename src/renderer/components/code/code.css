@@ -1,0 +1,847 @@
+/*
+ * The Code workspace: tab strip, file viewer, activity ticker.
+ *
+ * Everything structural comes from styles/theme.css. The only new tokens are
+ * the --code-* syntax hues, which have to exist because there is no palette for
+ * source text in the design system and there is no highlighter dependency to
+ * bring one. They are defined for both palettes below and used nowhere else.
+ *
+ * Motion rule for this file: every animation is tied to an event that actually
+ * happened — a file being written, the viewer being moved for you, a line
+ * landing on disk. Nothing loops for decoration. Under prefers-reduced-motion
+ * the states and the markers stay; the performance stops.
+ */
+
+:root {
+  /* syntax */
+  --code-com: #616a7e;
+  --code-str: #7fbf87;
+  --code-num: #d9a441;
+  --code-kw: #c08adf;
+  --code-typ: #e0c07a;
+  --code-fn: #5b9dd9;
+  --code-prop: #7f8ee0;
+  --code-punc: #737b8d;
+
+  /* Change indicators, derived from the semantic pair. Opaque on purpose: the
+     line-number gutter is sticky and inherits this, so a translucent tint would
+     let long lines scroll visibly underneath the numbers. */
+  --code-add-rest: color-mix(in srgb, var(--ok) 11%, var(--bg-void));
+  --code-add-hit: color-mix(in srgb, var(--ok) 32%, var(--bg-void));
+  --code-cut: color-mix(in srgb, var(--danger) 75%, transparent);
+}
+
+:root[data-theme='light'] {
+  --code-com: #8a92a0;
+  --code-str: #2f7d4f;
+  --code-num: #9a6b12;
+  --code-kw: #8438b8;
+  --code-typ: #855f0f;
+  --code-fn: #1f6fb2;
+  --code-prop: #4553b8;
+  --code-punc: #79808f;
+
+  --code-add-rest: color-mix(in srgb, var(--ok) 14%, var(--bg-void));
+  --code-add-hit: color-mix(in srgb, var(--ok) 30%, var(--bg-void));
+}
+
+/* ------------------------------------------------------------------ */
+/* Column                                                              */
+/* ------------------------------------------------------------------ */
+
+.cw {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.cw-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cw-icon {
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tab strip                                                           */
+/* ------------------------------------------------------------------ */
+
+.cw-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.cw-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.cw-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  overflow: hidden;
+  padding: 4px var(--s2);
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+  background: transparent;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.cw-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+}
+
+/* The active tab is painted in the viewer's own ground so it reads as attached
+   to the pane below — which is what keeps it distinct from the live tab, whose
+   accent tint means something else entirely. */
+.cw-tab.is-active {
+  background: var(--bg-void);
+  border-color: var(--line);
+  color: var(--fg);
+}
+
+.cw-tab.is-pinned {
+  border-color: var(--accent-line);
+}
+
+.cw-tab.is-failed .cw-tab-name {
+  color: var(--danger);
+}
+
+/* The file being written right now. The underline is the only looping
+   animation in the workspace, and it stops the moment the write lands. */
+.cw-tab.is-live {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
+.cw-tab.is-live::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  animation: cw-live 1.2s var(--ease) infinite;
+}
+
+@keyframes cw-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.22;
+  }
+}
+
+.cw-tab-name {
+  font-family: var(--font-mono);
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-tab-stat {
+  display: inline-flex;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+/* One pass of light on the tab the workspace just moved you to. */
+.cw-tab-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 15%,
+    color-mix(in srgb, var(--accent) 34%, transparent) 50%,
+    transparent 85%
+  );
+  animation: cw-sweep 700ms var(--ease) 1 both;
+}
+
+@keyframes cw-sweep {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(115%);
+  }
+}
+
+.cw-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 3px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+  color: var(--ok);
+  background: var(--bg-raised);
+  cursor: default;
+}
+
+.cw-follow.is-pinned {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  cursor: pointer;
+}
+
+.cw-follow.is-pinned:hover {
+  background: var(--bg-hover);
+}
+
+/* ------------------------------------------------------------------ */
+/* Empty workspace                                                     */
+/* ------------------------------------------------------------------ */
+
+.cw-idle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: auto;
+  max-width: 52ch;
+  padding: var(--s6);
+  text-align: center;
+}
+
+.cw-idle-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  color: var(--fg-muted);
+}
+
+.cw-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  margin-left: 6px;
+  vertical-align: -2px;
+  background: var(--accent);
+  animation: cw-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes cw-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cw-idle-body {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.cw-idle-warn {
+  padding: var(--s2) var(--s3);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--r);
+  font-size: var(--fs-small);
+  color: var(--warn);
+  text-align: left;
+}
+
+.cw-idle-roots {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Viewer                                                              */
+/* ------------------------------------------------------------------ */
+
+.cw-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-void);
+}
+
+.cw-view-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: none;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.cw-view-id {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cw-view-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.cw-view-name-none {
+  color: var(--fg-faint);
+}
+
+.cw-view-dir {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-view-facts {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+}
+
+.cw-view-dim {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.cw-op {
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+}
+
+.cw-op.is-write,
+.cw-op.is-edit {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+
+.cw-stat {
+  display: inline-flex;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.cw-stat-add {
+  color: var(--ok);
+}
+
+.cw-stat-del {
+  color: var(--danger);
+}
+
+.cw-seg {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.cw-seg-btn {
+  padding: 2px var(--s2);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+  background: var(--bg-raised);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.cw-seg-btn + .cw-seg-btn {
+  border-left: 1px solid var(--line);
+}
+
+.cw-seg-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.cw-seg-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.cw-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cw-banner {
+  flex: none;
+  padding: var(--s1) var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+  font-size: var(--fs-tiny);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.cw-banner.is-error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+
+/* ---- placeholders ---- */
+
+.cw-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  margin: auto;
+  max-width: 46ch;
+  padding: var(--s6);
+  text-align: center;
+}
+
+.cw-place-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  color: var(--fg-muted);
+}
+
+.cw-place-body {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+/* ---- code body ---- */
+
+.cw-code {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--s2) 0 var(--s6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.62;
+  background: var(--bg-void);
+}
+
+.cw-lines {
+  min-width: max-content;
+}
+
+.cw-ln {
+  position: relative;
+  display: flex;
+  width: 100%;
+  white-space: pre;
+  background: var(--bg-void);
+}
+
+.cw-ln-no {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  width: calc(var(--cw-gut, 4ch) + var(--s3));
+  padding-right: var(--s2);
+  text-align: right;
+  color: var(--fg-faint);
+  background: inherit;
+  user-select: none;
+}
+
+/* Gutter bar: present on every changed line, whatever the animation is doing. */
+.cw-ln-mark {
+  position: sticky;
+  left: calc(var(--cw-gut, 4ch) + var(--s3));
+  z-index: 1;
+  flex: none;
+  width: 2px;
+  margin-right: var(--s3);
+  background: transparent;
+}
+
+.cw-ln.is-changed {
+  background: var(--code-add-rest);
+}
+
+.cw-ln.is-changed .cw-ln-mark {
+  background: var(--ok);
+}
+
+.cw-ln.is-changed .cw-ln-no {
+  color: color-mix(in srgb, var(--ok) 60%, var(--fg-muted));
+}
+
+/* Removed lines cannot exist in an after-state, so they are marked between the
+   lines that survived them rather than invented back in. */
+.cw-ln-cut {
+  position: absolute;
+  left: 0;
+  top: -4px;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--code-cut);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+.cw-ln.has-cut::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--cw-gut, 4ch) + var(--s3));
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger) 55%, transparent) 0 4px,
+    transparent 4px 9px
+  );
+}
+
+.cw-ln-txt {
+  flex: 1 1 auto;
+  padding-right: var(--s6);
+  color: var(--fg-muted);
+}
+
+/* The arrival flash: bright on landing, decayed to the resting tint by 2s. */
+.cw-ln.is-fresh {
+  animation: cw-flash 2s var(--ease) var(--cw-d, 0ms) both;
+}
+
+@keyframes cw-flash {
+  0%,
+  35% {
+    background: var(--code-add-hit);
+    box-shadow: inset 3px 0 0 var(--ok);
+  }
+  100% {
+    background: var(--code-add-rest);
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
+/* Sequenced only when the file was already on screen — see FileViewer. */
+.cw-code.is-seq .cw-ln.is-fresh .cw-ln-txt {
+  animation: cw-reveal 220ms var(--ease) var(--cw-d, 0ms) both;
+}
+
+@keyframes cw-reveal {
+  0% {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- diff mode ---- */
+
+.cw-diff-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--s2);
+}
+
+.cw-diff {
+  height: 100%;
+  border-color: var(--line-subtle);
+}
+
+.cw-diff .diff-body {
+  max-height: none;
+  height: 100%;
+}
+
+/* ---- syntax ---- */
+
+.t-c {
+  color: var(--code-com);
+  font-style: italic;
+}
+.t-s {
+  color: var(--code-str);
+}
+.t-n {
+  color: var(--code-num);
+}
+.t-k {
+  color: var(--code-kw);
+}
+.t-t {
+  color: var(--code-typ);
+}
+.t-f {
+  color: var(--code-fn);
+}
+.t-d {
+  color: var(--code-prop);
+}
+.t-u {
+  color: var(--code-punc);
+}
+
+/* ------------------------------------------------------------------ */
+/* Ticker                                                              */
+/* ------------------------------------------------------------------ */
+
+.cw-tick {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+
+.cw-tick-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+  padding: var(--s1) var(--s3);
+}
+
+.cw-tick-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  color: var(--fg-faint);
+}
+
+.cw-tick-toggle:hover .section-label {
+  color: var(--fg-dim);
+}
+
+.cw-chev {
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.cw-chev.is-open {
+  transform: rotate(90deg);
+}
+
+.cw-tick-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.cw-tick-sep {
+  width: 1px;
+  height: 9px;
+  background: var(--line);
+}
+
+.cw-tick-jump {
+  flex: none;
+  padding: 1px var(--s2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cw-tick-list {
+  flex: none;
+  height: clamp(104px, 20vh, 220px);
+  margin: 0;
+  padding: 0 0 var(--s1);
+  list-style: none;
+  border-top: 1px solid var(--line-subtle);
+  background: var(--bg-void);
+  /* The top row is usually half-scrolled out. Fading it says "there is more
+     above" instead of looking like a clipped render. */
+  mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+}
+
+.cw-tick-empty {
+  padding: var(--s3);
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+.cw-tick-row {
+  display: grid;
+  grid-template-columns: auto 16px minmax(0, 1fr) minmax(0, auto) 5ch;
+  align-items: center;
+  gap: var(--s2);
+  padding: 1px var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+  animation: fade-in var(--dur) var(--ease) both;
+}
+
+.cw-tick-row:hover {
+  background: var(--bg-hover);
+}
+
+.cw-tick-time {
+  color: var(--fg-faint);
+}
+
+.cw-tick-glyph {
+  display: inline-flex;
+  color: var(--fg-faint);
+}
+
+.cw-tick-row.is-write .cw-tick-glyph,
+.cw-tick-row.is-edit .cw-tick-glyph {
+  color: var(--ok);
+}
+
+.cw-tick-row.is-grep .cw-tick-glyph,
+.cw-tick-row.is-glob .cw-tick-glyph {
+  color: var(--metric-context);
+}
+
+.cw-tick-row.is-shell .cw-tick-glyph {
+  color: var(--warn);
+}
+
+.cw-tick-row.is-error .cw-tick-glyph,
+.cw-tick-row.is-error .cw-tick-path {
+  color: var(--danger);
+}
+
+.cw-tick-row.is-live {
+  background: var(--accent-soft);
+}
+
+.cw-tick-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.cw-tick-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.cw-tick-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+}
+
+.cw-tick-dim {
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-tick-err {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-tick-dur {
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * theme.css already collapses animation *durations* globally. Delays survive
+ * that, and a staggered reveal with zero duration is still a stagger — so the
+ * sequencing, the sweep and the pulses are removed outright here. The gutter
+ * marks, tints and state changes all stay: they are the information.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cw-ln.is-fresh {
+    animation-delay: 0s !important;
+  }
+
+  .cw-code.is-seq .cw-ln.is-fresh .cw-ln-txt {
+    animation: none !important;
+  }
+
+  .cw-tab-sweep {
+    display: none;
+  }
+
+  .cw-tab.is-live::after,
+  .cw-caret {
+    animation: none !important;
+    opacity: 1;
+  }
+
+  .cw-tick-row {
+    animation: none !important;
+  }
+}

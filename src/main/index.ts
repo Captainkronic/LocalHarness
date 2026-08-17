@@ -33,6 +33,7 @@ import { ActivityTracker } from './agent/activity'
 import { Orchestrator } from './orchestrator'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
+import { setupScreenshots } from './screenshot'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -216,6 +217,8 @@ app.whenReady().then(async () => {
 
   // Focus drives the model poller's cadence — see the adaptive backoff in
   // ModelRegistry. An unfocused app must not keep polling at the fast interval.
+  setupScreenshots(() => mainWindow, log)
+
   mainWindow.on('focus', () => {
     models.setActive(true)
     control.setActive(true)

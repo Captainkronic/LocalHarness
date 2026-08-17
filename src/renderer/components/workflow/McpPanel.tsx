@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, type JSX } from 'react'
 import type { McpServerSpec, McpServerState, McpToolInfo } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { formatMs, formatTokens, formatTps } from '@renderer/lib/format'
+import { prefillRate } from '@renderer/lib/rates'
 import './workflow.css'
 
 /**
@@ -11,14 +12,6 @@ import './workflow.css'
  * as wall-clock prefill time. So the panel is built around one question: what is
  * loaded, what does it cost, and what does that cost in seconds.
  */
-
-/** Prefill rate assumed before any turn has been measured. Roughly what a 27B
- *  model does on the Mac Studio; only used to give the budget a unit, and it is
- *  always labelled as assumed rather than measured. */
-const ASSUMED_PREFILL_TPS = 250
-
-/** How many recent Lab records to average for the measured prefill rate. */
-const RATE_WINDOW = 8
 
 function statusDot(status: McpServerState['status']): string {
   switch (status) {
@@ -99,6 +92,7 @@ export function McpPanel(): JSX.Element {
   const mcpOverrides = useStore((s) => s.settings.workflowMcpOverrides)
   const setMcpEnabled = useStore((s) => s.setMcpEnabled)
   const labHistory = useStore((s) => s.labHistory)
+  const residentModelId = useStore((s) => s.health.residentModelId)
   const livePrefillTps = useStore((s) => s.live.prefillTps)
   const livePrefillEstimated = useStore((s) => s.live.prefillEstimated)
 
@@ -168,22 +162,16 @@ export function McpPanel(): JSX.Element {
     return { tokens, estimated, on }
   }, [specs, enabledIds, costOf])
 
-  /** Real prefill rate when we have one, otherwise a labelled assumption. */
-  const rate = useMemo(() => {
-    const recent = labHistory
-      .filter((r) => Number.isFinite(r.prefillTps) && r.prefillTps > 0)
-      .slice(-RATE_WINDOW)
-    if (recent.length > 0) {
-      return {
-        tps: recent.reduce((n, r) => n + r.prefillTps, 0) / recent.length,
-        measured: true
-      }
-    }
-    if (livePrefillTps !== null && livePrefillTps > 0 && !livePrefillEstimated) {
-      return { tps: livePrefillTps, measured: true }
-    }
-    return { tps: ASSUMED_PREFILL_TPS, measured: false }
-  }, [labHistory, livePrefillTps, livePrefillEstimated])
+  // Shared with the HUD's PayloadBudget. These were two separate calculations
+  // and disagreed by 15x on identical data — see lib/rates.ts.
+  const rate = useMemo(
+    () =>
+      prefillRate(labHistory, residentModelId, {
+        tps: livePrefillTps,
+        estimated: livePrefillEstimated
+      }),
+    [labHistory, residentModelId, livePrefillTps, livePrefillEstimated]
+  )
 
   const mark = useCallback((id: string, on: boolean): void => {
     setBusy((prev) => {
@@ -403,7 +391,10 @@ export function McpPanel(): JSX.Element {
       )}
 
       <div className="mcp-foot">
-        <span className="section-label">Payload</span>
+        {/* Explicitly "MCP payload": this footer counts servers only, while the
+            HUD's PAYLOAD counts native tools too. Both said "Payload" and the
+            two numbers looked like a contradiction. */}
+        <span className="section-label">MCP payload</span>
         <span className="mcp-foot-nums">
           <span
             className="mcp-foot-tokens tnum"

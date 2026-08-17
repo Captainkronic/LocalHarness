@@ -13,6 +13,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { constants as FS_CONSTANTS } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -22,6 +23,7 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   Artifact,
+  FileOpKind,
   NativeToolId,
   Settings
 } from '@shared/types'
@@ -102,6 +104,36 @@ const BINARY_EXTENSIONS = new Set([
  * of these appear, so the command must fall through to a human.
  */
 const SHELL_CHAINING = /[;|&`\n\r<>]|\$\(/
+
+/** Native tool -> the effect kind the Code workspace groups it under. */
+const ACTIVITY_KIND: Record<NativeToolId, FileOpKind> = {
+  read_file: 'read',
+  write_file: 'write',
+  edit_file: 'edit',
+  list_dir: 'list',
+  glob: 'glob',
+  grep: 'grep',
+  run_shell: 'shell'
+}
+
+/**
+ * What the activity row points at: the path for file ops, the command for a
+ * shell run, the pattern for a search. Best-effort — args are still unvalidated
+ * here, so anything unreadable becomes an empty string rather than throwing
+ * before the real argument narrowing gets a chance to report properly.
+ */
+function activityTarget(toolId: NativeToolId, args: unknown): string {
+  const o = args !== null && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+  const pick = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '')
+  if (toolId === 'run_shell') return pick('command')
+  if (toolId === 'glob' || toolId === 'grep') return pick('pattern') || pick('path')
+  return pick('path')
+}
+
+function firstLine(text: string): string {
+  const line = text.split('\n', 1)[0] ?? ''
+  return line.length > 200 ? `${line.slice(0, 200)}…` : line
+}
 
 /* ------------------------------------------------------------------ */
 /* Errors and argument narrowing                                       */
@@ -425,30 +457,82 @@ export class ToolExecutor {
     conversationId: string
   ): Promise<ToolResult> {
     const settings = this.opts.getSettings()
+    // One activity id spans start -> done so the ticker can replace the
+    // in-progress row in place rather than stacking two.
+    const activityId = randomUUID()
+    const kind = ACTIVITY_KIND[toolId]
+    const startedAt = Date.now()
+    if (kind !== undefined) {
+      this.opts.onActivity?.({
+        id: activityId,
+        conversationId,
+        kind,
+        phase: 'start',
+        target: activityTarget(toolId, args)
+      })
+    }
+
     try {
       const record = asRecord(args)
+      let result: ToolResult
       switch (toolId) {
         case 'read_file':
-          return await this.readFile(record, settings, conversationId)
+          result = await this.readFile(record, settings, conversationId)
+          break
         case 'write_file':
-          return await this.writeFile(record, settings, conversationId)
+          result = await this.writeFile(record, settings, conversationId)
+          break
         case 'edit_file':
-          return await this.editFile(record, settings, conversationId)
+          result = await this.editFile(record, settings, conversationId)
+          break
         case 'list_dir':
-          return await this.listDir(record, settings, conversationId)
+          result = await this.listDir(record, settings, conversationId)
+          break
         case 'glob':
-          return await this.globFiles(record, settings, conversationId)
+          result = await this.globFiles(record, settings, conversationId)
+          break
         case 'grep':
-          return await this.grep(record, settings, conversationId)
+          result = await this.grep(record, settings, conversationId)
+          break
         case 'run_shell':
-          return await this.runShell(record, settings, conversationId)
+          result = await this.runShell(record, settings, conversationId)
+          break
         default:
           return fail(`Unknown native tool "${String(toolId)}".`)
       }
+
+      // write_file and edit_file emit their own 'done' with the diff, changed
+      // lines and resulting content — richer than anything reconstructable here.
+      if (kind !== undefined && toolId !== 'write_file' && toolId !== 'edit_file') {
+        this.opts.onActivity?.({
+          id: activityId,
+          conversationId,
+          kind,
+          phase: result.isError ? 'error' : 'done',
+          target: activityTarget(toolId, args),
+          summary: firstLine(result.text),
+          error: result.isError ? firstLine(result.text) : undefined,
+          durationMs: Date.now() - startedAt
+        })
+      }
+      return result
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const level = err instanceof ToolError ? 'warn' : 'error'
       this.opts.onLog(level, 'agent', `${toolId}: ${message}`)
+      if (kind !== undefined) {
+        // A thrown tool must still close its 'start' row, or the ticker shows a
+        // spinner that never resolves.
+        this.opts.onActivity?.({
+          id: activityId,
+          conversationId,
+          kind,
+          phase: 'error',
+          target: activityTarget(toolId, args),
+          error: message,
+          durationMs: Date.now() - startedAt
+        })
+      }
       return fail(message)
     }
   }

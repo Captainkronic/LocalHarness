@@ -84,7 +84,10 @@ export function registerIpc(d: IpcDeps): void {
       models: d.models.list(),
       conversations: d.conversations.list(),
       health: d.models.health(),
-      appVersion: app.getVersion()
+      appVersion: app.getVersion(),
+      startWorkflow: WORKFLOWS.some((w) => w.id === process.env['LH_START_WORKFLOW'])
+        ? (process.env['LH_START_WORKFLOW'] as WorkflowId)
+        : undefined
     }),
 
     /* ---- settings ---- */

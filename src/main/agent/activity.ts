@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { relative } from 'node:path'
 
 import type { FileActivity, FileOpKind, FileOpPhase, TouchedFile } from '@shared/types'
@@ -43,6 +44,7 @@ export class ActivityTracker {
   private readonly touched = new Map<string, Map<string, TouchedFile>>()
   private readonly onActivity: (a: FileActivity) => void
   private getRoots: () => string[]
+  private rootsCache: { raw: string[]; real: string[] } | null = null
 
   constructor(opts: {
     onActivity: (a: FileActivity) => void
@@ -119,20 +121,48 @@ export class ActivityTracker {
     this.touched.set(a.conversationId, map)
   }
 
-  /** Shortest path relative to any workspace root, so the tab strip is readable
-   *  without losing which root a file came from. */
+  /**
+   * Shortest path relative to any workspace root, so the tab strip is readable
+   * without losing which root a file came from.
+   *
+   * The roots MUST be realpath-resolved before comparing: the executor hands us
+   * realpaths, while settings hold whatever the user typed. On macOS that
+   * difference is routine — /var is a symlink to /private/var, /tmp to
+   * /private/tmp — so comparing raw produced a `../..`-prefixed result and every
+   * path fell back to its full absolute form.
+   */
   private display(target: string): string {
     let best = target
-    for (const root of this.getRoots()) {
+    for (const root of this.realRoots()) {
       const rel = relative(root, target)
       if (rel && !rel.startsWith('..') && rel.length < best.length) best = rel
     }
     return best
   }
+
+  /** Realpath is a syscall per root, and roots change rarely, so the resolved
+   *  list is cached against the raw one. */
+  private realRoots(): string[] {
+    const raw = this.getRoots()
+    if (this.rootsCache && sameList(this.rootsCache.raw, raw)) return this.rootsCache.real
+    const real = raw.map((r) => {
+      try {
+        return realpathSync.native(r)
+      } catch {
+        return r
+      }
+    })
+    this.rootsCache = { raw: [...raw], real }
+    return real
+  }
 }
 
 function isFileOp(kind: FileOpKind): boolean {
   return kind === 'read' || kind === 'write' || kind === 'edit'
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
 /** Line numbers a unified diff touches on the new side, for the viewer's

@@ -31,6 +31,7 @@ import ApprovalDialog from '@renderer/components/chat/ApprovalDialog'
 import ContextPanel from '@renderer/components/panels/ContextPanel'
 import ModelManager from '@renderer/components/models/ModelManager'
 import EditWorkspace from '@renderer/components/edit/EditWorkspace'
+import CodeWorkspace from '@renderer/components/code/CodeWorkspace'
 
 /** Traffic-light inset is macOS-only; everywhere else the brand sits at the edge. */
 const PLATFORM: string = typeof window !== 'undefined' && window.harness
@@ -197,7 +198,13 @@ export default function App(): ReactElement {
           {/* Most workflows are a conversation. Edit is a deterministic
               refine-then-render pipeline, so it gets its own centre column
               rather than being bent into a chat turn. */}
-          {workflow.id === 'edit' ? <EditWorkspace /> : <ChatView />}
+          {workflow.id === 'edit' ? (
+            <EditWorkspace />
+          ) : workflow.id === 'code' ? (
+            <CodeWorkspace />
+          ) : (
+            <ChatView />
+          )}
         </main>
         {workflow.panel !== 'none' && <ContextPanel />}
       </div>

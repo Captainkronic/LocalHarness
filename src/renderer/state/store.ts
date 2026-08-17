@@ -382,6 +382,10 @@ export const useStore = create<AppState>()((set, get) => {
     if (control) set({ control })
     if (editJobs) set({ editJobs })
 
+    // An explicit LH_START_WORKFLOW wins over whatever the last conversation
+    // was; it is how the screenshot driver photographs a given workflow.
+    if (boot?.startWorkflow) set({ activeWorkflow: boot.startWorkflow })
+
     // The UI comes up even if any of the above failed; the failures are in the
     // log rather than on a blank screen.
     set({ ready: true })

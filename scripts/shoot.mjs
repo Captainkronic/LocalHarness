@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+/**
+ * Screenshot the app without any Screen Recording permission.
+ *
+ * `screencapture(1)` HANGS rather than failing when the responsible app lacks
+ * the TCC grant, which makes it useless from a script. Electron can capture its
+ * own window instead, so the app does it from the inside — see
+ * src/main/screenshot.ts. This just drives it.
+ *
+ *   node scripts/shoot.mjs [workflowId] [outFile]
+ *
+ * The workflow is selected by writing it into the settings file before launch,
+ * because the renderer restores the last active workflow on boot.
+ */
+
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, resolve } from 'node:path'
+
+const workflow = process.argv[2] ?? 'chat'
+const outFile = resolve(process.argv[3] ?? `./shots/${workflow}.png`)
+const settingsPath = `${homedir()}/Library/Application Support/LocalHarness/settings.json`
+
+// Point the app at the workflow we want to photograph.
+if (existsSync(settingsPath)) {
+  try {
+    const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    s.lastWorkflow = workflow
+    writeFileSync(settingsPath, JSON.stringify(s, null, 2))
+  } catch {
+    // A malformed settings file is the app's problem, not the screenshotter's.
+  }
+}
+
+mkdirSync(dirname(outFile), { recursive: true })
+rmSync(outFile, { force: true })
+
+const child = spawn('npm', ['run', 'dev'], {
+  env: {
+    ...process.env,
+    LH_SHOT_DIR: dirname(outFile),
+    LH_SHOT_NAME: outFile.split('/').pop(),
+    LH_SHOT_AFTER_MS: process.env.LH_SHOT_AFTER_MS ?? '7000',
+    LH_SHOT_EXIT: '1',
+    LH_START_WORKFLOW: workflow
+  },
+  stdio: ['ignore', 'pipe', 'pipe']
+})
+
+let out = ''
+child.stdout.on('data', (d) => {
+  out += d
+})
+child.stderr.on('data', (d) => {
+  out += d
+})
+
+const deadline = setTimeout(() => {
+  child.kill('SIGTERM')
+}, 90_000)
+
+child.on('exit', () => {
+  clearTimeout(deadline)
+  if (existsSync(outFile)) {
+    console.log(`saved ${outFile}`)
+    process.exit(0)
+  }
+  console.error('no screenshot produced')
+  console.error(out.split('\n').filter((l) => /shot|Error|error/.test(l)).slice(-10).join('\n'))
+  process.exit(1)
+})

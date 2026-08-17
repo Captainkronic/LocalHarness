@@ -16,3 +16,6 @@ sessions/
 
 # TS incremental build info
 *.tsbuildinfo
+
+# Screenshots from scripts/shoot.mjs
+shots/
