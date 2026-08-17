@@ -859,3 +859,9 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+/* The server id IS the label now, so it reads as the identifier it is. */
+.mcp-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}

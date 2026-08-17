@@ -123,7 +123,7 @@ export function McpPanel(): JSX.Element {
   const ordered = useMemo(() => {
     const rank = (s: McpServerSpec): number =>
       defaultIds.has(s.id) ? 0 : enabledIds.has(s.id) ? 1 : 2
-    return [...specs].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
+    return [...specs].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
   }, [specs, defaultIds, enabledIds])
 
   const isToolOn = useCallback(
@@ -290,7 +290,7 @@ export function McpPanel(): JSX.Element {
                     type="button"
                     role="switch"
                     aria-checked={on}
-                    aria-label={`${spec.label}: ${on ? 'enabled' : 'disabled'}`}
+                    aria-label={`${spec.id} (${spec.label}): ${on ? 'enabled' : 'disabled'}`}
                     className={cx('sw', on && 'is-on')}
                     disabled={working}
                     onClick={() => void toggleServer(spec.id, !on)}
@@ -305,15 +305,20 @@ export function McpPanel(): JSX.Element {
                     aria-expanded={ready ? open : undefined}
                     title={
                       status === 'error'
-                        ? `${spec.blurb}\n\n${st?.error ?? 'Failed to start'}`
-                        : `${spec.blurb}\n${statusWord(status)}${
+                        ? `${spec.label} — ${spec.blurb}\n\n${st?.error ?? 'Failed to start'}`
+                        : `${spec.label} — ${spec.blurb}\n${statusWord(status)}${
                             ready ? ` — click to list ${tools.length} tools` : ''
                           }`
                     }
                     onClick={() => toggleExpanded(spec.id)}
                   >
                     <span className={statusDot(status)} />
-                    <span className="mcp-label">{spec.label}</span>
+                    {/* The SERVER ID is the name, not my invented label. These
+                        are Adam's own servers, configured by him under these
+                        ids; "playwright" shown as "Browser" meant he could not
+                        find it. The friendly label lives in the tooltip, where
+                        it explains without hiding anything. */}
+                    <span className="mcp-label">{spec.id}</span>
                     {on && !isDefault ? <span className="mcp-tag">added</span> : null}
                     {ready ? <Chevron open={open} /> : null}
                   </button>
