@@ -37,8 +37,7 @@ export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
   const prefillEstimated = useStore((s) => s.live.prefillEstimated)
   const labHistory = useStore((s) => s.labHistory)
 
-  const value = kind === 'prefill' ? livePrefill : liveDecode
-  const isEstimate = kind === 'prefill' && prefillEstimated && value !== null
+  const live = kind === 'prefill' ? livePrefill : liveDecode
 
   const values = useMemo(
     () =>
@@ -58,6 +57,15 @@ export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
     return null
   }, [labHistory, kind])
 
+  // Between turns there is no live rate, but there IS a real one: the last
+  // completed request. Showing "—" while holding a measured number was just
+  // withholding it — prefill never looked empty because it falls back to its
+  // estimate, so only decode ever read as broken. Marked as not-live rather
+  // than passed off as current: '≈' means projected, '·' means last measured.
+  const value = live ?? (kind === 'decode' ? (last?.v ?? null) : null)
+  const isEstimate = kind === 'prefill' && prefillEstimated && value !== null
+  const isLast = live === null && value !== null
+
   const tip =
     TIP[kind] +
     (last
@@ -68,11 +76,16 @@ export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
   return (
     <div className={`mx-slot mx-gauge is-${kind}`} title={tip}>
       <span className="mx-label">{kind}</span>
-      {/* Reserved glyph slot: marks the number as projected, without shifting it. */}
-      <span className="mx-approx" aria-hidden={!isEstimate}>
-        {isEstimate ? '≈' : ''}
+      {/* Reserved glyph slot: marks the number as projected or as the last
+          measured one, without shifting it. */}
+      <span className="mx-approx" aria-hidden={!isEstimate && !isLast}>
+        {isEstimate ? '≈' : isLast ? '·' : ''}
       </span>
-      <span className={`mx-val tnum${value === null ? ' mx-null' : ''}`}>{formatTps(value)}</span>
+      <span
+        className={`mx-val tnum${value === null ? ' mx-null' : ''}${isLast ? ' is-last' : ''}`}
+      >
+        {formatTps(value)}
+      </span>
       <span className="mx-unit">tok/s</span>
       <span className="mx-spark-slot">
         <Sparkline values={values} color={COLOR[kind]} width={44} height={18} />

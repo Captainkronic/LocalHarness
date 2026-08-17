@@ -1,7 +1,7 @@
 {
   "name": "localharness",
   "version": "0.1.0",
-  "description": "A local-first AI harness for the Mac Studio inference server — workflow profiles, MCP orchestration, and live inference telemetry.",
+  "description": "A local-first AI harness for the Mac Studio inference server \u2014 workflow profiles, MCP orchestration, and live inference telemetry.",
   "main": "./out/main/index.js",
   "author": "Adam",
   "license": "UNLICENSED",
@@ -59,7 +59,11 @@
       "icon": "build/icon.icns",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "CaptainLlama uses the microphone for the Live workflow, so you can talk to a model running on your own hardware. Audio is transcribed on this Mac and never leaves your network.",
-        "NSCameraUsageDescription": "CaptainLlama uses the camera for the Live workflow, so a vision model on your own hardware can see what you are showing it. Frames go only to your own inference server."
+        "NSCameraUsageDescription": "CaptainLlama uses the camera for the Live workflow, so a vision model on your own hardware can see what you are showing it. Frames go only to your own inference server.",
+        "NSDocumentsFolderUsageDescription": "CaptainLlama reads and edits the code in the workspace folders you choose, which usually live in Documents. It only ever touches paths inside the roots you have added.",
+        "NSDesktopFolderUsageDescription": "CaptainLlama reads and edits files in the workspace folders you choose. Grant this only if you keep a workspace on the Desktop.",
+        "NSDownloadsFolderUsageDescription": "CaptainLlama reads images and documents you attach from Downloads, for the image editing and document workflows.",
+        "NSAppleEventsUsageDescription": "CaptainLlama uses Apple Events only to reveal a file in Finder when you ask it to."
       }
     }
   }

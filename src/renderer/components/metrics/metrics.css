@@ -671,3 +671,10 @@
     display: none;
   }
 }
+
+/* A rate carried over from the last completed request rather than measured
+   right now. Dimmed, because it is true but not current — the '·' in the glyph
+   slot beside it says which, and the tooltip gives the time and model. */
+.mx-gauge .mx-val.is-last {
+  color: var(--fg-dim);
+}
