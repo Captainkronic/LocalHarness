@@ -8,15 +8,28 @@ import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
 import type { IpcEventChannel, IpcEvents } from '@shared/ipc'
-import type { LabRecord, LabStatus, McpServerState, ModelInfo, ServerHealth } from '@shared/types'
+import type {
+  ControlState,
+  EditJob,
+  LabRecord,
+  LabStatus,
+  LoadProgress,
+  McpServerState,
+  ModelInfo,
+  ServerHealth
+} from '@shared/types'
 
 import { SettingsStore } from './store/settings'
 import { ConversationStore } from './store/conversations'
 import { McpManager } from './mcp/manager'
 import { ModelRegistry } from './llm/models'
 import { LabFeed } from './telemetry/lab'
+import { LmStudioControl } from './llm/control'
+import { EditPipeline } from './edit/pipeline'
+import { EditJobStore } from './edit/store'
 import { ToolExecutor } from './agent/executor'
 import { ApprovalBroker } from './agent/approval'
+import { ActivityTracker } from './agent/activity'
 import { Orchestrator } from './orchestrator'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
@@ -118,14 +131,42 @@ app.whenReady().then(async () => {
     }
   })
 
+  // Model control needs a DIRECT websocket to LM Studio's own port — the relay
+  // in front of it cannot perform an upgrade. Entirely optional: if it cannot
+  // connect it reports 'unavailable' and nothing else in the app is affected.
+  const control = new LmStudioControl({
+    getSettings: () => settings.get(),
+    onState: (s: ControlState) => emit('event:controlState', s),
+    onProgress: (p: LoadProgress) => emit('event:loadProgress', p),
+    onLog: (level, scope, message) => log(level, scope, message)
+  })
+
   const approvals = new ApprovalBroker(
     (req) => emit('event:approvalRequest', req),
     (requestId, decision) => emit('event:approvalResolved', { requestId, decision })
   )
 
+  const activity = new ActivityTracker({
+    onActivity: (a) => emit('event:fileActivity', a),
+    getRoots: () => settings.get().workspaceRoots
+  })
+
   const executor = new ToolExecutor({
     getSettings: () => settings.get(),
     requestApproval: (req) => approvals.request(req),
+    onLog: (level, scope, message) => log(level, scope, message),
+    onActivity: (input) => activity.record(input)
+  })
+
+  // The Edit workflow is a deterministic refine-then-render pipeline rather than
+  // a tool-calling turn, so it is composed here alongside the orchestrator, not
+  // inside it.
+  const edit = new EditPipeline({
+    store: new EditJobStore(userData),
+    mcp,
+    models,
+    getSettings: () => settings.get(),
+    onJob: (job: EditJob) => emit('event:editJob', job),
     onLog: (level, scope, message) => log(level, scope, message)
   })
 
@@ -146,12 +187,16 @@ app.whenReady().then(async () => {
     models,
     approvals,
     lab,
+    control,
+    edit,
+    activity,
     orchestrator,
     getWindow: () => mainWindow
   })
 
   models.start()
   lab.start()
+  control.start()
 
   mainWindow = createWindow()
   buildMenu({
@@ -170,9 +215,17 @@ app.whenReady().then(async () => {
 
   // Focus drives the model poller's cadence — see the adaptive backoff in
   // ModelRegistry. An unfocused app must not keep polling at the fast interval.
-  mainWindow.on('focus', () => models.setActive(true))
+  mainWindow.on('focus', () => {
+    models.setActive(true)
+    control.setActive(true)
+  })
   mainWindow.on('blur', () => {
-    if (!orchestrator.isBusy()) models.setActive(false)
+    if (orchestrator.isBusy()) return
+    models.setActive(false)
+    // Without this the control client's 30s resident-set poll kept hitting the
+    // Studio behind an unfocused window — the same discipline the model poller
+    // already follows.
+    control.setActive(false)
   })
 
   app.on('activate', () => {
@@ -182,6 +235,7 @@ app.whenReady().then(async () => {
   const shutdown = async (): Promise<void> => {
     models.stop()
     lab.stop()
+    control.stop()
     await mcp.shutdown().catch(() => undefined)
   }
 

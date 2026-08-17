@@ -7,6 +7,7 @@ import DocumentsPanel from './DocumentsPanel'
 import SourcesPanel from './SourcesPanel'
 import TablesPanel from './TablesPanel'
 import FilesPanel from './FilesPanel'
+import EditsPanel from '@renderer/components/edit/EditsPanel'
 import './panels.css'
 
 /**
@@ -18,6 +19,7 @@ import './panels.css'
 const TITLES: Record<Exclude<PanelKind, 'none'>, string> = {
   files: 'Workspace',
   gallery: 'Gallery',
+  edits: 'Edits',
   audio: 'Audio',
   documents: 'Documents',
   sources: 'Sources',
@@ -66,6 +68,7 @@ export function ContextPanel(): JSX.Element | null {
         {kind === 'sources' ? <SourcesPanel /> : null}
         {kind === 'tables' ? <TablesPanel /> : null}
         {kind === 'files' ? <FilesPanel /> : null}
+        {kind === 'edits' ? <EditsPanel /> : null}
       </div>
     </aside>
   )

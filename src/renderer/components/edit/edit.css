@@ -1,0 +1,906 @@
+/*
+ * The Edit workflow: composer, the source → prompt → result card, and the
+ * finished-edits panel.
+ *
+ * Two rules shape the layout. The card is one unit, so it degrades by stacking
+ * rather than by shrinking — and the test for "narrow" is a container query,
+ * because the centre column's width depends on which side panels are open, not
+ * on the window. And nothing here may push the page sideways: the prompt is the
+ * only element allowed to be wide, and it scrolls inside itself.
+ *
+ * Every colour, size and radius comes from styles/theme.css; the workflow
+ * accent arrives as var(--accent) from the shell.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Column                                                              */
+/* ------------------------------------------------------------------ */
+
+.ed {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.ed-feed {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ed-feed-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--s5) var(--s6) var(--s8);
+
+  /* The cards measure themselves against this, not against the viewport. */
+  container-type: inline-size;
+  container-name: edfeed;
+}
+
+.ed-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s6) var(--s5);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.ed-empty-line {
+  font-size: var(--fs-body);
+  color: var(--fg-muted);
+}
+
+.ed-empty-sub {
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Composer                                                            */
+/* ------------------------------------------------------------------ */
+
+.ed-composer {
+  flex: none;
+  padding: var(--s4) var(--s6);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+
+  container-type: inline-size;
+  container-name: edcomposer;
+}
+
+.ed-drop {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-app);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.ed-drop.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ed-drop-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s6) var(--s5);
+  text-align: center;
+}
+
+.ed-drop-glyph {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+.ed-drop-title {
+  font-size: var(--fs-body);
+  color: var(--fg-muted);
+}
+
+.ed-drop-note {
+  max-width: 56ch;
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--fg-faint);
+}
+
+.ed-drop-error {
+  margin-top: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  font-size: var(--fs-tiny);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+}
+
+/* --- the strip of attached-but-not-yet-refined photos --- */
+
+.ed-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  padding: var(--s3) var(--s3) 0;
+}
+
+.ed-strip-thumb {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--bg-void);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.ed-strip-thumb[data-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
+.ed-strip-n {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--fg-muted);
+  background: var(--bg-void);
+}
+
+/* Marks a photo that already has an instruction typed against it. */
+.ed-strip-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ed-strip-add {
+  margin-left: auto;
+}
+
+/* --- the form for the selected draft --- */
+
+.ed-draft-body {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--s4);
+  padding: var(--s3);
+}
+
+.ed-draft-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/* Not a lightbox trigger here — this photo is still being set up, so it stays
+   an image rather than a control. */
+.ed-draft-source .ed-img {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.ed-draft-source-actions {
+  display: flex;
+  gap: var(--s1);
+}
+
+.ed-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.ed-instruction {
+  width: 100%;
+  min-height: 62px;
+  resize: vertical;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.ed-instruction::placeholder {
+  color: var(--fg-faint);
+}
+
+.ed-instruction:focus {
+  border-color: var(--accent-line);
+}
+
+.ed-knobs {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: start;
+}
+
+.ed-knob {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.ed-knob-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.ed-knob-label {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.ed-knob-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg);
+}
+
+.ed-knob-scale {
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--fg-faint);
+}
+
+.ed-range {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ed-num {
+  width: 100%;
+  padding: 4px var(--s2);
+  border-radius: var(--r);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.ed-num::placeholder {
+  color: var(--fg-faint);
+}
+
+.ed-num:focus {
+  border-color: var(--accent-line);
+}
+
+.ed-knob-note {
+  max-width: 78ch;
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.ed-warn {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 3px var(--s2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-tiny);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+}
+
+.ed-draft-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.ed-draft-count {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+@container edcomposer (max-width: 620px) {
+  .ed-draft-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ed-draft-source {
+    max-width: 220px;
+  }
+
+  .ed-knobs {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s3);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Card                                                                */
+/* ------------------------------------------------------------------ */
+
+.ed-card {
+  --ed-thumb: 168px;
+
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-panel);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.ed-card[data-status='error'] {
+  border-color: color-mix(in srgb, var(--danger) 36%, transparent);
+}
+
+.ed-card[data-status='rendering'],
+.ed-card[data-status='refining'] {
+  border-color: var(--accent-line);
+}
+
+/* Jumped to from the panel or from an iteration chip. */
+.ed-card.is-flash {
+  animation: ed-flash 1.4s var(--ease);
+}
+
+@keyframes ed-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  18% {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}
+
+.ed-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3) var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.ed-status[data-status='done'] {
+  color: var(--fg);
+}
+
+.ed-status[data-status='error'] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.ed-lineage {
+  gap: var(--s1);
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  cursor: pointer;
+}
+
+.ed-lineage svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ed-head-time {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+.ed-head-spacer {
+  flex: 1 1 auto;
+}
+
+.ed-timings {
+  display: flex;
+  gap: var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.ed-timings b {
+  font-weight: 500;
+  color: var(--fg-dim);
+}
+
+.ed-icon-btn {
+  padding: 3px;
+  color: var(--fg-faint);
+}
+
+/* --- the triptych --- */
+
+.ed-row {
+  display: grid;
+  grid-template-columns:
+    var(--ed-thumb) auto minmax(0, 1fr)
+    auto var(--ed-thumb);
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+
+.ed-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.ed-arrow {
+  align-self: center;
+  color: var(--fg-faint);
+  line-height: 0;
+}
+
+.ed-col-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.ed-again {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+@container edfeed (max-width: 760px) {
+  .ed-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+  }
+
+  .ed-col-shot {
+    max-width: 260px;
+  }
+
+  .ed-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+}
+
+/* --- images --- */
+
+.ed-shot {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-void);
+  overflow: hidden;
+  line-height: 0;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.ed-shot:hover {
+  border-color: var(--accent-line);
+}
+
+.ed-shot-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.ed-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: var(--bg-void);
+}
+
+.ed-img-skeleton {
+  background: var(--bg-hover);
+  animation: pulse 1.4s var(--ease) infinite;
+}
+
+.ed-img-broken {
+  display: grid;
+  place-items: center;
+  padding: var(--s2);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  text-align: center;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-void));
+}
+
+/* At 40-48px there is no room for the sentence; the tint and the mark carry it,
+   and the row's own title attribute has the detail. */
+.ed-img-tiny.ed-img-broken {
+  font-size: 0;
+  padding: 0;
+}
+
+.ed-img-tiny.ed-img-broken::after {
+  content: '✕';
+  font-size: var(--fs-small);
+}
+
+.ed-file {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- prompt column --- */
+
+.ed-said {
+  padding-left: var(--s2);
+  border-left: 2px solid var(--line);
+  font-size: var(--fs-small);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+
+.ed-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s1);
+}
+
+.ed-edited {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 38%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.ed-copy {
+  margin-left: auto;
+}
+
+/* The prominent element of the card: wide text that scrolls inside itself and
+   never widens the page. */
+.ed-prompt {
+  display: block;
+  width: 100%;
+  min-height: 140px;
+  max-height: 340px;
+  resize: vertical;
+  overflow: auto;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  background: var(--bg-void);
+  border: 1px solid var(--line-subtle);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.ed-prompt:focus {
+  border-color: var(--accent-line);
+}
+
+.ed-prompt-empty {
+  padding: var(--s4) var(--s3);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+.ed-prompt-note {
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--fg-faint);
+}
+
+.ed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.ed-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.ed-params b {
+  font-weight: 500;
+  color: var(--fg-dim);
+}
+
+.ed-params-k {
+  font-family: var(--font-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* --- busy and failed --- */
+
+.ed-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4) var(--s4);
+}
+
+.ed-progress-bar {
+  position: relative;
+  flex: none;
+  width: 92px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--line);
+  overflow: hidden;
+}
+
+/* Indeterminate on purpose: neither stage reports progress, and a fake
+   percentage would be a lie about a two-minute wait. */
+.ed-progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--accent);
+  animation: ed-slide 1.3s var(--ease) infinite;
+}
+
+@keyframes ed-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+.ed-progress-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+.ed-progress-elapsed {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.ed-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+}
+
+.ed-error-msg {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  max-height: 220px;
+  overflow: auto;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--danger);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lightbox                                                            */
+/* ------------------------------------------------------------------ */
+
+.ed-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: grid;
+  place-items: center;
+  padding: var(--s6);
+  background: rgba(6, 7, 10, 0.82);
+  animation: fade-in var(--dur-fast) var(--ease);
+}
+
+.ed-lightbox-inner {
+  display: flex;
+  flex-direction: column;
+  max-width: min(1100px, 100%);
+  max-height: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.ed-lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 200px);
+  object-fit: contain;
+  background: var(--bg-void);
+}
+
+.ed-lightbox-missing {
+  display: grid;
+  place-items: center;
+  min-width: 320px;
+  min-height: 200px;
+  padding: var(--s6);
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+.ed-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line-subtle);
+}
+
+.ed-lightbox-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ed-lightbox-label {
+  font-size: var(--fs-base);
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-lightbox-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-lightbox-actions {
+  display: flex;
+  gap: var(--s1);
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Edits panel                                                         */
+/* ------------------------------------------------------------------ */
+
+.ed-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+}
+
+.ed-panel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s1) var(--s2) var(--s1) var(--s1);
+  border-radius: var(--r);
+  text-align: left;
+}
+
+.ed-panel-row:hover {
+  background: var(--bg-hover);
+}
+
+.ed-panel-thumb {
+  flex: none;
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-subtle);
+  background: var(--bg-void);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.ed-panel-thumb .ed-img {
+  height: 100%;
+}
+
+.ed-panel-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ed-panel-line {
+  font-size: var(--fs-small);
+  line-height: 1.35;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-panel-row:hover .ed-panel-line {
+  color: var(--fg);
+}
+
+.ed-panel-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.ed-panel-iter {
+  color: var(--accent);
+}

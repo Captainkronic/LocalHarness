@@ -14,6 +14,14 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   Artifact,
+  ConfigField,
+  ControlState,
+  EditJob,
+  EditParams,
+  FileActivity,
+  TouchedFile,
+  LoadOptions,
+  LoadProgress,
   ContextUsage,
   Conversation,
   ConversationSummary,
@@ -92,6 +100,41 @@ export interface IpcApi {
   /* ---- telemetry ---- */
   'telemetry:health': () => Promise<ServerHealth>
   'telemetry:history': () => Promise<LabRecord[]>
+
+  /* ---- remote model control (websocket to LM Studio) ---- */
+  'control:state': () => Promise<ControlState>
+  'control:refresh': () => Promise<ControlState>
+  'control:load': (
+    modelKey: string,
+    options: LoadOptions
+  ) => Promise<{ ok: boolean; error?: string }>
+  'control:unload': (identifier: string) => Promise<{ ok: boolean; error?: string }>
+  'control:cancelLoad': () => Promise<void>
+  'control:getConfig': (identifier: string) => Promise<ConfigField[]>
+
+  /* ---- image editing workflow ---- */
+  'edit:list': () => Promise<EditJob[]>
+  /** Opens a file picker; returns the created draft jobs (one per image). */
+  'edit:pickSources': () => Promise<EditJob[]>
+  /** Creates a draft from a path already on disk (drag-and-drop, or a previous
+   *  job's output when iterating). */
+  'edit:createFromPath': (path: string, parentId?: string) => Promise<EditJob | null>
+  'edit:setInstruction': (jobId: string, instruction: string) => Promise<EditJob | null>
+  'edit:setParams': (jobId: string, params: Partial<EditParams>) => Promise<EditJob | null>
+  /** Stage 1: vision model turns the instruction into an edit prompt. */
+  'edit:refine': (jobId: string) => Promise<EditJob | null>
+  /** Hand-edit the refined prompt before rendering. */
+  'edit:setPrompt': (jobId: string, prompt: string) => Promise<EditJob | null>
+  /** Stage 2: render through comfy-image with confirm:true. */
+  'edit:apply': (jobId: string) => Promise<EditJob | null>
+  'edit:cancel': (jobId: string) => Promise<void>
+  'edit:delete': (jobId: string) => Promise<void>
+
+  /* ---- live code workspace ---- */
+  'code:activity': (conversationId: string) => Promise<FileActivity[]>
+  'code:touched': (conversationId: string) => Promise<TouchedFile[]>
+  /** Read a file for the viewer, sandbox-checked like every other path. */
+  'code:readFile': (path: string) => Promise<{ content: string; truncated: boolean } | null>
 }
 
 export interface IpcEvents {
@@ -107,6 +150,11 @@ export interface IpcEvents {
   'event:approvalResolved': { requestId: string; decision: ApprovalDecision }
   'event:artifact': Artifact
   'event:log': { level: 'info' | 'warn' | 'error'; scope: string; message: string }
+  'event:controlState': ControlState
+  'event:loadProgress': LoadProgress
+  'event:editJob': EditJob
+  'event:editJobDeleted': { jobId: string }
+  'event:fileActivity': FileActivity
 }
 
 /** Everything the renderer needs on first paint, in one round trip. */
@@ -158,7 +206,26 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'artifacts:open',
   'artifacts:readDataUrl',
   'telemetry:health',
-  'telemetry:history'
+  'telemetry:history',
+  'control:state',
+  'control:refresh',
+  'control:load',
+  'control:unload',
+  'control:cancelLoad',
+  'control:getConfig',
+  'edit:list',
+  'edit:pickSources',
+  'edit:createFromPath',
+  'edit:setInstruction',
+  'edit:setParams',
+  'edit:refine',
+  'edit:setPrompt',
+  'edit:apply',
+  'edit:cancel',
+  'edit:delete',
+  'code:activity',
+  'code:touched',
+  'code:readFile'
 ]
 
 export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
@@ -173,7 +240,12 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:approvalRequest',
   'event:approvalResolved',
   'event:artifact',
-  'event:log'
+  'event:log',
+  'event:controlState',
+  'event:loadProgress',
+  'event:editJob',
+  'event:editJobDeleted',
+  'event:fileActivity'
 ]
 
 /** The surface the preload script exposes as `window.harness`. */

@@ -27,6 +27,7 @@ import type {
 } from '@shared/types'
 
 import { isInsideAny } from '../store/paths'
+import { changedLinesFromDiff, type ActivityInput } from './activity'
 import { diffStat, unifiedDiff } from './diff'
 import { nativeToolInfo } from './tools'
 
@@ -42,6 +43,9 @@ export interface ToolExecutorOptions {
   getSettings: () => Settings
   requestApproval: (req: Omit<ApprovalRequest, 'id' | 'createdAt'>) => Promise<ApprovalDecision>
   onLog: LogFn
+  /** Optional live effect stream for the Code workspace. Optional because the
+   *  executor is fully usable without anyone watching. */
+  onActivity?: (activity: ActivityInput) => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -670,6 +674,18 @@ export class ToolExecutor {
     await fsp.mkdir(nodePath.dirname(target), { recursive: true })
     await fsp.writeFile(target, content, 'utf8')
     this.opts.onLog('info', 'agent', summary)
+    this.opts.onActivity?.({
+      conversationId,
+      kind: 'write',
+      phase: 'done',
+      target,
+      diff,
+      added: stat.added,
+      removed: stat.removed,
+      changedLines: diff ? changedLinesFromDiff(diff) : undefined,
+      content: existingIsBinary ? undefined : content,
+      summary
+    })
 
     return ok(
       st
@@ -754,6 +770,18 @@ export class ToolExecutor {
 
     await fsp.writeFile(target, next, 'utf8')
     this.opts.onLog('info', 'agent', summary)
+    this.opts.onActivity?.({
+      conversationId,
+      kind: 'edit',
+      phase: 'done',
+      target,
+      diff,
+      added: stat.added,
+      removed: stat.removed,
+      changedLines: diff ? changedLinesFromDiff(diff) : undefined,
+      content: next,
+      summary
+    })
 
     return ok(
       `Edited ${shown}: ${count > 1 ? `${count} occurrences replaced` : '1 occurrence replaced'} ` +

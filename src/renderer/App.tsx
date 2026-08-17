@@ -29,6 +29,8 @@ import SettingsModal from '@renderer/components/workflow/SettingsModal'
 import ChatView from '@renderer/components/chat/ChatView'
 import ApprovalDialog from '@renderer/components/chat/ApprovalDialog'
 import ContextPanel from '@renderer/components/panels/ContextPanel'
+import ModelManager from '@renderer/components/models/ModelManager'
+import EditWorkspace from '@renderer/components/edit/EditWorkspace'
 
 /** Traffic-light inset is macOS-only; everywhere else the brand sits at the edge. */
 const PLATFORM: string = typeof window !== 'undefined' && window.harness
@@ -50,6 +52,7 @@ export default function App(): ReactElement {
   const cancel = useStore((s) => s.cancel)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -96,7 +99,14 @@ export default function App(): ReactElement {
         setSettingsOpen(true)
         return
       }
-      if (e.key >= '1' && e.key <= '7') {
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault()
+        setModelsOpen(true)
+        return
+      }
+      // Bounded by the rail's own length rather than a literal, so adding a
+      // workflow does not silently leave it unreachable from the keyboard.
+      if (e.key >= '1' && e.key <= '9') {
         const target = workflows[Number(e.key) - 1]
         if (target) {
           e.preventDefault()
@@ -160,6 +170,16 @@ export default function App(): ReactElement {
         <button
           type="button"
           className="btn btn-ghost btn-sm icon-btn"
+          onClick={() => setModelsOpen(true)}
+          title="Manage models on the server (⌘M)"
+          aria-label="Manage models"
+        >
+          <ChipIcon />
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm icon-btn"
           onClick={() => setSettingsOpen(true)}
           title="Settings (⌘,)"
           aria-label="Settings"
@@ -174,13 +194,17 @@ export default function App(): ReactElement {
         <WorkflowRail />
         <Sidebar />
         <main className="center">
-          <ChatView />
+          {/* Most workflows are a conversation. Edit is a deterministic
+              refine-then-render pipeline, so it gets its own centre column
+              rather than being bent into a chat turn. */}
+          {workflow.id === 'edit' ? <EditWorkspace /> : <ChatView />}
         </main>
         {workflow.panel !== 'none' && <ContextPanel />}
       </div>
 
       <ApprovalDialog />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ModelManager open={modelsOpen} onClose={() => setModelsOpen(false)} />
     </div>
   )
 }
@@ -383,6 +407,26 @@ function BootScreen(): ReactElement {
 /* ------------------------------------------------------------------ */
 /* Icons                                                               */
 /* ------------------------------------------------------------------ */
+
+/** A chip/die, for the model manager: what is actually resident on the box. */
+function ChipIcon(): ReactElement {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1.25" />
+      <path d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14" />
+    </svg>
+  )
+}
 
 function SlidersIcon(): ReactElement {
   return (

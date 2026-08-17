@@ -13,6 +13,7 @@ import { extname } from 'node:path'
 import type { IpcApi, BootstrapPayload } from '@shared/ipc'
 import type {
   Attachment,
+  EditJob,
   ModelInfo,
   Settings,
   WorkflowId,
@@ -26,6 +27,10 @@ import type { McpManager } from './mcp/manager'
 import type { ModelRegistry } from './llm/models'
 import type { ApprovalBroker } from './agent/approval'
 import type { LabFeed } from './telemetry/lab'
+import type { LmStudioControl } from './llm/control'
+import type { EditPipeline } from './edit/pipeline'
+import type { ActivityTracker } from './agent/activity'
+import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
 import { NATIVE_TOOLS } from './agent/tools'
 import { estimateTokens } from './mcp/tokens'
@@ -38,6 +43,9 @@ export interface IpcDeps {
   models: ModelRegistry
   approvals: ApprovalBroker
   lab: LabFeed
+  control: LmStudioControl
+  edit: EditPipeline
+  activity: ActivityTracker
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
 }
@@ -224,7 +232,76 @@ export function registerIpc(d: IpcDeps): void {
 
     /* ---- telemetry ---- */
     'telemetry:health': () => d.models.health(),
-    'telemetry:history': () => d.lab.history()
+    'telemetry:history': () => d.lab.history(),
+
+    /* ---- remote model control ---- */
+    'control:state': () => d.control.state(),
+    'control:refresh': () => d.control.refresh(),
+    'control:load': async (modelKey: string, options) => {
+      const result = await d.control.load(modelKey, options)
+      // A load changes the real context window, so the model registry's learned
+      // value is now stale for this model. Re-observe before the next turn
+      // computes a context meter against it.
+      if (result.ok) await d.models.refresh().catch(() => undefined)
+      return result
+    },
+    'control:unload': async (identifier: string) => {
+      const result = await d.control.unload(identifier)
+      if (result.ok) await d.models.refresh().catch(() => undefined)
+      return result
+    },
+    'control:cancelLoad': () => d.control.cancelLoad(),
+    'control:getConfig': (identifier: string) => d.control.getConfig(identifier),
+
+    /* ---- image editing ---- */
+    'edit:list': () => d.edit.list(),
+    'edit:pickSources': async () => {
+      const win = d.getWindow()
+      const opts: Electron.OpenDialogOptions = {
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Images', extensions: [...IMAGE_EXT] }]
+      }
+      const result = win
+        ? await dialog.showOpenDialog(win, opts)
+        : await dialog.showOpenDialog(opts)
+      if (result.canceled) return []
+      const jobs: EditJob[] = []
+      for (const path of result.filePaths) {
+        const job = await d.edit.createFromPath(path)
+        if (job) jobs.push(job)
+      }
+      return jobs
+    },
+    'edit:createFromPath': (path: string, parentId?: string) =>
+      d.edit.createFromPath(path, parentId),
+    'edit:setInstruction': (jobId: string, instruction: string) =>
+      d.edit.setInstruction(jobId, instruction),
+    'edit:setParams': (jobId: string, params) => d.edit.setParams(jobId, params),
+    'edit:refine': (jobId: string) => d.edit.refine(jobId),
+    'edit:setPrompt': (jobId: string, prompt: string) => d.edit.setPrompt(jobId, prompt),
+    'edit:apply': (jobId: string) => d.edit.apply(jobId),
+    'edit:cancel': (jobId: string) => d.edit.cancel(jobId),
+    'edit:delete': (jobId: string) => {
+      d.edit.delete(jobId)
+    },
+
+    /* ---- live code workspace ---- */
+    'code:activity': (conversationId: string) => d.activity.activity(conversationId),
+    'code:touched': (conversationId: string) => d.activity.touchedFiles(conversationId),
+    'code:readFile': async (path: string) => {
+      // Same sandbox as every other path the agent can reach — the viewer must
+      // not become a way to read outside the workspace roots.
+      const roots = d.settings.get().workspaceRoots
+      if (!isInsideAny(path, roots)) return null
+      const info = await stat(path).catch(() => null)
+      if (!info || !info.isFile()) return null
+      const MAX = 2 * 1024 * 1024
+      const buf = await readFile(path, 'utf8').catch(() => null)
+      if (buf === null) return null
+      return info.size > MAX
+        ? { content: buf.slice(0, MAX), truncated: true }
+        : { content: buf, truncated: false }
+    }
   }
 
   for (const [channel, handler] of Object.entries(handlers)) {

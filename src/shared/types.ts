@@ -19,6 +19,7 @@ export type WorkflowId =
   | 'chat'
   | 'code'
   | 'image'
+  | 'edit'
   | 'audio'
   | 'docs'
   | 'research'
@@ -29,6 +30,7 @@ export type PanelKind =
   | 'none'
   | 'files'
   | 'gallery'
+  | 'edits'
   | 'audio'
   | 'documents'
   | 'sources'
@@ -280,6 +282,232 @@ export interface ModelInfo {
   capabilities: string[]
   supportsVision: boolean
   supportsTools: boolean
+}
+
+/* ------------------------------------------------------------------ */
+/* Live file activity (Code workflow)                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Emitted by the tool executor as work happens, so the Code workspace can show
+ * the agent operating rather than reporting afterwards. Separate from ToolCall
+ * on purpose: a ToolCall is a record of a request, this is a stream of effects
+ * on the filesystem, and the UI wants the second one.
+ */
+export type FileOpKind =
+  | 'read'
+  | 'write'
+  | 'edit'
+  | 'list'
+  | 'glob'
+  | 'grep'
+  | 'shell'
+
+export type FileOpPhase = 'start' | 'progress' | 'done' | 'error'
+
+export interface FileActivity {
+  id: string
+  conversationId: string
+  kind: FileOpKind
+  phase: FileOpPhase
+  /** Absolute path for file ops; the command for shell; the pattern for search. */
+  target: string
+  /** Path relative to the nearest workspace root, for display. */
+  displayPath: string
+  /** Unified diff, on write/edit once the change is known. */
+  diff?: string
+  added?: number
+  removed?: number
+  /** 1-based line numbers touched, so the viewer can scroll to and mark them. */
+  changedLines?: number[]
+  /** Full file text after the change, for the viewer. Omitted for large files. */
+  content?: string
+  /** Result summary for non-file ops (match count, exit code). */
+  summary?: string
+  error?: string
+  at: number
+  durationMs?: number
+}
+
+/** A file the agent has touched this session, for the workspace's tab strip. */
+export interface TouchedFile {
+  path: string
+  displayPath: string
+  lastKind: FileOpKind
+  added: number
+  removed: number
+  touches: number
+  lastAt: number
+}
+
+/* ------------------------------------------------------------------ */
+/* Image editing workflow                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Edit workflow is a deterministic two-stage pipeline, not a tool-calling
+ * chat turn: refine, then render. That is deliberate — the output is a fixed
+ * triptych (source, prompt, result) and a model deciding for itself whether to
+ * call a tool cannot guarantee one.
+ *
+ * Stage 1 sends the actual image to a vision model on the Studio and asks it to
+ * turn the user's words into a proper edit prompt. Stage 2 hands that prompt to
+ * comfy-image's `edit_image` with `confirm: true`, which makes the server use it
+ * VERBATIM instead of running its own local-VLM rewrite over it again.
+ */
+export type EditJobStatus =
+  | 'draft'
+  | 'refining'
+  | 'ready'
+  | 'rendering'
+  | 'done'
+  | 'error'
+
+export interface EditParams {
+  /**
+   * img2img strength, 0.1..1.0. The only control over how much of the original
+   * survives; comfy-image defaults to 0.6.
+   */
+  denoise: number
+  /** Sampling steps; comfy-image defaults to 8. */
+  steps: number
+  /** Omit for a random seed. Kept when the user wants a reproducible re-run. */
+  seed?: number
+}
+
+export interface EditJob {
+  id: string
+  /** Absolute path of the source image on disk — comfy-image needs a path,
+   *  image bytes cannot travel through a tool call. */
+  sourcePath: string
+  sourceName: string
+  /** data: URL so the renderer can show the source without disk access. */
+  sourceDataUrl?: string
+  /** What the user actually typed. Never overwritten. */
+  userInstruction: string
+  /** What the vision model produced from it. Editable before rendering. */
+  refinedPrompt: string | null
+  /** True once the user has hand-edited the refined prompt. */
+  promptEdited: boolean
+  outputPath?: string
+  outputDataUrl?: string
+  status: EditJobStatus
+  error?: string
+  params: EditParams
+  timings?: { refineMs?: number; renderMs?: number }
+  /** Set when this job was started from another job's output, so the UI can
+   *  show an iteration chain. */
+  parentId?: string
+  createdAt: number
+  updatedAt: number
+}
+
+/* ------------------------------------------------------------------ */
+/* Remote model control                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Model management talks to LM Studio's websocket API, not the REST one.
+ * `/api/v0` and `/api/v1` are read-only — there is no load/unload over HTTP.
+ * The websocket must address the Studio's real LM Studio port DIRECTLY: the
+ * relay in front of it is a Python BaseHTTP server, which answers 200 to a
+ * websocket upgrade instead of 101.
+ */
+export type ControlStatus = 'disconnected' | 'connecting' | 'connected' | 'unavailable'
+
+/** One model currently resident on the server. */
+export interface LoadedInstance {
+  /** The handle unload takes. */
+  identifier: string
+  instanceReference: string
+  modelKey: string
+  displayName: string
+  publisher: string
+  architecture: string
+  format: string
+  quantization: string
+  quantBits: number | null
+  sizeBytes: number
+  paramsString: string
+  /** The window it was actually loaded with. */
+  contextLength: number
+  /** Architectural ceiling. */
+  maxContextLength: number
+  vision: boolean
+  trainedForToolUse: boolean
+  /** Idle eviction, ms. Null means it stays until unloaded. */
+  ttlMs: number | null
+  lastUsedTime: number | null
+}
+
+/** A model available on the server, loaded or not. */
+export interface CatalogModel {
+  modelKey: string
+  displayName: string
+  publisher: string
+  architecture: string
+  /** 'gguf' | 'mlx' */
+  format: string
+  quantization: string
+  sizeBytes: number
+  paramsString: string
+  maxContextLength: number
+  vision: boolean
+  trainedForToolUse: boolean
+  /** Quant variants, e.g. ["qwen/qwen3.6-27b@q4_k_xl", "...@q5_k_xl"]. */
+  variants: string[]
+  selectedVariant: string | null
+  /** Identifiers of any resident instances of this model. */
+  loadedIdentifiers: string[]
+}
+
+/** The knobs the load screen exposes. Everything is optional — an omitted
+ *  field means "let the server decide", which is not the same as a default. */
+export interface LoadOptions {
+  contextLength?: number
+  /** llama.cpp only. Required before a quantized V cache will load. */
+  flashAttention?: boolean
+  /** llama.cpp K/V cache quantization, e.g. 'q8_0' | 'q4_0' | 'f16'. */
+  kCacheQuantization?: string
+  vCacheQuantization?: string
+  cpuThreadPoolSize?: number
+  /** 0..1 fraction of layers on GPU. */
+  gpuOffloadRatio?: number
+  /** Idle eviction in ms; null/omitted keeps it resident. */
+  ttlMs?: number
+  /**
+   * Let the engine pick the context length. On MLX this historically overrode
+   * whatever was asked for, so the screen surfaces it explicitly rather than
+   * leaving the user to wonder why their number was ignored.
+   */
+  autoFit?: boolean
+}
+
+/** Progress while a load is in flight. */
+export interface LoadProgress {
+  modelKey: string
+  /** 0..1, from the server's own load progress. */
+  progress: number
+  phase: 'resolving' | 'loading' | 'done' | 'error'
+  message?: string
+}
+
+export interface ControlState {
+  status: ControlStatus
+  /** ws:// URL in use, for display and troubleshooting. */
+  url: string
+  loaded: LoadedInstance[]
+  catalog: CatalogModel[]
+  /** Non-null while a load is running. */
+  inFlight: LoadProgress | null
+  error?: string
+  lastRefreshedAt: number
+}
+
+/** A raw config field as LM Studio reports it, for the advanced readout. */
+export interface ConfigField {
+  key: string
+  value: unknown
 }
 
 /* ------------------------------------------------------------------ */

@@ -98,6 +98,38 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     ]
   },
   {
+    id: 'edit',
+    label: 'Edit',
+    blurb: 'Attach a photo, say what to change, render the edit.',
+    glyph: '◐',
+    accent: '#b07ad4',
+    mcpServers: ['comfy-image'],
+    nativeTools: ['read_file', 'list_dir'],
+    panel: 'edits',
+    systemPrompt: `${BASE_PROMPT}
+
+You turn a person's plain-language request into an edit prompt for a local
+img2img model, and you do it while LOOKING at the actual photo.
+
+Write a single paragraph describing the FINISHED image, not the operation. The
+renderer has no memory of the original and no concept of "change" — it only sees
+your words and the source pixels, so "make the sky purple" must become a
+description of the whole scene as it should end up, with the purple sky in it.
+
+- Name what stays as well as what changes. Everything you leave out is at risk.
+- Carry over the specifics you can see: subject, pose, framing, lens character,
+  lighting direction, palette, time of day, surface and texture.
+- Match the original's medium and treatment unless the user asked to change it.
+- Do not invent objects the user did not ask for, and do not editorialise.
+- No preamble and no explanation. Output the prompt text only.`,
+    sampling: { temperature: 0.5, topP: 0.95, maxTokens: 2048 },
+    suggestions: [
+      'Make it golden hour',
+      'Remove the car from the background',
+      'Turn this into a watercolour painting'
+    ]
+  },
+  {
     id: 'audio',
     label: 'Audio',
     blurb: 'Music, sound effects, speech and transcription.',

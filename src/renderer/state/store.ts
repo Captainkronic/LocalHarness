@@ -30,10 +30,15 @@ import type {
   Artifact,
   Attachment,
   ContextUsage,
+  ControlState,
   Conversation,
   ConversationSummary,
+  EditJob,
+  EditParams,
+  FileActivity,
   LabRecord,
   LiveMetrics,
+  LoadOptions,
   McpServerSpec,
   McpServerState,
   ModelInfo,
@@ -68,6 +73,10 @@ export interface AppState {
   mcpStates: McpServerState[]
   nativeTools: NativeToolInfo[]
   live: LiveMetrics
+  control: ControlState
+  editJobs: EditJob[]
+  /** Live filesystem effects for the Code workspace, newest last. */
+  fileActivity: FileActivity[]
   usage: ContextUsage
   health: ServerHealth
   labHistory: LabRecord[]
@@ -83,6 +92,22 @@ export interface AppState {
   newConversation(): Promise<void>
   deleteConversation(id: string): Promise<void>
   setMcpEnabled(serverId: string, enabled: boolean): Promise<void>
+  /* remote model control */
+  refreshControl(): Promise<void>
+  loadModel(modelKey: string, options: LoadOptions): Promise<{ ok: boolean; error?: string }>
+  unloadModel(identifier: string): Promise<{ ok: boolean; error?: string }>
+  cancelLoad(): Promise<void>
+  /* image editing */
+  pickEditSources(): Promise<void>
+  createEditFromPath(path: string, parentId?: string): Promise<void>
+  setEditInstruction(id: string, text: string): Promise<void>
+  setEditParams(id: string, params: Partial<EditParams>): Promise<void>
+  setEditPrompt(id: string, text: string): Promise<void>
+  refineEdit(id: string): Promise<void>
+  applyEdit(id: string): Promise<void>
+  cancelEdit(id: string): Promise<void>
+  deleteEdit(id: string): Promise<void>
+  readImageDataUrl(path: string): Promise<string | null>
   respondApproval(id: string, decision: ApprovalDecision): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
 }
@@ -93,6 +118,9 @@ export interface AppState {
 
 const LOG_CAP = 300
 const LAB_CAP = 200
+/** File activity is high-frequency during an agentic run; the workspace only
+ *  ever renders a recent window of it. */
+const ACTIVITY_CAP = 400
 
 /** Placeholder only — replaced wholesale by the real settings in `bootstrap`,
  *  which lands within a frame or two of first paint. */
@@ -123,6 +151,17 @@ const IDLE_LIVE: LiveMetrics = {
   prefillProgress: null,
   prefillEtaMs: null,
   decodeTps: null
+}
+
+/** Model control is optional; until the websocket connects it reports
+ *  'disconnected' rather than pretending there is nothing on the server. */
+const INITIAL_CONTROL: ControlState = {
+  status: 'disconnected',
+  url: '',
+  loaded: [],
+  catalog: [],
+  inFlight: null,
+  lastRefreshedAt: 0
 }
 
 const EMPTY_USAGE: ContextUsage = {
@@ -276,7 +315,24 @@ export const useStore = create<AppState>()((set, get) => {
     'event:log': (entry) =>
       set((s) => ({
         logs: [...s.logs, { ...entry, at: Date.now() }].slice(-LOG_CAP)
-      }))
+      })),
+    'event:editJob': (job) =>
+      set((s) => {
+        const i = s.editJobs.findIndex((j) => j.id === job.id)
+        if (i === -1) return { editJobs: [job, ...s.editJobs] }
+        const next = s.editJobs.slice()
+        next[i] = job
+        return { editJobs: next }
+      }),
+    'event:editJobDeleted': ({ jobId }) =>
+      set((s) => ({ editJobs: s.editJobs.filter((j) => j.id !== jobId) })),
+    'event:fileActivity': (activity) =>
+      set((s) => ({ fileActivity: [...s.fileActivity, activity].slice(-ACTIVITY_CAP) })),
+    'event:controlState': (control) => set({ control }),
+    // Progress arrives far more often than the full state; merging it in keeps
+    // the load bar smooth without re-rendering the whole catalog each tick.
+    'event:loadProgress': (inFlight) =>
+      set((s) => ({ control: { ...s.control, inFlight } }))
   }
 
   const subscribe = (): void => {
@@ -315,12 +371,16 @@ export const useStore = create<AppState>()((set, get) => {
     )
     if (latest) await loadConversation(latest.id, false)
 
-    const [history, pending] = await Promise.all([
+    const [history, pending, control, editJobs] = await Promise.all([
       call('lab', 'telemetry:history'),
-      call('approval', 'approval:pending')
+      call('approval', 'approval:pending'),
+      call('control', 'control:state'),
+      call('edit', 'edit:list')
     ])
     if (history) set({ labHistory: history.slice(-LAB_CAP) })
     if (pending) set({ approvals: pending })
+    if (control) set({ control })
+    if (editJobs) set({ editJobs })
 
     // The UI comes up even if any of the above failed; the failures are in the
     // log rather than on a blank screen.
@@ -343,6 +403,9 @@ export const useStore = create<AppState>()((set, get) => {
     mcpStates: [],
     nativeTools: [],
     live: IDLE_LIVE,
+    control: INITIAL_CONTROL,
+    editJobs: [],
+    fileActivity: [],
     usage: EMPTY_USAGE,
     health: INITIAL_HEALTH,
     labHistory: [],
@@ -427,6 +490,66 @@ export const useStore = create<AppState>()((set, get) => {
       if (list) set({ conversations: list })
       await refreshUsage(conv.id)
     },
+
+    refreshControl: async () => {
+      const control = await call('control', 'control:refresh')
+      if (control) set({ control })
+    },
+
+    loadModel: async (modelKey, options) => {
+      const result = await call('control', 'control:load', modelKey, options)
+      if (!result) return { ok: false, error: 'The load request did not reach the server.' }
+      // A load changes the real context window, so the meter's denominator moves.
+      const current = get().activeConversationId
+      if (current) await refreshUsage(current)
+      return result
+    },
+
+    unloadModel: async (identifier) => {
+      const result = await call('control', 'control:unload', identifier)
+      if (!result) return { ok: false, error: 'The unload request did not reach the server.' }
+      const current = get().activeConversationId
+      if (current) await refreshUsage(current)
+      return result
+    },
+
+    cancelLoad: async () => {
+      await call('control', 'control:cancelLoad')
+    },
+
+    /* --- image editing ------------------------------------------------ */
+    // Every mutation returns the updated job AND main pushes event:editJob, so
+    // these deliberately do not set state themselves — the event handler is the
+    // single writer, which keeps optimistic and pushed state from diverging.
+    pickEditSources: async () => {
+      await call('edit', 'edit:pickSources')
+    },
+    createEditFromPath: async (path, parentId) => {
+      await call('edit', 'edit:createFromPath', path, parentId)
+    },
+    setEditInstruction: async (id, text) => {
+      await call('edit', 'edit:setInstruction', id, text)
+    },
+    setEditParams: async (id, params) => {
+      await call('edit', 'edit:setParams', id, params)
+    },
+    setEditPrompt: async (id, text) => {
+      await call('edit', 'edit:setPrompt', id, text)
+    },
+    refineEdit: async (id) => {
+      await call('edit', 'edit:refine', id)
+    },
+    applyEdit: async (id) => {
+      await call('edit', 'edit:apply', id)
+    },
+    cancelEdit: async (id) => {
+      await call('edit', 'edit:cancel', id)
+    },
+    deleteEdit: async (id) => {
+      await call('edit', 'edit:delete', id)
+      set((s) => ({ editJobs: s.editJobs.filter((j) => j.id !== id) }))
+    },
+    readImageDataUrl: async (path) => call('edit', 'artifacts:readDataUrl', path),
 
     setMcpEnabled: async (serverId, enabled) => {
       const states = await call('mcp', 'mcp:setEnabled', get().activeWorkflow, serverId, enabled)
