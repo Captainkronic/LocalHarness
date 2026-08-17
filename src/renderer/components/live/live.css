@@ -782,3 +782,54 @@
     animation: none !important;
   }
 }
+
+/* The speaking equaliser. Height comes from the playback level in JS; the
+   animation only adds a slight idle shimmer so the bars are never dead flat
+   during a quiet passage. */
+.orb[data-state='speaking'] .orb-bar {
+  fill: var(--accent);
+  animation: orb-bar-breathe 900ms var(--ease) infinite;
+}
+
+@keyframes orb-bar-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb[data-state='speaking'] .orb-bar {
+    animation: none;
+  }
+}
+
+/* Who is talking, named. "Speaking" alone does not tell you it is Jarvis. */
+.lv-voice-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 1px var(--s2);
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+.lv-speaker {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+.lv-speaker-note {
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}

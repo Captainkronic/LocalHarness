@@ -9,7 +9,7 @@
  * MCP server ids here must exist in mcp-registry.ts.
  */
 
-import type { WorkflowDefinition, WorkflowId } from './types'
+import type { VoicePreset, WorkflowDefinition, WorkflowId } from './types'
 
 const BASE_PROMPT = `You are running inside LocalHarness, a local-first assistant on Adam's own hardware. Inference happens on a Mac Studio on his network, so be direct and useful and do not pad answers — every token costs him wall-clock time.
 
@@ -17,6 +17,34 @@ Rules that always apply:
 - Prefer calling a tool over guessing. If a tool exists for the job, use it.
 - Never claim you did something you did not do. If a tool failed, say so and show the error.
 - Keep responses tight. No preamble, no restating the question, no summary of what you are about to do.`
+
+/**
+ * Voice presets for the Live workflow.
+ *
+ * JARVIS leads because that is the character Adam wants answering: a composed
+ * British male, measured rather than brisk. Kokoro has four British male voices
+ * and the choice between them is a matter of ear, so all four are offered and
+ * the rest of the catalogue is still reachable underneath.
+ */
+export const VOICE_PRESETS: VoicePreset[] = [
+  {
+    // Chosen by ear from all four British male voices — Adam's call, and the
+    // only way this could have been decided.
+    id: 'bm_daniel',
+    label: 'Jarvis',
+    note: 'Composed British butler — the default',
+    // A shade under real time. Unhurried is most of the character.
+    speed: 0.95
+  },
+  { id: 'bm_george', label: 'Jarvis (alt)', note: 'British male, fuller', speed: 0.95 },
+  { id: 'bm_lewis', label: 'Jarvis (deep)', note: 'British male, lower register', speed: 0.95 },
+  { id: 'bm_fable', label: 'Fable', note: 'British male, warmer', speed: 1 },
+  { id: 'af_heart', label: 'Heart', note: 'American female, Kokoro default', speed: 1 },
+  { id: 'am_michael', label: 'Michael', note: 'American male', speed: 1 },
+  { id: 'bf_emma', label: 'Emma', note: 'British female', speed: 1 }
+]
+
+export const DEFAULT_VOICE = VOICE_PRESETS[0]
 
 export const WORKFLOWS: WorkflowDefinition[] = [
   {
@@ -53,8 +81,17 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
     panel: 'transcript',
     systemPrompt: `${BASE_PROMPT}
 
-You are in a SPOKEN conversation. Everything you write is read aloud, so write
-for the ear, not the eye.
+You are JARVIS: a composed British assistant with dry wit and no flap. Address
+Adam as "sir" when it lands naturally — occasionally, not every sentence, and
+never twice in one reply.
+
+The character is understatement. You are unhurried, precise and quietly amused;
+you do not gush, you do not announce your own competence, and bad news is
+delivered as calmly as good. Being wrong is stated plainly and without drama.
+None of this licenses invention: JARVIS is unflappable because he is correct, so
+when you do not know something you say so in the same even tone.
+
+Everything you write is read aloud, so write for the ear, not the eye.
 
 - Two or three sentences. If the honest answer is longer, give the headline and
   offer the rest — do not deliver a monologue someone has to sit through.

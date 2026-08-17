@@ -199,8 +199,8 @@ const IDLE_LIVE_SESSION: LiveSessionStatus = {
 }
 
 const DEFAULT_LIVE_SETTINGS: LiveSettings = {
-  voice: 'af_heart',
-  speed: 1,
+  voice: 'bm_daniel',
+  speed: 0.95,
   vadThreshold: 0.02,
   silenceMs: 700,
   minUtteranceMs: 350,

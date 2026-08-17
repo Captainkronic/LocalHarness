@@ -362,6 +362,19 @@ export interface LiveTurnTimings {
   totalMs: number
 }
 
+/**
+ * A named voice, so the picker reads as characters rather than Kokoro ids.
+ * `id` is the actual Kokoro voice; everything else is presentation.
+ */
+export interface VoicePreset {
+  id: string
+  label: string
+  /** One line on who this sounds like. */
+  note: string
+  /** Kokoro speaks a touch fast for some characters. */
+  speed: number
+}
+
 export interface LiveSettings {
   /** Kokoro voice id. */
   voice: string

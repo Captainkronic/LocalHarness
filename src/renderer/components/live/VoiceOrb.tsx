@@ -23,6 +23,11 @@ export interface VoiceOrbProps {
   level: number
 }
 
+/** Bar positions relative to the orb centre, and a fixed per-bar weight so the
+ *  shape reads as speech rather than a uniform pulse. */
+const BAR_OFFSETS = [-24, -12, 0, 12, 24]
+const BAR_WEIGHTS = [0.55, 0.85, 1, 0.85, 0.55]
+
 const LABELS: Record<LiveSessionState, string> = {
   off: 'Not in a call',
   starting: 'Opening the microphone',
@@ -95,7 +100,7 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
           />
         )}
 
-        <StateGlyph state={state} />
+        <StateGlyph state={state} level={lvl} />
       </svg>
 
       <span className="orb-label">{LABELS[state]}</span>
@@ -105,7 +110,13 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
 
 /** A different shape per phase, so the state survives being colour-blind or
  *  glanced at from across the desk. */
-function StateGlyph({ state }: { state: LiveSessionState }): JSX.Element | null {
+function StateGlyph({
+  state,
+  level
+}: {
+  state: LiveSessionState
+  level: number
+}): JSX.Element | null {
   switch (state) {
     case 'listening':
     case 'capturing':
@@ -135,13 +146,28 @@ function StateGlyph({ state }: { state: LiveSessionState }): JSX.Element | null 
         </g>
       )
     case 'speaking':
+      // A live equaliser rather than a static squiggle: the bars are driven by
+      // the actual playback level, so you can see him talking and not merely be
+      // told. Deliberately symmetrical about the centre — the JARVIS read is
+      // precise instrumentation, not a party visualiser.
       return (
-        <g className="orb-glyph orb-wave">
-          <path
-            className="orb-stroke"
-            d="M80 100c4-12 8-12 12 0s8 12 12 0 8-12 12 0 8 12 12 0"
-            strokeLinecap="round"
-          />
+        <g className="orb-glyph orb-bars">
+          {BAR_OFFSETS.map((dx, i) => {
+            const falloff = 1 - Math.abs(dx) / 34
+            const h = 6 + level * 30 * falloff * BAR_WEIGHTS[i]
+            return (
+              <rect
+                key={dx}
+                className="orb-bar"
+                x={100 + dx - 2}
+                y={100 - h / 2}
+                width={4}
+                height={Math.max(4, h)}
+                rx={2}
+                style={{ animationDelay: `${i * 90}ms` }}
+              />
+            )
+          })}
         </g>
       )
     case 'error':

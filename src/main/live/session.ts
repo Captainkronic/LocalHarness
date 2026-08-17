@@ -62,8 +62,9 @@ const SCOPE = 'live'
 const WORKFLOW = WORKFLOW_BY_ID.live
 
 export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
-  voice: 'af_heart',
-  speed: 1.0,
+  // Jarvis. See VOICE_PRESETS in shared/workflows.ts.
+  voice: 'bm_daniel',
+  speed: 0.95,
   vadThreshold: 0.02,
   silenceMs: 700,
   minUtteranceMs: 350,

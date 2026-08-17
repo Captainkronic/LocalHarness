@@ -35,6 +35,7 @@ import {
 import type { LiveAudioChunk, LiveSettings, LiveTurnTimings } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, formatMs } from '@renderer/lib/format'
+import { VOICE_PRESETS } from '@shared/workflows'
 import { useAudioCapture } from './useAudioCapture'
 import VoiceOrb from './VoiceOrb'
 import './live.css'
@@ -265,6 +266,9 @@ export function LiveWorkspace(): JSX.Element {
 
   const reply = status.assistantText
   const karaoke = live.speak && spokenTo > 0 && spokenTo < reply.length
+  /** The character's name, not the Kokoro id — "Jarvis", not "bm_george". */
+  const voiceLabel =
+    VOICE_PRESETS.find((p) => p.id === live.voice)?.label ?? (live.voice || 'Voice')
   const coldStart =
     health.residentModelId === null ||
     (pinnedModelId !== null && pinnedModelId !== health.residentModelId)
@@ -311,6 +315,15 @@ export function LiveWorkspace(): JSX.Element {
             <p className="lv-heard">
               <span className="lv-heard-label">heard</span>
               {status.lastUserText}
+            </p>
+          ) : null}
+
+          {/* Name him while he talks. "Speaking" is a state; "JARVIS" is who is
+              answering, and that is most of the character. */}
+          {reply.trim() !== '' && (state === 'speaking' || playback.isPlaying()) ? (
+            <p className="lv-speaker">
+              <span className="lv-voice-tag">{voiceLabel}</span>
+              <span className="lv-speaker-note">speaking</span>
             </p>
           ) : null}
 
@@ -847,14 +860,34 @@ function Controls({
           className="lv-select"
           value={settings.voice}
           disabled={options.length === 0}
-          onChange={(e) => onPatch({ voice: e.target.value })}
+          onChange={(e) => {
+            const next = e.target.value
+            const preset = VOICE_PRESETS.find((p) => p.id === next)
+            // Pace is part of a character, not a separate setting to rediscover.
+            onPatch(preset ? { voice: next, speed: preset.speed } : { voice: next })
+          }}
         >
           {settings.voice === '' ? <option value="">Server default</option> : null}
-          {options.map((voice) => (
-            <option key={voice} value={voice}>
-              {voice}
-            </option>
-          ))}
+          {/* Named characters first, so the picker reads as "Jarvis" rather
+              than "bm_george". Everything else Kokoro offers stays reachable
+              underneath, since which British male actually sounds like Jarvis
+              is a matter of ear. */}
+          <optgroup label="Characters">
+            {VOICE_PRESETS.filter((p) => options.includes(p.id)).map((p) => (
+              <option key={p.id} value={p.id} title={p.note}>
+                {p.label} · {p.id}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="All voices">
+            {options
+              .filter((v) => !VOICE_PRESETS.some((p) => p.id === v))
+              .map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice}
+                </option>
+              ))}
+          </optgroup>
         </select>
       </label>
 
