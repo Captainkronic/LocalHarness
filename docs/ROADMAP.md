@@ -127,6 +127,17 @@ through. Escape killing the turn, the Watch pane blanking, phantom classes, the
 composer swallowing a draft, the metric contradictions, Live's untrue notes, and
 the Edit workflow's unreproducible seeds are all done, each with its own commit.
 
+## The grounding, in Adam's words
+
+> Seamless, frictionless ways to interact with my local AI without having to
+> think too much about how to steer. Image generation, conversations and coding
+> are all distinctly different functions.
+
+Use it to prioritise: anything that makes him think about MECHANICS rather than
+INTENT is the bug worth fixing. A workflow whose tools say one thing while its
+skills say another puts the steering straight back on him — which is what
+`WorkflowDefinition.skills` now prevents.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
