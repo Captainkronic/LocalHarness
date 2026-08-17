@@ -135,7 +135,12 @@ export function FilesPanel(): JSX.Element {
 
       <section className="fil-block">
         <div className="fil-block-head">
-          <span className="section-label">Touched this session</span>
+          {/* NOT "this session". This list is derived from the conversation's own
+              tool calls, so it survives a restart and describes the thread, not
+              the app run — which put it in flat contradiction with the activity
+              ticker's "Nothing has happened yet" on a freshly launched app
+              showing an old conversation. */}
+          <span className="section-label">Touched in this chat</span>
           <span className="fil-count tnum">{touched.length}</span>
         </div>
         {touched.length === 0 ? (
