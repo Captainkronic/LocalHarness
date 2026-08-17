@@ -431,7 +431,21 @@ export const useStore = create<AppState>()((set, get) => {
 
     // An explicit LH_START_WORKFLOW wins over whatever the last conversation
     // was; it is how the screenshot driver photographs a given workflow.
-    if (boot?.startWorkflow) set({ activeWorkflow: boot.startWorkflow })
+    // Re-scope the open conversation to match, or the centre column shows one
+    // workflow's thread while the chrome says another.
+    if (boot?.startWorkflow && boot.startWorkflow !== get().activeWorkflow) {
+      const forced = boot.startWorkflow
+      set({ activeWorkflow: forced })
+      const mine = get()
+        .conversations.filter((c) => c.workflowId === forced)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (mine) {
+        await loadConversation(mine.id, false)
+        set({ activeWorkflow: forced })
+      } else {
+        set({ conversation: null, activeConversationId: null, usage: EMPTY_USAGE })
+      }
+    }
 
     // The UI comes up even if any of the above failed; the failures are in the
     // log rather than on a blank screen.
@@ -496,11 +510,27 @@ export const useStore = create<AppState>()((set, get) => {
       // Flip the chrome first: starting an MCP server can take seconds and the
       // rail must not sit on the old workflow while that happens.
       set({ activeWorkflow: id })
-      const conversationId = await ensureConversation(id)
-      if (conversationId && get().conversation?.workflowId !== id) {
-        const conv = await call('workflow', 'conv:setWorkflow', conversationId, id)
-        if (conv) set({ conversation: conv, activeConversationId: conv.id })
+
+      // A conversation BELONGS to the workflow it was started in and does not
+      // travel. This used to drag the open conversation along and relabel it,
+      // so an image-generation thread reappeared under Code — where its prompts
+      // mean nothing and its history is just noise. Switching now resumes that
+      // workflow's own most recent conversation, or shows an empty one.
+      const mine = get()
+        .conversations.filter((c) => c.workflowId === id)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+
+      const resume = mine[0]
+      if (resume && resume.id !== get().activeConversationId) {
+        await loadConversation(resume.id, false)
+        set({ activeWorkflow: id })
+      } else if (!resume) {
+        // Nothing here yet. Deliberately does NOT create one — an empty
+        // conversation per visited workflow clutters the list for no benefit.
+        // `send` creates it on the first message.
+        set({ conversation: null, activeConversationId: null, usage: EMPTY_USAGE })
       }
+
       await applyWorkflow(id)
       const current = get().activeConversationId
       if (current) await refreshUsage(current)
@@ -523,7 +553,12 @@ export const useStore = create<AppState>()((set, get) => {
       const list = (await call('conv', 'conv:list')) ?? []
       set({ conversations: list })
       if (get().activeConversationId !== id) return
-      const next = list[0]
+      // Fall back within the SAME workflow — landing on an unrelated one would
+      // reintroduce exactly the cross-workflow bleed this all exists to stop.
+      const workflowId = get().activeWorkflow
+      const next = list
+        .filter((c) => c.workflowId === workflowId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
       if (next) {
         await loadConversation(next.id, true)
       } else {

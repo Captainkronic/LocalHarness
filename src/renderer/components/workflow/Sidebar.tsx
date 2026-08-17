@@ -84,9 +84,15 @@ export function Sidebar(): JSX.Element {
     return { native, mcp, pending, total: native + mcp }
   }, [definition, mcpStates])
 
+  // Scoped to the active workflow. A conversation belongs to where it was
+  // started: an image-generation thread listed under Code is noise, and its
+  // prompts do not transfer to what that workflow is for.
   const ordered = useMemo(
-    () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt),
-    [conversations]
+    () =>
+      conversations
+        .filter((c) => c.workflowId === activeWorkflow)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [conversations, activeWorkflow]
   )
 
   // Through the store, not a raw invoke: the store re-reads the list and moves
@@ -151,8 +157,9 @@ export function Sidebar(): JSX.Element {
 
         {ordered.length === 0 ? (
           <p className="sb-empty">
-            No conversations yet. Anything you send is saved here automatically, titled
-            from your first message.
+            No {definition ? definition.label : 'workflow'} conversations yet. Each
+            workflow keeps its own; anything you send here is saved and titled from
+            your first message.
           </p>
         ) : (
           <div className="sb-conv-list scroll-y">
