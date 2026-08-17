@@ -1,0 +1,755 @@
+/*
+ * The explorer and the editor-shaped Watch pane.
+ *
+ * Everything here is structure and state; there is not a single new colour. The
+ * file-type hues are the existing metric palette, reused so the eye learns one
+ * set of colours across the whole app, and --danger stays reserved for failure
+ * exactly as it is in the ticker.
+ *
+ * Two rules the layout depends on:
+ *  - the viewer is the point of this pane. Every other region has a fixed or
+ *    user-set size and the viewer takes the remainder, never the other way
+ *    round. That is why the tree is a sidebar with a hard maximum and the
+ *    activity panel has a hard minimum viewer height under it.
+ *  - --ft-row is the tree's row height and the windowing maths in FileTree.tsx
+ *    is written from it. Changing it here without changing ROW_H there shears
+ *    the list off its scroll position.
+ */
+
+:root {
+  --ft-row: 22px;
+  --ft-indent: 12px;
+  --ft-split: 5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tree                                                                */
+/* ------------------------------------------------------------------ */
+
+.ft {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ft-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  padding-bottom: var(--s3);
+}
+
+.ft-canvas {
+  position: relative;
+  width: 100%;
+}
+
+.ft-canvas:focus,
+.ft-canvas:focus-visible {
+  outline: none;
+}
+
+/* The tree owns keyboard focus as a whole — one tab stop, aria-activedescendant
+   for the caret — so the ring belongs on the row the caret is on, not around the
+   whole scroller. Keyed on :focus rather than :focus-visible because the caret
+   is usually placed by a click and then moved with the arrow keys. */
+.ft-canvas:focus .ft-row.is-focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.ft-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--ft-row);
+  padding-right: var(--s2);
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ft-row:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.ft-row.is-active {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.ft-row.is-focus {
+  background: var(--bg-hover);
+}
+
+.ft-row.is-root {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Ignored, not hidden: dimmed enough to skip past, still there when the one
+   thing you need is inside node_modules. */
+.ft-row.is-ignored {
+  color: var(--fg-faint);
+}
+.ft-row.is-ignored .ft-glyph {
+  opacity: 0.55;
+}
+
+.ft-row.is-changed .ft-name {
+  color: var(--ok);
+}
+
+.ft-twisty {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  color: var(--fg-faint);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.ft-twisty.is-open {
+  transform: rotate(90deg);
+}
+
+.ft-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--fg-faint);
+}
+
+.ft-glyph.fam-dir {
+  color: var(--fg-dim);
+}
+.ft-glyph.fam-code {
+  color: var(--info);
+}
+.ft-glyph.fam-script {
+  color: var(--ok);
+}
+.ft-glyph.fam-data {
+  color: var(--warn);
+}
+.ft-glyph.fam-style {
+  color: var(--metric-payload);
+}
+.ft-glyph.fam-image {
+  color: var(--metric-context);
+}
+.ft-glyph.fam-doc {
+  color: var(--fg-dim);
+}
+.ft-glyph.fam-config {
+  color: var(--fg-faint);
+}
+
+.ft-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Same green as the changed-line markers in the viewer: one meaning, one
+   colour, wherever the change shows up. */
+.ft-mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+/* A folder with changes somewhere inside it — hollow, so a branch never reads
+   as a file that was itself written. */
+.ft-mark.is-inside {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 70%, transparent);
+}
+
+/* ---- notes and paging ---- */
+
+.ft-note {
+  gap: var(--s2);
+  font-size: var(--fs-tiny);
+  font-style: italic;
+  color: var(--fg-faint);
+  cursor: default;
+}
+.ft-note:hover {
+  background: transparent;
+  color: var(--fg-faint);
+}
+.ft-note.is-error {
+  color: color-mix(in srgb, var(--danger) 70%, var(--fg-faint));
+}
+
+.ft-more {
+  gap: var(--s2);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+}
+.ft-more:hover {
+  color: var(--accent);
+}
+
+.ft-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: var(--s3);
+  padding: var(--s3);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  font-size: var(--fs-tiny);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+.ft-empty svg {
+  color: var(--fg-faint);
+}
+.ft-empty-head {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Watch pane shell                                                    */
+/* ------------------------------------------------------------------ */
+
+.wp {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-app);
+}
+
+.wp-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* While a splitter is held, nothing else on the pane may take the pointer —
+   otherwise dragging across the code lights up text selection instead. */
+.wp.is-dragging {
+  user-select: none;
+}
+.wp.is-dragging .wp-body,
+.wp.is-dragging .wp-panel {
+  pointer-events: none;
+}
+.wp.is-dragging .wp-split {
+  pointer-events: auto;
+}
+.wp.is-v {
+  cursor: col-resize;
+}
+.wp.is-h {
+  cursor: row-resize;
+}
+
+/* ---- sidebar ---- */
+
+.wp-side {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  border-right: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.wp-side-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: none;
+  height: var(--hud-h);
+  padding: 0 var(--s1) 0 var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.wp-side-head .section-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wp-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--fg-faint);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.wp-icon:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* ---- splitters ---- */
+
+.wp-split {
+  position: relative;
+  flex: none;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+/* A real gutter, not an overlay. Sitting on top of the sidebar's edge would put
+   the drag target on the tree's own scrollbar. */
+.wp-split-v {
+  width: var(--ft-split);
+  cursor: col-resize;
+}
+
+.wp-split-h {
+  height: var(--ft-split);
+  cursor: row-resize;
+}
+
+.wp-split:hover,
+.wp-split:focus-visible {
+  background: var(--accent-line);
+}
+
+.wp.is-dragging .wp-split-v,
+.wp.is-dragging .wp-split-h {
+  background: var(--accent);
+}
+
+/* ---- editor column ---- */
+
+.wp-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-void);
+}
+
+.wp-tabs {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  padding: 0 var(--s2);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+/* The app-wide 10px scrollbar is half the height of a tab. */
+.wp-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.wp-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  max-width: 26ch;
+  border-right: 1px solid var(--line-subtle);
+  color: var(--fg-dim);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.wp-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+}
+
+/* The selected tab is painted in the viewer's own ground so it reads as
+   attached to the pane below it. */
+.wp-tab.is-active {
+  background: var(--bg-void);
+  color: var(--fg);
+}
+
+.wp-tab.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.wp-tab.is-failed .wp-tab-name {
+  color: var(--danger);
+}
+
+/* The file being written right now. The only looping animation in the pane, and
+   it stops the moment the write lands. */
+.wp-tab.is-live::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  animation: wp-live 1.2s var(--ease) infinite;
+}
+
+@keyframes wp-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.22;
+  }
+}
+
+.wp-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px var(--s1) 6px var(--s2);
+  font-size: var(--fs-small);
+  color: inherit;
+}
+
+.wp-tab-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--fg-faint);
+}
+.wp-tab-glyph.fam-code {
+  color: var(--info);
+}
+.wp-tab-glyph.fam-script {
+  color: var(--ok);
+}
+.wp-tab-glyph.fam-data {
+  color: var(--warn);
+}
+.wp-tab-glyph.fam-style {
+  color: var(--metric-payload);
+}
+.wp-tab-glyph.fam-image {
+  color: var(--metric-context);
+}
+.wp-tab-glyph.fam-doc {
+  color: var(--fg-dim);
+}
+
+.wp-tab-name {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-tab-stat {
+  display: inline-flex;
+  gap: var(--s1);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.wp-add {
+  color: var(--ok);
+}
+.wp-del {
+  color: var(--danger);
+}
+
+.wp-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-right: var(--s1);
+  border-radius: var(--r-sm);
+  color: var(--fg-faint);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.wp-tab-close svg {
+  width: 12px;
+  height: 12px;
+}
+.wp-tab:hover .wp-tab-close,
+.wp-tab.is-active .wp-tab-close,
+.wp-tab-close:focus-visible {
+  opacity: 1;
+}
+.wp-tab-close:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+/* ---- breadcrumb ---- */
+
+.wp-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+  height: var(--hud-h);
+  padding: 0 var(--s2) 0 var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.wp-crumb-list {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.wp-crumb-list::-webkit-scrollbar {
+  display: none;
+}
+
+.wp-crumb-seg {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.wp-crumb-sep {
+  padding: 0 2px;
+  color: var(--fg-faint);
+}
+
+.wp-crumb {
+  padding: 2px var(--s1);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+button.wp-crumb:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.wp-crumb.is-file {
+  color: var(--fg);
+}
+
+.wp-crumb-none {
+  flex: 1 1 auto;
+  font-size: var(--fs-tiny);
+  color: var(--fg-faint);
+}
+
+.wp-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+  color: var(--ok);
+  background: var(--bg-raised);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.wp-follow.is-pinned {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.wp-follow:hover {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+.wp-follow svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---- the viewer, which gets everything left ---- */
+
+.wp-view {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.wp-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  margin: auto;
+  max-width: 52ch;
+  padding: var(--s6);
+  text-align: center;
+}
+
+.wp-idle-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  color: var(--fg-muted);
+}
+
+.wp-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  margin-left: 6px;
+  vertical-align: -2px;
+  background: var(--accent);
+  animation: wp-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes wp-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.wp-idle-body {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.wp-idle-warn {
+  padding: var(--s2) var(--s3);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--r);
+  font-size: var(--fs-small);
+  color: var(--warn);
+  text-align: left;
+}
+
+.wp-idle-roots {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bottom panel                                                        */
+/* ------------------------------------------------------------------ */
+
+.wp-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+
+.wp-panel-head {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  min-height: var(--hud-h);
+}
+
+.wp-panel-head .cs {
+  flex: 1 1 auto;
+  border-bottom: 0;
+}
+
+.wp-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: none;
+  padding: 0 var(--s2) 0 var(--s3);
+  color: var(--fg-faint);
+}
+
+.wp-panel-toggle:hover .section-label {
+  color: var(--fg-dim);
+}
+
+.wp-chev {
+  display: inline-flex;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.wp-chev.is-open {
+  transform: rotate(90deg);
+}
+
+.wp-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--line-subtle);
+}
+
+/* ------------------------------------------------------------------ */
+/* Narrow                                                              */
+/* ------------------------------------------------------------------ */
+
+/* Under this the sidebar and the viewer cannot both be honest, and the viewer
+   wins — it is the thing this pane exists to show. */
+@media (max-width: 700px) {
+  .wp-side {
+    display: none;
+  }
+  .wp-split-v {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-tab.is-live::after,
+  .wp-caret {
+    animation: none !important;
+    opacity: 1;
+  }
+}

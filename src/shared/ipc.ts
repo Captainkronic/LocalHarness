@@ -16,8 +16,10 @@ import type {
   Artifact,
   ConfigField,
   ControlState,
+  DirEntry,
   EditJob,
   EditParams,
+  Skill,
   FileActivity,
   TouchedFile,
   LiveAudioChunk,
@@ -161,6 +163,18 @@ export interface IpcApi {
   'live:interrupt': () => Promise<void>
   'live:exchanges': () => Promise<LiveExchange[]>
   'live:voices': () => Promise<string[]>
+
+  /* ---- file tree ---- */
+  /** One level, sandbox-checked. Directories first, then files, both by name. */
+  'code:listDir': (path: string) => Promise<DirEntry[]>
+
+  /* ---- skills ---- */
+  'skills:list': () => Promise<Skill[]>
+  'skills:refresh': () => Promise<Skill[]>
+  'skills:setEnabled': (path: string, enabled: boolean) => Promise<Skill[]>
+  /** The full SKILL.md body, for the panel's preview. */
+  'skills:read': (path: string) => Promise<string | null>
+  'skills:reveal': (path: string) => Promise<void>
 }
 
 export interface IpcEvents {
@@ -184,6 +198,7 @@ export interface IpcEvents {
   'event:liveStatus': LiveSessionStatus
   'event:liveAudio': LiveAudioChunk
   'event:liveExchange': LiveExchange
+  'event:skills': Skill[]
 }
 
 /** Everything the renderer needs on first paint, in one round trip. */
@@ -267,7 +282,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'live:utterance',
   'live:interrupt',
   'live:exchanges',
-  'live:voices'
+  'live:voices',
+  'code:listDir',
+  'skills:list',
+  'skills:refresh',
+  'skills:setEnabled',
+  'skills:read',
+  'skills:reveal'
 ]
 
 export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
@@ -290,7 +311,8 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:fileActivity',
   'event:liveStatus',
   'event:liveAudio',
-  'event:liveExchange'
+  'event:liveExchange',
+  'event:skills'
 ]
 
 /** The surface the preload script exposes as `window.harness`. */

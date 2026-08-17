@@ -26,13 +26,25 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 
 import type { FileActivity, FileOpKind } from '@shared/types'
 import { useStore } from '@renderer/state/store'
-import { basename, clockTime, formatMs, shortenPath } from '@renderer/lib/format'
+import { basename } from '@renderer/lib/format'
 import ChatView from '@renderer/components/chat/ChatView'
-import FileViewer from './FileViewer'
-import ActivityTicker from './ActivityTicker'
-import CodeStats from './CodeStats'
+import WatchPane from './WatchPane'
 import './code.css'
 import './ticker.css'
+
+const MODE_KEY = 'captainllama.code.mode'
+
+/** LH_CODE_MODE lets the screenshot driver photograph either half. */
+function readStoredMode(): 'chat' | 'watch' {
+  const forced = document.documentElement.dataset.codeMode
+  if (forced === 'watch' || forced === 'chat') return forced
+  try {
+    const v = window.localStorage.getItem(MODE_KEY)
+    return v === 'watch' ? 'watch' : 'chat'
+  } catch {
+    return 'chat'
+  }
+}
 
 /** How long a burst of cross-file edits has to settle before the viewer moves. */
 const JUMP_DEBOUNCE_MS = 260
@@ -68,14 +80,22 @@ export function CodeWorkspace(): JSX.Element {
    * starts; the first file activity flips to Watch once, and after that the
    * choice is the user's.
    */
-  const [mode, setMode] = useState<'chat' | 'watch'>('chat')
+  const [mode, setMode] = useState<'chat' | 'watch'>(() => readStoredMode())
   const autoSwitched = useRef(false)
+
+  // Remember which half you were last in. Being dropped back into Chat every
+  // launch is the sort of small forgetfulness that makes a tool feel careless.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODE_KEY, mode)
+    } catch {
+      // Private mode or a full quota: the preference is not worth an error.
+    }
+  }, [mode])
   const [pinnedPath, setPinnedPath] = useState<string | null>(null)
   const [autoPath, setAutoPath] = useState<string | null>(null)
   const [sweep, setSweep] = useState<{ path: string; gen: number } | null>(null)
-  const [tickerOpen, setTickerOpen] = useState(true)
   const sweepGen = useRef(0)
-  const stripRef = useRef<HTMLDivElement | null>(null)
   const mountedAt = useRef(Date.now())
 
   /* The store is app-wide; the workspace is per conversation. */
@@ -157,25 +177,6 @@ export function CodeWorkspace(): JSX.Element {
     return () => window.clearTimeout(timer)
   }, [autoPath, pinnedPath])
 
-  /* A tab strip long enough to scroll can leave the file you were just moved to
-     off-screen, sweep and all. Keep the active tab in view. */
-  useEffect(() => {
-    const strip = stripRef.current
-    if (!strip || !activePath) return
-    const el = strip.querySelector<HTMLElement>('[data-active="true"]')
-    if (!el) return
-    const left = el.offsetLeft
-    const right = left + el.offsetWidth
-    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)')
-      .matches
-      ? 'auto'
-      : 'smooth'
-    if (left < strip.scrollLeft) strip.scrollTo({ left: Math.max(0, left - 8), behavior })
-    else if (right > strip.scrollLeft + strip.clientWidth)
-      strip.scrollTo({ left: right - strip.clientWidth + 8, behavior })
-    // Keyed on the ORDER, not the count. Tabs are stable now, but a count-only
-    // dependency would still miss a new file arriving after one was replaced.
-  }, [activePath, tabOrder])
 
   const totals = useMemo(
     () =>
@@ -223,135 +224,18 @@ export function CodeWorkspace(): JSX.Element {
         added={totals.added}
         removed={totals.removed}
       />
-      {tabs.length > 0 ? (
-        <div className="cw-tabs">
-          <div
-            className="cw-tabstrip"
-            role="tablist"
-            aria-label="Touched files"
-            ref={stripRef}
-          >
-            {tabs.map((t) => {
-              const isActive = t.path === activePath
-              // Narrowed here rather than inline, so the glyph can follow the
-              // in-flight operation without a non-null assertion.
-              const liveKind = liveRow && liveRow.target === t.path ? liveRow.kind : null
-              const isLive = liveKind !== null
-              return (
-                <button
-                  key={t.path}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  data-active={isActive}
-                  className={
-                    'cw-tab' +
-                    (isActive ? ' is-active' : '') +
-                    (isLive ? ' is-live' : '') +
-                    (t.failed ? ' is-failed' : '') +
-                    (pinnedPath === t.path ? ' is-pinned' : '')
-                  }
-                  title={`${t.path}\n${t.touches} touch${t.touches === 1 ? '' : 'es'} · ${
-                    pinnedPath === t.path ? 'click to unpin' : 'click to pin'
-                  }`}
-                  onClick={() => pinTab(t.path)}
-                >
-                  <KindIcon kind={liveKind ?? t.lastKind} />
-                  <span className="cw-tab-name">{t.name}</span>
-                  {t.added > 0 || t.removed > 0 ? (
-                    <span className="cw-tab-stat tnum">
-                      <span className="cw-stat-add">+{t.added}</span>
-                      <span className="cw-stat-del">-{t.removed}</span>
-                    </span>
-                  ) : null}
-                  {pinnedPath === t.path ? <PinIcon /> : null}
-                  {sweep && sweep.path === t.path ? (
-                    <span key={sweep.gen} className="cw-tab-sweep" aria-hidden="true" />
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
-
-          <button
-            type="button"
-            className={pinnedPath ? 'cw-follow is-pinned' : 'cw-follow'}
-            onClick={
-              pinnedPath
-                ? resumeFollowing
-                : activePath
-                  ? () => setPinnedPath(activePath)
-                  : undefined
-            }
-            aria-pressed={pinnedPath !== null}
-            title={
-              pinnedPath
-                ? `Pinned to ${basename(pinnedPath)}. The viewer stays here while the agent works elsewhere. Click to follow again.`
-                : 'Following the agent: the viewer jumps to each file as it is written. Click to pin this one.'
-            }
-          >
-            {pinnedPath ? <PinIcon /> : <FollowIcon />}
-            <span>{pinnedPath ? 'Pinned' : 'Following'}</span>
-          </button>
-        </div>
-      ) : null}
-
-      <div className="cw-main">
-        {activities.length === 0 ? (
-          <div className="cw-idle">
-            <p className="cw-idle-title">
-              Standing by<span className="cw-caret" aria-hidden="true" />
-            </p>
-            <p className="cw-idle-body">
-              Every file the agent reads, writes or edits opens here as it happens,
-              with the changed lines marked. Shell commands and searches run past in
-              the ticker below.
-            </p>
-            {roots.length === 0 ? (
-              <p className="cw-idle-warn">
-                No workspace roots are configured, so every file tool and every shell
-                command will be refused before it is offered for approval. Add a root
-                in Settings.
-              </p>
-            ) : (
-              <p className="cw-idle-roots tnum">
-                {roots.length} sandbox root{roots.length === 1 ? '' : 's'} ·{' '}
-                {roots.map((r) => basename(r)).join(' · ')}
-              </p>
-            )}
-          </div>
-        ) : (
-          <FileViewer
-            path={activePath}
-            activity={activeTab?.latest ?? null}
-            following={pinnedPath === null}
-          />
-        )}
-      </div>
-
-      {/* The real ActivityTicker, not the inline one this file used to carry:
-          it freezes its window when the reader scrolls up and counts arrivals
-          instead of letting the rows they are reading fall off the head, and
-          its file rows open in the viewer. */}
-      <section className="cw-ticker-dock" data-open={tickerOpen}>
-        <header className="cw-tick-head">
-          <button
-            type="button"
-            className="cw-tick-toggle"
-            onClick={() => setTickerOpen((v) => !v)}
-            aria-expanded={tickerOpen}
-          >
-            <span className={tickerOpen ? 'cw-chev is-open' : 'cw-chev'} aria-hidden="true">
-              ›
-            </span>
-            <span className="section-label">Activity</span>
-          </button>
-          <CodeStats activities={activities} />
-        </header>
-        {tickerOpen ? (
-          <ActivityTicker activities={activities} onSelect={setPinnedPath} max={200} />
-        ) : null}
-      </section>
+      {/* The editor-shaped Watch view: file tree, tabs, viewer and the
+          activity dock. It replaces the tab-strip-over-viewer layout, which
+          left no room to actually read a file — Adam's report was that the
+          preview pane was impossible to use. */}
+      <WatchPane
+        activities={activities}
+        tabs={tabs}
+        activePath={activePath}
+        onSelect={setPinnedPath}
+        pinned={pinnedPath !== null}
+        onPinnedChange={(p) => setPinnedPath(p ? activePath : null)}
+      />
     </div>
   )
 }

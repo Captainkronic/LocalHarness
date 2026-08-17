@@ -35,10 +35,13 @@ import type { McpManager } from './mcp/manager'
 import type { ModelRegistry } from './llm/models'
 import type { ToolExecutor } from './agent/executor'
 import type { ApprovalBroker } from './agent/approval'
+import type { SkillRegistry } from './skills/registry'
+import type { LmStudioControl } from './llm/control'
 import { streamChat, type WireMessage } from './llm/client'
 import { buildContextUsage, buildMessages } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import { nativeWireTools, NATIVE_TOOLS } from './agent/tools'
+import { runSkillTool, skillTools } from './agent/skilltool'
 import { estimateTokens } from './mcp/tokens'
 
 /** Safety net against a model that calls tools forever. */
@@ -58,6 +61,8 @@ export interface OrchestratorDeps {
   models: ModelRegistry
   executor: ToolExecutor
   approvals: ApprovalBroker
+  skills: SkillRegistry
+  control: LmStudioControl
   emit: Emit
 }
 
@@ -206,6 +211,11 @@ export class Orchestrator {
       }, METRIC_EMIT_MS)
     }
     this.d.models.setActive(true)
+
+    // Put the right model on the box before anything else. LM Studio does NOT
+    // swap for you — asking for a second large model while one is resident fails
+    // with "insufficient system resources" — so the old one is unloaded first.
+    await this.ensurePreferredModel(conv, model)
 
     // Learn the model's real window before the first request against it, so the
     // context meter is right on the very first turn rather than two minutes later.
@@ -362,7 +372,12 @@ export class Orchestrator {
     }
 
     try {
-      if (call.origin === 'native') {
+      if (call.name === 'use_skill') {
+        const result = await runSkillTool(call.name, args, this.d.skills)
+        call.result = result.text
+        call.status = result.isError ? 'error' : 'ok'
+        if (result.isError) call.error = result.text
+      } else if (call.origin === 'native') {
         const result = await this.d.executor.execute(
           call.name as NativeToolId,
           args,
@@ -418,7 +433,14 @@ export class Orchestrator {
 
   private buildTools(workflowId: WorkflowId): WireTool[] {
     const wf = this.workflow(workflowId)
-    return [...nativeWireTools(wf.nativeTools), ...this.d.mcp.wireTools()]
+    return [
+      ...nativeWireTools(wf.nativeTools),
+      // One tool carrying the catalogue of enabled skills. Only their names and
+      // descriptions ride along on every message; a body is fetched only when
+      // the model decides a skill applies. That is what keeps skills cheap.
+      ...skillTools(this.d.skills.list()),
+      ...this.d.mcp.wireTools()
+    ]
   }
 
   private toolTokens(tools: WireTool[]): number {
@@ -441,7 +463,43 @@ export class Orchestrator {
     return estimateTokens(text) + this.toolTokens(tools) + messages.length * 4
   }
 
+  /**
+   * Make the turn's model resident, evicting whatever is there.
+   *
+   * Best-effort: if the swap fails the turn still runs against whatever is
+   * loaded rather than refusing, and the reason is logged. A failed swap is a
+   * slower or dumber answer, not a dead conversation.
+   */
+  private async ensurePreferredModel(conv: Conversation, model: ModelInfo): Promise<void> {
+    const resident = this.d.models.residentModelId()
+    if (resident === model.id) return
+
+    const control = this.d.control
+    if (control.state().status !== 'connected') {
+      // Without the control socket we cannot unload, and a bare load would hit
+      // the memory ceiling. Leave the box alone and use what is there.
+      this.log('info', 'model', `${model.id} is not resident and model control is not connected`)
+      return
+    }
+
+    this.log('info', 'model', `switching to ${model.id}${resident ? ` (evicting ${resident})` : ''}`)
+    try {
+      if (resident) await control.unload(resident)
+      const result = await control.load(model.id, {})
+      if (!result.ok) {
+        this.log('warn', 'model', `could not load ${model.id}: ${result.error ?? 'unknown error'}`)
+        return
+      }
+      await this.d.models.refresh().catch(() => undefined)
+    } catch (err) {
+      this.log('warn', 'model', `model switch failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   private originOf(name: string): 'native' | 'mcp' {
+    // use_skill is neither a native filesystem tool nor an MCP one, but it is
+    // in-process, so 'native' is the honest badge for the UI.
+    if (name === 'use_skill') return 'native'
     return NATIVE_TOOLS.some((t) => t.id === name) ? 'native' : 'mcp'
   }
 
@@ -454,6 +512,17 @@ export class Orchestrator {
       if (pinned) return pinned
     }
     const residentId = this.d.models.residentModelId()
+
+    // The workflow's preferred model wins whether or not it is loaded —
+    // `ensurePreferredModel` makes it resident first. Adam runs one model at a
+    // time by necessity, so swapping is the expected cost of changing the kind
+    // of work, not something to avoid.
+    const preferred = this.workflow(conv.workflowId).preferredModel
+    if (preferred) {
+      const match = models.find((m) => m.id === preferred)
+      if (match) return match
+    }
+
     if (residentId) {
       const resident = models.find((m) => m.id === residentId)
       if (resident) return resident

@@ -7,8 +7,8 @@
  */
 
 import { dialog, ipcMain, shell, app, BrowserWindow } from 'electron'
-import { readFile, stat } from 'node:fs/promises'
-import { extname } from 'node:path'
+import { readdir, readFile, stat } from 'node:fs/promises'
+import { extname, join } from 'node:path'
 
 import type {
   IpcApi,
@@ -19,6 +19,7 @@ import type {
 import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
 import type {
   Attachment,
+  DirEntry,
   EditJob,
   ModelInfo,
   Settings,
@@ -37,6 +38,7 @@ import type { LmStudioControl } from './llm/control'
 import type { EditPipeline } from './edit/pipeline'
 import { MAX_IMAGE_BYTES } from './edit/pipeline'
 import type { ActivityTracker } from './agent/activity'
+import type { SkillRegistry } from './skills/registry'
 import type { LiveSession } from './live/session'
 import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
@@ -55,6 +57,7 @@ export interface IpcDeps {
   edit: EditPipeline
   activity: ActivityTracker
   live: LiveSession
+  skills: SkillRegistry
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
   emit: <K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]) => void
@@ -73,6 +76,16 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'])
 /** The edit source picker is narrower: only what the img2img pipeline accepts,
  *  so the dialog cannot offer a file that is then silently refused. */
 const EDIT_SOURCE_EXT = EDIT_IMAGE_EXTENSIONS
+
+/** Entries returned for one directory. Beyond this the tree shows a terminal
+ *  "more" row rather than serialising an unbounded list over IPC. */
+const LIST_DIR_CAP = 5000
+
+/** Dimmed in the tree and never auto-expanded — but still openable. */
+const IGNORED_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'out', 'release', '.venv', 'venv',
+  '__pycache__', '.next', 'build', 'target', '.cache'
+])
 
 export function registerIpc(d: IpcDeps): void {
   const handlers: Handlers = {
@@ -338,7 +351,53 @@ export function registerIpc(d: IpcDeps): void {
       d.live.utterance(pcm, sampleRate, frameDataUrl),
     'live:interrupt': () => d.live.interrupt(),
     'live:exchanges': () => d.live.exchanges(),
-    'live:voices': () => d.live.voices()
+    'live:voices': () => d.live.voices(),
+
+    /* ---- file tree ---- */
+    'code:listDir': async (path: string) => {
+      // Same sandbox as every other path: the tree must not become a way to
+      // browse outside the workspace roots.
+      const roots = d.settings.get().workspaceRoots
+      if (!isInsideAny(path, roots)) return []
+      const entries = await readdir(path, { withFileTypes: true }).catch(() => null)
+      if (entries === null) return []
+
+      // Two bounds, both real. node_modules can hold tens of thousands of
+      // entries, and the tree deliberately lets you open it: without a cap that
+      // is a huge structured-clone across IPC. And `stat` per entry, awaited in
+      // sequence, was one round trip each — size and mtime only feed a tooltip,
+      // so the Dirent's own isDirectory() is enough and stat is skipped.
+      const out: DirEntry[] = []
+      for (const e of entries) {
+        if (out.length >= LIST_DIR_CAP) break
+        if (e.name.startsWith('.') && e.name !== '.agents') continue
+        out.push({
+          name: e.name,
+          path: join(path, e.name),
+          isDirectory: e.isDirectory(),
+          size: 0,
+          modifiedAt: 0,
+          ignored: IGNORED_DIRS.has(e.name)
+        })
+      }
+      return out.sort((a, b) =>
+        a.isDirectory === b.isDirectory
+          ? a.name.localeCompare(b.name)
+          : a.isDirectory
+            ? -1
+            : 1
+      )
+    },
+
+    /* ---- skills ---- */
+    'skills:list': () => d.skills.list(),
+    'skills:refresh': () => d.skills.refresh(),
+    'skills:setEnabled': (path: string, enabled: boolean) =>
+      d.skills.setEnabled(path, enabled),
+    'skills:read': (path: string) => d.skills.read(path),
+    'skills:reveal': (path: string) => {
+      shell.showItemInFolder(path)
+    }
   }
 
   for (const [channel, handler] of Object.entries(handlers)) {

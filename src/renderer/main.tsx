@@ -8,6 +8,14 @@ import { createRoot } from 'react-dom/client'
 
 import App from '@renderer/App'
 
+// Stamped on <html> before React mounts, so CodeWorkspace can read it in its
+// initial state rather than flashing the wrong half. ESM imports are hoisted,
+// so this cannot sit above them and mean anything — it belongs here.
+const forcedCodeMode = new URLSearchParams(window.location.search).get('codeMode')
+if (forcedCodeMode === 'chat' || forcedCodeMode === 'watch') {
+  document.documentElement.dataset.codeMode = forcedCodeMode
+}
+
 const container = document.getElementById('root')
 if (!container) throw new Error('LocalHarness: #root is missing from index.html')
 

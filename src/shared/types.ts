@@ -60,6 +60,14 @@ export interface WorkflowDefinition {
   sampling: SamplingDefaults
   /** Quick-start prompts offered on an empty conversation. */
   suggestions: string[]
+  /**
+   * The model this kind of work actually wants, from Adam's own assessment of
+   * his models. Advisory only: used when that model is already resident, and
+   * otherwise surfaced as a one-click suggestion. Switching workflows must never
+   * silently evict a 17GB model — this box holds one large model at a time, so
+   * an automatic load is a decision with a real cost.
+   */
+  preferredModel?: string
 }
 
 export interface SamplingDefaults {
@@ -393,6 +401,51 @@ export interface LiveAudioChunk {
   text: string
   /** True on the final chunk of a turn. */
   last: boolean
+}
+
+/* ------------------------------------------------------------------ */
+/* Skills                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A Claude-style skill: a folder with a SKILL.md carrying `name` and
+ * `description` frontmatter.
+ *
+ * The cost model is the whole point. Only name + description reach the prompt,
+ * which is a few dozen tokens for the whole catalogue; the body is read only
+ * when the model calls `use_skill`. That is why a skill is nearly free and an
+ * MCP server is not — a server's schemas are re-sent on every message.
+ */
+export interface Skill {
+  /** Frontmatter name, falling back to the folder name. */
+  name: string
+  description: string
+  /** Absolute path of the SKILL.md. */
+  path: string
+  /** Directory holding it, so relative references in the body resolve. */
+  dir: string
+  /** Which root it was found under, for display and de-duplication. */
+  source: string
+  /** Body length, as a rough guide to what invoking it will cost. */
+  bodyChars: number
+  /** Tokens the catalogue entry adds to every message (name + description). */
+  catalogTokens: number
+  enabled: boolean
+}
+
+/* ------------------------------------------------------------------ */
+/* File tree (Code workflow)                                           */
+/* ------------------------------------------------------------------ */
+
+export interface DirEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+  /** Bytes, for files. */
+  size: number
+  modifiedAt: number
+  /** True when the name matches a conventionally ignored directory. */
+  ignored: boolean
 }
 
 /* ------------------------------------------------------------------ */

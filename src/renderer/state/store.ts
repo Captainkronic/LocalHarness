@@ -48,6 +48,7 @@ import type {
   NativeToolInfo,
   ServerHealth,
   Settings,
+  Skill,
   WorkflowDefinition,
   WorkflowId
 } from '@shared/types'
@@ -75,6 +76,7 @@ export interface AppState {
   mcpSpecs: McpServerSpec[]
   mcpStates: McpServerState[]
   nativeTools: NativeToolInfo[]
+  skills: Skill[]
   live: LiveMetrics
   control: ControlState
   editJobs: EditJob[]
@@ -124,6 +126,8 @@ export interface AppState {
   updateSettings(patch: Partial<Settings>): Promise<void>
   /** Opens a folder picker and adds the choice to the agent's sandbox.
    *  Returns the path, or null if cancelled or already present. */
+  setSkillEnabled(path: string, enabled: boolean): Promise<void>
+  refreshSkills(): Promise<void>
   addWorkspaceRoot(): Promise<string | null>
   removeWorkspaceRoot(path: string): Promise<void>
 }
@@ -369,6 +373,7 @@ export const useStore = create<AppState>()((set, get) => {
       set((s) => ({ editJobs: s.editJobs.filter((j) => j.id !== jobId) })),
     'event:fileActivity': (activity) =>
       set((s) => ({ fileActivity: [...s.fileActivity, activity].slice(-ACTIVITY_CAP) })),
+    'event:skills': (skills) => set({ skills }),
     'event:liveStatus': (liveStatus) => set({ liveStatus }),
     // Audio chunks are large data: URLs on a hot path and are consumed by the
     // player in LiveWorkspace, which subscribes directly. Holding them in the
@@ -420,18 +425,20 @@ export const useStore = create<AppState>()((set, get) => {
     )
     if (latest) await loadConversation(latest.id, false)
 
-    const [history, pending, control, editJobs, liveSettings] = await Promise.all([
+    const [history, pending, control, editJobs, liveSettings, skills] = await Promise.all([
       call('lab', 'telemetry:history'),
       call('approval', 'approval:pending'),
       call('control', 'control:state'),
       call('edit', 'edit:list'),
-      call('live', 'live:settings')
+      call('live', 'live:settings'),
+      call('skills', 'skills:list')
     ])
     if (history) set({ labHistory: history.slice(-LAB_CAP) })
     if (pending) set({ approvals: pending })
     if (control) set({ control })
     if (editJobs) set({ editJobs })
     if (liveSettings) set({ liveSettings })
+    if (skills) set({ skills })
 
     // An explicit LH_START_WORKFLOW wins over whatever the last conversation
     // was; it is how the screenshot driver photographs a given workflow.
@@ -471,6 +478,7 @@ export const useStore = create<AppState>()((set, get) => {
     mcpSpecs: [],
     mcpStates: [],
     nativeTools: [],
+    skills: [],
     live: IDLE_LIVE,
     control: INITIAL_CONTROL,
     editJobs: [],
@@ -690,6 +698,16 @@ export const useStore = create<AppState>()((set, get) => {
       // waiting for a round trip after the user has already decided.
       set((s) => ({ approvals: s.approvals.filter((a) => a.id !== id) }))
       await call('approval', 'approval:respond', id, decision)
+    },
+
+    setSkillEnabled: async (path, enabled) => {
+      const next = await call('skills', 'skills:setEnabled', path, enabled)
+      if (next) set({ skills: next })
+    },
+
+    refreshSkills: async () => {
+      const next = await call('skills', 'skills:refresh')
+      if (next) set({ skills: next })
     },
 
     addWorkspaceRoot: async () => {

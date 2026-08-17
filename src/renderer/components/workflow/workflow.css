@@ -865,3 +865,55 @@
   font-family: var(--font-mono);
   font-size: var(--fs-small);
 }
+
+/* ------------------------------------------------------------------ */
+/* Skills                                                              */
+/* ------------------------------------------------------------------ */
+
+.skill-body {
+  padding: var(--s2) var(--s3) var(--s3);
+  border-top: 1px solid var(--line-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.skill-desc {
+  font-size: var(--fs-tiny);
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+/* The body is what `use_skill` returns. Shown so it is clear what the model
+   would receive — and that it is NOT in the prompt until then. */
+.skill-md {
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--s2);
+  border-radius: var(--r-sm);
+  background: var(--bg-void);
+  border: 1px solid var(--line-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.skill-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.skill-src {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

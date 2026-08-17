@@ -15,6 +15,7 @@ import type {
   LiveAudioChunk,
   LiveExchange,
   LiveSessionStatus,
+  Skill,
   LabStatus,
   LoadProgress,
   McpServerState,
@@ -35,6 +36,7 @@ import { EditJobStore } from './edit/store'
 import { ToolExecutor } from './agent/executor'
 import { ApprovalBroker } from './agent/approval'
 import { ActivityTracker } from './agent/activity'
+import { SkillRegistry } from './skills/registry'
 import { Orchestrator } from './orchestrator'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
@@ -101,10 +103,17 @@ function createWindow(): BrowserWindow {
     }
   })
 
+  // LH_CODE_MODE drives which half of the Code workflow is shown, so the
+  // screenshot driver can photograph either without clicking.
+  const codeMode = process.env['LH_CODE_MODE']
+  const query = codeMode ? { codeMode } : undefined
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+    if (codeMode) url.searchParams.set('codeMode', codeMode)
+    void win.loadURL(url.toString())
   } else {
-    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), { query })
   }
 
   return win
@@ -161,6 +170,14 @@ app.whenReady().then(async () => {
     (requestId, decision) => emit('event:approvalResolved', { requestId, decision })
   )
 
+  // Skills are near-free by design: only name + description reach the prompt,
+  // and the body is read on demand through the use_skill tool.
+  const skills = new SkillRegistry({
+    getSettings: () => settings.get(),
+    onSkills: (list: Skill[]) => emit('event:skills', list),
+    onLog: (level, scope, message) => log(level, scope, message)
+  })
+
   const activity = new ActivityTracker({
     onActivity: (a) => emit('event:fileActivity', a),
     getRoots: () => settings.get().workspaceRoots
@@ -209,6 +226,8 @@ app.whenReady().then(async () => {
     models,
     executor,
     approvals,
+    skills,
+    control,
     emit
   })
 
@@ -223,6 +242,7 @@ app.whenReady().then(async () => {
     edit,
     activity,
     live,
+    skills,
     orchestrator,
     getWindow: () => mainWindow,
     emit
@@ -231,6 +251,7 @@ app.whenReady().then(async () => {
   models.start()
   lab.start()
   control.start()
+  skills.start()
 
   mainWindow = createWindow()
   buildMenu({
@@ -272,6 +293,7 @@ app.whenReady().then(async () => {
     models.stop()
     lab.stop()
     control.stop()
+    skills.stop()
     await live.stop().catch(() => undefined)
     // SpeechServices owns its own McpClient rather than going through
     // McpManager, so mcp.shutdown() does not reach it and it must be stopped

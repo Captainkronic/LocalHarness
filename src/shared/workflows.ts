@@ -21,6 +21,8 @@ Rules that always apply:
 export const WORKFLOWS: WorkflowDefinition[] = [
   {
     id: 'chat',
+    // the speed/intelligence sweet spot
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Chat',
     blurb: 'Minimal payload. Nothing loaded you did not ask for.',
     glyph: '◇',
@@ -40,6 +42,8 @@ You have no tools in this mode. Answer from what you know, and say plainly when 
   },
   {
     id: 'live',
+    // smallest and fastest — real-time speech cannot wait on a 27B
+    preferredModel: 'google/gemma-4-e4b',
     label: 'Live',
     blurb: 'Talk to the model. It hears you and can see you.',
     glyph: '◉',
@@ -83,6 +87,8 @@ for the ear, not the eye.
   },
   {
     id: 'code',
+    // Adam's best coding model
+    preferredModel: 'qwen/qwen3.8-27b',
     label: 'Code',
     blurb: 'Agentic file editing, search and shell against a workspace.',
     glyph: '⌘',
@@ -117,6 +123,8 @@ You are doing software engineering with direct filesystem and shell access.
   },
   {
     id: 'image',
+    // sweet spot for prompt writing and critique
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Image',
     blurb: 'ComfyUI generation and editing with a critique loop.',
     glyph: '❖',
@@ -142,6 +150,8 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
   },
   {
     id: 'edit',
+    // sweet spot, and a VLM so it can see the photo
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Edit',
     blurb: 'Attach a photo, say what to change, render the edit.',
     glyph: '◐',
@@ -174,6 +184,8 @@ description of the whole scene as it should end up, with the purple sky in it.
   },
   {
     id: 'audio',
+    // sweet spot for audio prompt writing
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Audio',
     blurb: 'Music, sound effects, speech and transcription.',
     glyph: '♪',
@@ -198,6 +210,8 @@ You are generating audio locally: music and sound effects through ComfyUI, speec
   },
   {
     id: 'docs',
+    // long-form writing quality
+    preferredModel: 'qwen/qwen3.8-27b',
     // Short enough for the 60px rail — "Documents" truncated to "Docume…".
     label: 'Docs',
     blurb: 'PDF, Word, PowerPoint and Excel generation.',
@@ -224,6 +238,8 @@ You are producing real document files — PDF, .docx, .pptx and .xlsx — throug
   },
   {
     id: 'research',
+    // sweet spot; searching is not the bottleneck
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
     label: 'Research',
     blurb: 'Web search, page fetch and browser interaction.',
     glyph: '◎',
@@ -249,6 +265,8 @@ You are researching with live web access.
   },
   {
     id: 'data',
+    // SQL is code
+    preferredModel: 'qwen/qwen3.8-27b',
     label: 'Data',
     blurb: 'DuckDB over local CSV, Excel and Parquet.',
     glyph: '▦',
