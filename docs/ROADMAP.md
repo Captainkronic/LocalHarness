@@ -203,6 +203,23 @@ Still mechanism-forward, in rough priority:
    Work to make it teach harder, never to make it shorter: name what was added
    and why, in terms he can reuse in his next prompt.
 
+## ComfyUI: start it through the MCP, never by hand
+
+Starting `main.py` yourself without `--extra-model-paths-config` makes ComfyUI
+see ZERO checkpoints, and the failure surfaces as
+`ckpt_name: 'ace_step_1.5_turbo_aio.safetensors' not in []` — which reads like a
+missing model file when the model is present and simply unlisted. The MCP's own
+`start_comfy()` passes the output dir, input dir and the shared paths yaml at
+`~/Library/Application Support/Comfy Desktop/shared_model_paths.yaml`.
+
+Worse, `pkill -f ComfyUI/main.py` did NOT free port 8188, so a corrected restart
+silently lost the bind and the broken instance kept serving. Use
+`lsof -ti :8188 | xargs kill -9` and confirm the port is free before restarting.
+
+Measured once it was healthy: a 30-second ACE-Step song renders in **124
+seconds**. Budget roughly four seconds of render per second of music, and note
+that a shell timeout of two minutes is not enough to wait on one.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
