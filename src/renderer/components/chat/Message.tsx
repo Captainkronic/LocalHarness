@@ -184,6 +184,11 @@ function Reasoning({
   /** True once any answer text has arrived. */
   answered: boolean
 }) {
+  // Open while it is still thinking. Minutes of reasoning behind a collapsed
+  // header is the app hiding the only thing happening; once the answer lands
+  // the header's count is enough and it folds itself away. A manual toggle
+  // always wins from then on — `touched` records that the user has an opinion.
+  const [touched, setTouched] = useState(false)
   const [open, setOpen] = useState(false)
   const lines = text.split('\n').length
   const measured = typeof tokens === 'number' && tokens > 0
@@ -210,13 +215,30 @@ function Reasoning({
     const id = setInterval(() => setTick((n) => n + 1), 1000)
     return () => clearInterval(id)
   }, [live, tick])
+
+  const shown = touched ? open : live
+
+  /* Follow the tail, the way the transcript follows streamed content — but only
+     while the user is already at the bottom. Yanking the view back mid-scroll
+     when they have deliberately gone up to read something is worse than not
+     following at all. */
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el || !shown || !live) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (nearBottom) el.scrollTop = el.scrollHeight
+  }, [text, shown, live])
   return (
     <div className={runaway ? 'reasoning is-runaway' : 'reasoning'}>
       <button
         type="button"
         className="reasoning-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        onClick={() => {
+          setTouched(true)
+          setOpen((v) => !v)
+        }}
+        aria-expanded={shown}
       >
         <svg
           width="16"
@@ -228,7 +250,7 @@ function Reasoning({
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden="true"
-          style={{ transform: open ? 'rotate(90deg)' : undefined }}
+          style={{ transform: shown ? 'rotate(90deg)' : undefined }}
         >
           <path d="M6 4l4 4-4 4" />
         </svg>
@@ -261,7 +283,11 @@ function Reasoning({
           </span>
         ) : null}
       </button>
-      {open ? <div className="reasoning-body scroll-y">{text}</div> : null}
+      {shown ? (
+        <div className="reasoning-body scroll-y" ref={bodyRef}>
+          {text}
+        </div>
+      ) : null}
     </div>
   )
 }

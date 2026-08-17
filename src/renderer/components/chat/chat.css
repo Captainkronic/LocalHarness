@@ -233,7 +233,10 @@
 .reasoning-body {
   padding: var(--s2) var(--s3);
   border-top: 1px solid var(--line-subtle);
-  max-height: 340px;
+  /* Shorter while it is following the tail: this sits between the question and
+     the answer, and a 340px wall of thinking pushes everything else off screen
+     for the minutes it runs. */
+  max-height: 200px;
   font-family: var(--font-mono);
   font-size: var(--fs-small);
   line-height: 1.5;
