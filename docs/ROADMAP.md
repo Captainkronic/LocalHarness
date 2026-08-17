@@ -120,6 +120,34 @@ voice, what it can look up) rather than a redesign.
 Constraints that must survive anything done here: reduced-motion support, and
 never animating a number that is not measured.
 
+## Open UI/UX findings, verified but not yet fixed
+
+From an adversarial review of every screen (20 raised, 18 confirmed). The top
+three are done; these are the rest, roughly in the product owner's order.
+
+1. **Composer, one edit** — `Composer.tsx:55,81,113-122`. A send that fails
+   before the turn starts (empty model registry after a Studio reboot) clears
+   the textarea and loses the prompt with no error shown anywhere a component
+   renders. Same edit: delete the composer's context warning, which duplicates
+   ContextBanner and prints over 100% in future tense under a banner saying the
+   loss already happened. Needs `orchestrator.send` to return `accepted`.
+2. **Reasoning header** — `Message.tsx:134` prints `chars/4` as "tok" beside a
+   measured count in the same message's footer. Two numbers, one quantity,
+   neither marked. Reuse PrefillBar's `est.`/`~` convention.
+3. **Live** — `firstAudioMs: 0` headlined as "0ms" when Speak is off; the
+   "no speech service" note contradicts itself ("replies still appear here as
+   text" — there is no text path); the speaking equaliser animates through
+   prefers-reduced-motion because its geometry is computed in JS, not CSS.
+4. **Edit** — a hardcoded "this takes 1-2 minutes" renders 40px from the live
+   elapsed counter that disproves it; finished cards claim "Rendered with seed
+   random"; oversized/unsupported attachments are rejected silently because the
+   store drops the IPC result.
+5. **MCP panel** — a server in `error` bills its registry estimate into the
+   payload footer as though it were loaded.
+6. **Modal scrims** hardcode `rgba(0,0,0,…)` in four places instead of tokens.
+7. **`ContextMeter.tsx:63`** prints an unclamped percentage over a bar that is
+   clamped at `:54`.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
