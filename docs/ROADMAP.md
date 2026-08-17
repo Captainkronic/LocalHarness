@@ -138,6 +138,29 @@ INTENT is the bug worth fixing. A workflow whose tools say one thing while its
 skills say another puts the steering straight back on him — which is what
 `WorkflowDefinition.skills` now prevents.
 
+## Where end-to-end verification got to
+
+Driven against the real server with `LH_SHOT_DRIVE`: **Chat**, **Research**,
+**Docs**, **Code** (agentic write + read-back, file landed on disk, Watch pane
+and activity ticker correct), **Data** (describe + query, arithmetic right,
+Tables panel populated), **Live** (call starts, orb reaches Listening, mic
+opens; speech round trip recovers 9/9 words).
+
+**Image/Edit/Audio are still unverified past the first turn.** ComfyUI was down;
+it is running now, started by hand from
+`/Users/adam/ComfyUI-Installs/ComfyUI/ComfyUI/.venv/bin/python main.py`.
+
+Note for whoever drives Image next: **it does not render on the first turn.** It
+refines the prompt and asks the user to choose a quality level (draft ~1m50s
+through max 1536px), and renders only after that answer. A driver that sends one
+message and waits will always time out — that cost two four-minute runs here.
+Whether a five-way quality menu is the right amount of steering for "make me a
+picture" is a live question; the review-before-render step itself is intended
+and was in Adam's original request.
+
+A spoken Live turn cannot be driven at all: mic audio cannot be synthesised into
+the renderer's capture graph.
+
 ## Traps that have already cost time — do not rediscover
 
 - **A raw NUL byte in a TS string literal** compiles, but makes the file binary
