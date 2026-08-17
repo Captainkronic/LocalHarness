@@ -187,11 +187,21 @@ Still mechanism-forward, in rough priority:
    tok/s`; nothing says what good looks like on this hardware. A tooltip
    comparing against the model's own measured history would turn the readout
    into a lesson.
-4. **The Image quality menu.** Asked for a picture, the model returns a prompt
-   plus a five-way choice (draft → max with timings). Review-before-render is
-   intended and was Adam's own request, but five options with a paragraph of
-   prose is the model asking him to steer. A sensible default with "higher?"
-   offered afterwards may fit the brief better. Product call — ask first.
+4. **The confirm-before-render step is a FEATURE. Do not streamline it.**
+   I proposed defaulting the quality and dropping the review. Adam corrected
+   that, and the correction is the more interesting product insight:
+
+   > The model can confirm things before generating image or audio. That helps
+   > me learn how it's converting my prompt into a usable format for the video
+   > or language models. It's part of the growth I'm trying to achieve —
+   > learning how to transform a request to an LLM into something useable for
+   > other models to pick up and run with.
+
+   So the pause is where the teaching happens. The LLM is a TRANSLATOR between
+   a human sentence and a diffusion or audio model's input language, and making
+   that translation visible is the point of the workflow, not a tax on it.
+   Work to make it teach harder, never to make it shorter: name what was added
+   and why, in terms he can reuse in his next prompt.
 
 ## Traps that have already cost time — do not rediscover
 
