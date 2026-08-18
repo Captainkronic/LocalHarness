@@ -122,9 +122,15 @@ export class AvatarBuilder {
       /* ---- the base portrait ---- */
       report(0, 'Painting the portrait', 'working')
       const prompt = `${spec.description.trim()}. ${AVATAR_BASE_PROMPT_HINT}`
+      // 'fast' rather than 'balanced'. The base is now a flat vector
+      // illustration with no gradients or texture, which needs far fewer
+      // sampling steps than a photographic portrait — and it is the longest
+      // single step in a job whose main flaw is its length. Measured: 597s at
+      // balanced against 230s at fast, on an image with nothing in it that
+      // extra steps would refine.
       const base = await this.callImage('generate', [
         prompt,
-        '--quality', 'balanced',
+        '--quality', 'fast',
         '--out', dir
       ])
       if (base === null) {

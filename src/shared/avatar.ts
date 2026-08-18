@@ -39,12 +39,27 @@ import type { AvatarFrame, AvatarFrameSpec } from './types'
  * because we detect a face changing far more sharply than we detect a mouth
  * moving. Photoreal here does not read as a video call, it reads as two people
  * flickering — which is worse than the orb it replaces.
+ *
+ * The first version of this hint said "digital painting with visible brush
+ * strokes", which was not nearly strong enough: z-image's prior pulls hard
+ * toward photography, and a request for a man in a suit came back with
+ * individual hair strands and real skin shading. Every one of those fine
+ * details differs between renders, and the difference is what shimmers. So the
+ * wording now names what must NOT be there — no gradients, no skin texture, no
+ * hair strands — because the absence of high-frequency detail is the actual
+ * requirement, and asking for a style was not getting it.
+ *
+ * Note that this reduces flicker rather than removing it. What removes it is
+ * confining each animated layer to the region it changes; see REGION in
+ * AvatarStage. Style is the belt, masking is the braces.
  */
 export const AVATAR_BASE_PROMPT_HINT =
-  'A painted character portrait, head and shoulders, facing the camera straight on, ' +
-  'calm neutral expression with the mouth closed, soft even lighting from the front, ' +
-  'plain muted background, digital painting with visible brush strokes and simple ' +
-  'clean shapes, centred with even margins'
+  'Flat vector character illustration, cel shaded with hard-edged colour and no ' +
+  'gradients, bold clean outlines, simplified geometric shapes, limited flat palette, ' +
+  'no skin texture, no individual hair strands, no photographic detail. ' +
+  'Head and shoulders, facing the camera straight on, calm neutral expression with ' +
+  'the mouth closed, flat even lighting, plain single-colour background, ' +
+  'centred with even margins'
 
 /** The mouth, tied to how loud the speaker currently is. */
 export const AVATAR_MOUTH_FRAMES: readonly AvatarFrame[] = [

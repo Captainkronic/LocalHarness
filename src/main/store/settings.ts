@@ -218,7 +218,16 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
     workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides,
     panelLayout: asPanelLayout(src.panelLayout) ?? base.panelLayout,
-    liveAvatarId: typeof src.liveAvatarId === 'string' ? src.liveAvatarId : base.liveAvatarId
+    // `in`, not a truthiness test: null is a MEANINGFUL value here — it is how
+    // the Face picker says "go back to the orb". Falling back to `base` when
+    // the value was not a string meant selecting Orb silently kept the avatar,
+    // and the dropdown snapped straight back.
+    liveAvatarId:
+      isRecord(raw) && 'liveAvatarId' in raw
+        ? typeof src.liveAvatarId === 'string'
+          ? src.liveAvatarId
+          : null
+        : base.liveAvatarId
   }
 }
 

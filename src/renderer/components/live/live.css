@@ -1006,6 +1006,42 @@
      voice, which is the one thing this feature cannot get wrong. */
 }
 
+/* The permanent bottom layer. Never animated and never masked — everything
+   the overlays do happens on top of these pixels, which is what makes the
+   unchanged parts of the face genuinely unchanging. */
+.av-base {
+  opacity: 1;
+}
+
+/* The regions the animated layers are confined to.
+   Ellipses rather than rectangles, with a soft falloff, so there is no edge to
+   notice — the blend fades out before it reaches anything that differs between
+   renders. Positions assume the framing the builder enforces: head and
+   shoulders, straight on, centred. */
+.av-region-mouth {
+  -webkit-mask-image: radial-gradient(
+    ellipse 26% 20% at 50% 54%,
+    #000 55%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(ellipse 26% 20% at 50% 54%, #000 55%, transparent 100%);
+}
+
+.av-region-eyes {
+  -webkit-mask-image: radial-gradient(
+    ellipse 30% 12% at 50% 36%,
+    #000 55%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(ellipse 30% 12% at 50% 36%, #000 55%, transparent 100%);
+}
+
+/* Whole-frame, for the two that only appear when nothing is being said. */
+.av-region-full {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 .av-stage-empty {
   display: grid;
   place-items: center;

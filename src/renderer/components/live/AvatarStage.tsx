@@ -52,6 +52,24 @@ export interface AvatarStageProps {
   state: LiveSessionState
 }
 
+/**
+ * Which part of the face each frame is allowed to change.
+ *
+ * The mouth and eye frames swap several times a second, so they are confined to
+ * a soft-edged region and everything outside it stays the base image. The two
+ * that only appear while nothing is being said can take the whole frame: they
+ * fade in once over a second, and a slow dissolve between two near-identical
+ * portraits reads as a change of expression rather than as flicker.
+ */
+const REGION: Record<Exclude<AvatarFrame, 'rest'>, 'mouth' | 'eyes' | 'full'> = {
+  mouthSlight: 'mouth',
+  mouthMid: 'mouth',
+  mouthWide: 'mouth',
+  blink: 'eyes',
+  smile: 'mouth',
+  listening: 'full'
+}
+
 /** How fast a frame fades in. Per rAF step, so ~4 frames to settle at 60fps. */
 const FADE = 0.34
 
@@ -135,8 +153,11 @@ export function AvatarStage({
       if (sources[target] === undefined) target = nearestAvailable(target, sources)
 
       for (const frame of present) {
+        // rest is the permanent base underneath, so "show rest" means fading
+        // every overlay out rather than fading one in.
+        if (frame === 'rest') continue
         const want = frame === target ? 1 : 0
-        const current = opacity.current.get(frame) ?? (frame === 'rest' ? 1 : 0)
+        const current = opacity.current.get(frame) ?? 0
         const next = current + (want - current) * FADE
         // Snap the tail, so a frame that is visually gone stops being composited.
         const settled = Math.abs(want - next) < 0.01 ? want : next
@@ -162,21 +183,40 @@ export function AvatarStage({
 
   return (
     <div className="av-stage" data-state={state} aria-label={avatar.name}>
-      {present.map((frame) => (
-        <img
-          key={frame}
-          ref={(node) => {
-            if (node) nodes.current.set(frame, node)
-            else nodes.current.delete(frame)
-          }}
-          className="av-frame"
-          src={sources[frame]}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          style={{ opacity: frame === 'rest' ? 1 : 0 }}
-        />
-      ))}
+      {/* The base never animates. Every layer above is masked to the part of
+          the face it actually changes, so hair, eyes, collar and background
+          are literally the same pixels from one frame to the next.
+
+          This is the flicker fix, and it is structural rather than cosmetic. A
+          generated portrait differs EVERYWHERE between renders — every hair
+          strand, every gradient in the background — so cross-fading whole
+          frames made the entire picture shimmer, which reads as a fault rather
+          than as speech. Confine the blend to the mouth and there is nothing
+          left to shimmer. */}
+      <img
+        className="av-frame av-base"
+        src={sources.rest}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      {present
+        .filter((frame) => frame !== 'rest')
+        .map((frame) => (
+          <img
+            key={frame}
+            ref={(node) => {
+              if (node) nodes.current.set(frame, node)
+              else nodes.current.delete(frame)
+            }}
+            className={`av-frame av-region-${REGION[frame]}`}
+            src={sources[frame]}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            style={{ opacity: 0 }}
+          />
+        ))}
     </div>
   )
 }
