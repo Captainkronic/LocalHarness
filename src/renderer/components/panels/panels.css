@@ -1307,3 +1307,251 @@
   margin-left: auto;
 }
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Health                                                              */
+/* ------------------------------------------------------------------ */
+
+.hl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.hl-h {
+  margin: 0 0 var(--s1);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.hl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/* ---- the one thing that must not be missed ---- */
+
+/* Deliberately unlike everything else in this app: filled rather than
+   outlined, top of the panel, never collapsible. Everywhere else a warning is a
+   chip; here it is the screen. */
+.hl-flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  border-radius: var(--r);
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.hl-flag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-small);
+}
+
+.hl-flag strong {
+  color: var(--danger);
+  font-size: var(--fs-base);
+}
+
+/* Sentence case, not Title Case. `capitalize` capitalises every word, which
+   turned "chest pain with pressure or tightness" into something that reads
+   like a product name rather than a warning. */
+.hl-flag strong::first-letter {
+  text-transform: uppercase;
+}
+
+.hl-note.is-caveat {
+  color: var(--warn);
+}
+
+.hl-flag em {
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+  font-style: normal;
+}
+
+/* ---- the case file ---- */
+
+.hl-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.hl-items li::before {
+  content: '·';
+  margin-right: var(--s1);
+  color: var(--fg-faint);
+}
+
+/* ---- a drug label ---- */
+
+.hl-boxed {
+  margin: 0;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hl-sections {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.hl-sec-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s1) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-subtle);
+  background: none;
+  color: var(--fg-dim);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hl-sec-head:hover,
+.hl-sec-head:focus-visible {
+  color: var(--accent);
+}
+
+/* Label text is dense and long. Scrollable rather than truncated: a
+   contraindication cut off mid-sentence is worse than one you have to scroll. */
+.hl-sec-body {
+  margin: 0;
+  padding: var(--s2) 0;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.hl-link,
+.hl-sources a,
+.hl-papers a {
+  color: var(--accent);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
+.hl-link:hover,
+.hl-sources a:hover,
+.hl-papers a:hover {
+  text-decoration: underline;
+}
+
+.hl-summary,
+.hl-note {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* ---- interactions ---- */
+
+.hl-hits {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.hl-hits li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--s2);
+  border-left: 2px solid var(--warn);
+}
+
+.hl-hit-head {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.hl-hit-body {
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+/* ---- evidence ---- */
+
+.hl-papers {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+}
+
+.hl-papers li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* What kind of evidence, before the title. The difference between a
+   meta-analysis and one small study is the whole claim, and it is invisible to
+   anyone not used to reading these. */
+.hl-strength {
+  align-self: flex-start;
+  font-size: var(--fs-micro);
+  padding: 1px var(--s2);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--fg-faint);
+}
+
+.hl-strength.is-strong {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.hl-cite {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* ---- what was consulted ---- */
+
+.hl-sources {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hl-sources li {
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+}
+
+.hl-kind {
+  flex: none;
+  min-width: 68px;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}

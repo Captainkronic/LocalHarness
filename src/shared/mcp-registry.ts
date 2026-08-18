@@ -199,6 +199,25 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     autoStart: false
   },
   {
+    id: 'health',
+    label: 'Health',
+    blurb: 'MedlinePlus, FDA drug labels and PubMed, with a case file.',
+    command: PY,
+    args: [`${HOME}/.config/health-mcp/server.py`],
+    env: {
+      // NCBI ask for a contact on E-utilities traffic and throttle harder
+      // without one. Empty is honest rather than a fake address; set it if the
+      // rate limit ever bites.
+      HEALTH_CONTACT_EMAIL: '',
+      HEALTH_SKILL_ROOT: `${HOME}/.claude/skills`
+    },
+    // PubMed's efetch is two round trips and openFDA is occasionally slow.
+    callTimeoutMs: 90_000,
+    // Measured from the six tool schemas, not guessed.
+    estimatedTokens: 907,
+    autoStart: false
+  },
+  {
     id: 'webassets',
     label: 'Web assets',
     blurb: 'Real SVG icons and responsive WebP/AVIF image sets.',

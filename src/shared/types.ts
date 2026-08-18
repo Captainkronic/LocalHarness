@@ -19,6 +19,7 @@ export type WorkflowId =
   | 'chat'
   | 'live'
   | 'booker'
+  | 'clinic'
   | 'code'
   | 'image'
   | 'edit'
@@ -39,6 +40,7 @@ export type PanelKind =
   | 'documents'
   | 'sources'
   | 'tables'
+  | 'health'
 
 export interface WorkflowDefinition {
   id: WorkflowId

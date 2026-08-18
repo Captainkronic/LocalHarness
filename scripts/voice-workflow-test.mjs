@@ -60,7 +60,7 @@ const { LiveSession, WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow } = await import
 console.log('\n\x1b[1mvoice workflows\x1b[0m')
 
 const voice = WORKFLOWS.filter((w) => w.voice === true).map((w) => w.id)
-check('live and booker are the spoken workflows', voice.join(',') === 'live,booker', voice.join(','))
+check('the spoken workflows are exactly these', voice.join(',') === 'live,booker,clinic', voice.join(','))
 check('isVoiceWorkflow agrees with the flag', WORKFLOWS.every((w) => isVoiceWorkflow(w.id) === (w.voice === true)))
 check('an unknown id is not spoken', !isVoiceWorkflow('nonesuch'))
 
@@ -73,6 +73,9 @@ for (const id of voice) {
 /* ---- 2. the session takes its workflow from the conversation ---------- */
 console.log('\n\x1b[1mLiveSession.start\x1b[0m')
 
+/* Every spoken workflow must be reachable and must refuse a typed one. Driven
+   off the flag rather than a hardcoded list, so a new voice workflow is covered
+   the moment it is added — which is the failure this whole file exists for. */
 const conversations = new Map(
   WORKFLOWS.map((w) => [`conv-${w.id}`, { id: `conv-${w.id}`, workflowId: w.id, modelId: null, messages: [] }])
 )
