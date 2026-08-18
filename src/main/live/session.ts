@@ -45,9 +45,10 @@ import type {
   ModelInfo,
   Settings,
   ToolCall,
-  TurnMetrics
+  TurnMetrics,
+  WorkflowDefinition
 } from '@shared/types'
-import { WORKFLOW_BY_ID } from '@shared/workflows'
+import { WORKFLOW_BY_ID, isVoiceWorkflow } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
 import type { ModelRegistry } from '../llm/models'
@@ -60,7 +61,6 @@ import type { SpeechServices } from './speech'
 import { decodeWavToDataUrl, encodeWav } from './wav'
 
 const SCOPE = 'live'
-const WORKFLOW = WORKFLOW_BY_ID.live
 
 export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   // Jarvis. See VOICE_PRESETS in shared/workflows.ts.
@@ -177,6 +177,29 @@ export class LiveSession {
   private state: LiveSessionState = 'off'
   private conversationId: string | null = null
 
+  /**
+   * The workflow this session is running as, taken from the conversation.
+   *
+   * This was a module constant pinned to `live`, which meant Flight Booker
+   * spoke with Live's persona and was offered Live's tools instead of its own —
+   * so asked for a fare it apologised as Jarvis, having never been given a
+   * flight tool to call. A spoken workflow is not the Live workflow; it is
+   * whichever one the conversation belongs to.
+   *
+   * Null while stopped, rather than defaulting to Live. A default is how the
+   * original bug would come back: it would be silently correct for the one
+   * workflow it names and silently wrong for every other, which is exactly the
+   * failure that is hard to see from the outside.
+   */
+  private wf: WorkflowDefinition | null = null
+
+  private get workflow(): WorkflowDefinition {
+    if (this.wf === null) {
+      throw new Error('live session has no workflow — start() has not run')
+    }
+    return this.wf
+  }
+
   /** Tools running right now, comma-joined for the HUD. */
   private toolLabel = ''
   private lastUserText = ''
@@ -209,9 +232,17 @@ export class LiveSession {
     if (typeof conversationId !== 'string' || conversationId.length === 0) {
       return { ok: false, error: 'A conversation id is required to start a live session' }
     }
-    if (this.o.conversations.get(conversationId) === null) {
+    const conv = this.o.conversations.get(conversationId)
+    if (conv === null) {
       return { ok: false, error: `Conversation ${conversationId} no longer exists` }
     }
+    // Refused rather than coerced. A workflow that is not spoken has native
+    // tools and approval gates this loop cannot run, and starting it here would
+    // half-work: it would talk, and quietly fail to do anything it offered.
+    if (!isVoiceWorkflow(conv.workflowId)) {
+      return { ok: false, error: `${conv.workflowId} is not a spoken workflow` }
+    }
+    this.wf = WORKFLOW_BY_ID[conv.workflowId]
 
     if (this.state !== 'off') await this.stop()
 
@@ -251,6 +282,7 @@ export class LiveSession {
   async stop(): Promise<void> {
     this.cancelTurn()
     this.conversationId = null
+    this.wf = null
     this.setState('off')
   }
 
@@ -452,7 +484,7 @@ export class LiveSession {
     const frame = this.frameFor(frameDataUrl, model)
     // Hoisted above the message build: the schemas are part of what the window
     // must hold, so the history's budget cannot be worked out without them.
-    const tools = this.o.mcp.wireTools(WORKFLOW.mcpTools)
+    const tools = this.o.mcp.wireTools(this.workflow.mcpTools)
     const toolSchemaCost = tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
 
     const messages = this.composeMessages(conv, model, toolSchemaCost)
@@ -517,13 +549,13 @@ export class LiveSession {
           apiKey: settings.apiKey,
           model: model.id,
           messages,
-          temperature: WORKFLOW.sampling.temperature,
-          topP: WORKFLOW.sampling.topP,
-          maxTokens: WORKFLOW.sampling.maxTokens,
+          temperature: this.workflow.sampling.temperature,
+          topP: this.workflow.sampling.topP,
+          maxTokens: this.workflow.sampling.maxTokens,
           // The single biggest lever on perceived latency here. Measured on
           // gemma-4-e4b: without it the first speakable word is ~3.9s away
           // because the model reasons first; with it, ~0.3s.
-          reasoningEffort: WORKFLOW.sampling.reasoningEffort,
+          reasoningEffort: this.workflow.sampling.reasoningEffort,
           // Withheld on the last permitted round: offering tools the loop will
           // refuse to run invites a call that can only be answered with an
           // apology, and the user hears the silence either way.
@@ -916,9 +948,9 @@ export class LiveSession {
     const raw =
       window === null || window <= 0
         ? 0
-        : window - WORKFLOW.sampling.maxTokens - toolTokens - Math.ceil(window * 0.05)
+        : window - this.workflow.sampling.maxTokens - toolTokens - Math.ceil(window * 0.05)
 
-    return buildMessages(conv, WORKFLOW.systemPrompt, model.supportsVision, {
+    return buildMessages(conv, this.workflow.systemPrompt, model.supportsVision, {
       budget: raw > 0 ? raw : undefined,
       onTrim: (info) =>
         this.o.onLog(
@@ -958,7 +990,7 @@ export class LiveSession {
    * boundary.
    */
   private toolPermitted(name: string): boolean {
-    const allow = WORKFLOW.mcpTools
+    const allow = this.workflow.mcpTools
     if (!allow) return true
     return this.o.mcp.wireTools(allow).some((t) => t.function.name === name)
   }

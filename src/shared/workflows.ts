@@ -198,6 +198,7 @@ You have no tools here, and that is the point: this is the cheapest, fastest tur
     // weather, news and scores in a single call rather than a search round-trip,
     // which matters when someone is waiting out loud; gmail is what makes "read
     // me my email" possible at all.
+    voice: true,
     mcpServers: ['fastfacts', 'gmail'],
     // Measured: gmail's full 19 tools cost 3,245 tokens, and the whole set with
     // fastfacts is 3,828 — about 15 seconds of prefill before the first word.
@@ -322,6 +323,7 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     // check the football is a worse travel agent, and every unused tool is
     // prefill paid on every spoken turn — which is time you spend waiting for
     // the first word.
+    voice: true,
     mcpServers: ['flights'],
     nativeTools: [],
     panel: 'flights',
@@ -362,8 +364,10 @@ Never invent a flight, a price, a time or an airline. Not to fill a gap, not to
 be helpful, not while a tool is loading. If the search returns nothing, say so —
 "nothing on that route that day" — and offer to try a nearby date.
 
-If the tool says no credentials are set, say plainly that flight lookup needs an
-Amadeus key and stop. Do not answer from memory.
+If the tool says no credentials are set, or that it could not reach the provider,
+read out what it tells you and stop. Those are two different problems with two
+different fixes and the tool knows which one it hit — do not diagnose it yourself,
+and above all do not answer from memory.
 
 Prices from the test environment are indicative and not bookable. When the tool
 says so, pass that on once, in a clause, and do not repeat it every turn.
@@ -761,3 +765,18 @@ export const WORKFLOW_BY_ID: Record<WorkflowId, WorkflowDefinition> = Object.fro
 ) as Record<WorkflowId, WorkflowDefinition>
 
 export const DEFAULT_WORKFLOW: WorkflowId = 'chat'
+
+/**
+ * Whether a workflow is driven by LiveSession rather than by a typed turn.
+ *
+ * One place answers this, on purpose. It used to be answered in three — a
+ * hardcoded `WORKFLOW_BY_ID.live` in the session, a hardcoded `'live'` in
+ * `startLive`, and an `id === 'live' || id === 'booker'` in App — and adding
+ * Flight Booker updated only the last of them. The result was a workflow that
+ * looked right on screen and ran as Live underneath: Live's persona, Live's
+ * tools, and a conversation filed under Live, which threw the user back into
+ * the Live tab the moment they pressed Start call.
+ */
+export function isVoiceWorkflow(id: WorkflowId): boolean {
+  return WORKFLOW_BY_ID[id]?.voice === true
+}

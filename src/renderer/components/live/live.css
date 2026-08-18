@@ -429,30 +429,58 @@
   gap: var(--s3);
   flex: none;
 
-  --orb-c: var(--fg-faint);
+  /*
+   * One blue, throughout.
+   *
+   * This used to run the theme's semantic colours -- green for speaking, amber
+   * for thinking -- which is correct for a status light and wrong for this.
+   * JARVIS has an identity, and an identity that changes hue four times a
+   * sentence is not one. So state is carried by BRIGHTNESS within a single
+   * cyan family, plus the shape changes in StateGlyph, and only error is
+   * allowed to leave the family: the one moment you want the colour to break
+   * the spell is the moment something is actually wrong.
+   *
+   * Literal values rather than theme tokens, deliberately. A projection is its
+   * own light source; it does not take its colour from the room, and this reads
+   * the same on either theme because it is emitting rather than reflecting.
+   */
+  --orb-c: #2c536b;
+  --orb-hot: #43708c;
+  --orb-frame: #3d7fa8;
   --orb-level: 0;
 }
 
 .orb[data-state='starting'] {
-  --orb-c: var(--fg-dim);
+  --orb-c: #2e8fc4;
+  --orb-hot: #9fdcff;
 }
 .orb[data-state='listening'],
 .orb[data-state='capturing'] {
-  --orb-c: var(--accent);
+  --orb-c: #4fc3ff;
+  --orb-hot: #dcf7ff;
 }
 .orb[data-state='transcribing'] {
-  --orb-c: var(--metric-context);
+  --orb-c: #37abe9;
+  --orb-hot: #bdeeff;
 }
 .orb[data-state='thinking'] {
-  --orb-c: var(--warn);
+  /* The one step off cyan, and only just: thinking is the longest silence in a
+     turn, so it gets the coolest, deepest end of the family. */
+  --orb-c: #6f8cff;
+  --orb-hot: #d2dcff;
 }
 .orb[data-state='speaking'] {
-  --orb-c: var(--ok);
+  --orb-c: #7fe3ff;
+  --orb-hot: #f2ffff;
 }
 /* The live workflow's accent is close to the danger hue, so the error state is
    given a shape as well as a colour: a hollow shell and a broken ring. */
 .orb[data-state='error'] {
   --orb-c: var(--danger);
+  /* The one state allowed out of the blue family, so it needs its own
+     highlight too -- left on the default it kept a cold steel core inside a red
+     shell, which read as two things wrong rather than one. */
+  --orb-hot: #ffd8cd;
 }
 
 .orb-svg {
@@ -868,38 +896,157 @@
 
 .orb-sweep {
   fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.25;
-  stroke-linecap: round;
+  stroke: var(--orb-frame);
+  stroke-width: 1.1;
+  stroke-linecap: butt;
   opacity: 0;
   transform-origin: 100px 100px;
 }
 
-/* Only while a call is up: a sweep on a dead session suggests activity that is
-   not happening. */
-.orb:not([data-state='off']) .orb-sweep-cw {
-  opacity: 0.55;
+/* Only while a call is up: a ring turning on a dead session suggests activity
+   that is not happening. Three radii at three speeds, two directions -- the
+   depth comes from the disagreement, not from any one of them. */
+.orb:not([data-state='off']) .orb-ring-cw {
+  opacity: 0.6;
   animation: orb-spin 9s linear infinite;
 }
 
-.orb:not([data-state='off']) .orb-sweep-ccw {
-  opacity: 0.3;
+.orb:not([data-state='off']) .orb-ring-ccw {
+  opacity: 0.4;
   animation: orb-spin 14s linear infinite reverse;
 }
 
-/* The one state where the frame speaks: a tool call is a wait the user cannot
-   attribute to the model, so the sweeps quicken and brighten to say the pause
-   is work rather than a stall. */
-.orb[data-state='tool'] .orb-sweep-cw {
-  stroke: var(--metric-payload);
-  opacity: 0.9;
+.orb:not([data-state='off']) .orb-ring-cw-slow {
+  opacity: 0.28;
+  animation: orb-spin 26s linear infinite;
+}
+
+/* The one state where the frame speaks: the rings quicken and take the core's
+   colour, so a tool call looks like work rather than a stall. */
+.orb[data-state='tool'] .orb-sweep {
+  stroke: var(--orb-c);
+}
+
+.orb[data-state='tool'] .orb-ring-cw {
+  opacity: 0.95;
   animation-duration: 2.6s;
 }
 
-.orb[data-state='tool'] .orb-sweep-ccw {
-  stroke: var(--metric-payload);
-  opacity: 0.55;
+.orb[data-state='tool'] .orb-ring-ccw {
+  opacity: 0.6;
   animation-duration: 4s;
+}
+
+.orb[data-state='tool'] .orb-ring-cw-slow {
+  animation-duration: 7s;
+}
+
+/* ---- bearings ---- */
+
+/* Set on the group so all four marks are typeset by one rule -- four copies of
+   a font stack is four chances for one of them to drift. */
+.orb-dial {
+  font-family: var(--font-mono);
+  font-size: 6.5px;
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  opacity: 0.55;
+}
+
+.orb-dial-mark {
+  fill: var(--orb-frame);
+}
+
+.orb[data-state='off'] .orb-dial {
+  opacity: 0.25;
+}
+
+/* ---- the globe ---- */
+
+.orb-lat,
+.orb-meridian,
+.orb-limb {
+  fill: none;
+  stroke: var(--orb-c);
+  /* Hairlines. The sphere is drawn, not lit: thicken these and it stops being a
+     wireframe and becomes a beach ball. */
+  stroke-width: 0.6;
+  opacity: 0.38;
+}
+
+/* The equator says which way up this thing is, so it is a shade brighter than
+   the rest -- but only a shade. Drawn in the highlight colour it stopped being
+   a line on a sphere and became a bright ring AROUND one, which is Saturn, not
+   JARVIS. */
+.orb-lat-equator {
+  stroke-width: 0.75;
+  opacity: 0.52;
+}
+
+/* The silhouette. Without it the outline vanishes whenever the widest meridian
+   happens to be mid-collapse, and the sphere breathes in a way no sphere does. */
+.orb-limb {
+  opacity: 0.5;
+}
+
+.orb-meridian {
+  opacity: 0.4;
+  /* rx is animatable as a CSS property in Chromium, which is what lets a
+     meridian collapse to a line and reopen -- a circle seen edge-on. Six of
+     them on a stagger reads as one sphere turning. Where it is not supported
+     the meridians simply hold still and it is a static wireframe, which is a
+     fine thing to be. */
+  animation: orb-meridian 7s linear infinite;
+}
+
+@keyframes orb-meridian {
+  0%,
+  100% {
+    rx: 43px;
+  }
+  50% {
+    rx: 0.5px;
+  }
+}
+
+.orb[data-state='off'] .orb-globe {
+  opacity: 0.4;
+}
+
+/* Scales with the voice, so the sphere breathes with whoever is talking. */
+.orb-globe {
+  transform: scale(calc(1 + var(--orb-level) * 0.06));
+  transform-origin: 100px 100px;
+  transition: transform 90ms linear;
+}
+
+/* A single line crossing the sphere, on a long cycle. Clipped to the shell, so
+   it reads as something passing THROUGH the projection rather than over it. */
+.orb-sweepline {
+  fill: var(--orb-hot);
+  opacity: 0;
+}
+
+.orb:not([data-state='off']) .orb-sweepline {
+  animation: orb-sweepline 5.5s ease-in-out infinite;
+}
+
+@keyframes orb-sweepline {
+  0%,
+  100% {
+    transform: translateY(-46px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.35;
+  }
+  85% {
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(46px);
+  }
 }
 
 @keyframes orb-spin {
@@ -947,29 +1094,44 @@
  * animation here is switched off.
  */
 @media (prefers-reduced-motion: reduce) {
-  .orb-sweep-cw,
-  .orb-sweep-ccw,
+  .orb-ring-cw,
+  .orb-ring-ccw,
+  .orb-ring-cw-slow,
+  .orb-meridian,
+  .orb-sweepline,
   .orb-scan circle:first-of-type {
     animation: none !important;
   }
 
-  /* Held at a fixed angle so the sweeps still read as a bezel rather than
+  /* Held at fixed angles so the rings still read as a bezel rather than
      collapsing into an accidental index mark at twelve o'clock. */
-  .orb-sweep-cw {
+  .orb-ring-cw {
     transform: rotate(35deg);
   }
 
-  .orb-sweep-ccw {
+  .orb-ring-ccw {
     transform: rotate(-120deg);
+  }
+
+  .orb-ring-cw-slow {
+    transform: rotate(200deg);
+  }
+
+  /* The globe keeps its construction: the meridians hold at the widths they
+     were given rather than mid-collapse, so it is still a sphere and not a
+     stack of arcs. The scan line is simply gone -- it carries nothing. */
+  .orb-sweepline {
+    opacity: 0;
   }
 }
 
-/* A tool call gets its own colour, matched to the payload metric it is
-   spending: this pause is MCP work, and the HUD names that cost in the same
-   hue. Without it the state fell through to the 'off' grey and read as a
-   stalled call. */
+/* A tool call stays in the family but goes hot and green-shifted -- the one
+   pause in a spoken turn the user cannot attribute to the model, so it has to
+   look like work rather than a stall. Without it the state fell through to the
+   'off' grey and read as a dead call. */
 .orb[data-state='tool'] {
-  --orb-c: var(--metric-payload);
+  --orb-c: #3fe0d8;
+  --orb-hot: #d9fffb;
 }
 
 /* ------------------------------------------------------------------ */

@@ -58,6 +58,61 @@ const TICKS = Array.from({ length: TICK_COUNT }, (_, i) => {
  *  path so the shape can never drift between corners. */
 const BRACKET = 'M4 26V8a4 4 0 014-4h18'
 
+/**
+ * The wireframe globe.
+ *
+ * This is the single thing that made the orb read as JARVIS rather than as a
+ * generic assistant bubble: in the films he is not a glowing ball, he is a
+ * latitude/longitude sphere drawn in hairlines, and the eye recognises the
+ * construction long before it registers the colour.
+ *
+ * Latitudes are ellipses flattened by the sine of their angle, which is what
+ * gives the sphere its curvature for free — no projection maths, just the fact
+ * that a circle seen edge-on is a line.
+ */
+const GLOBE_R = 43
+const LATITUDES = [-64, -42, -21, 0, 21, 42, 64].map((deg) => {
+  const rad = (deg * Math.PI) / 180
+  return {
+    key: deg,
+    equator: deg === 0,
+    cy: 100 + Math.sin(rad) * GLOBE_R,
+    rx: Math.cos(rad) * GLOBE_R,
+    // Flattening rises away from the equator, so the poles read as looking down
+    // on a curve rather than at a stack of flat rings.
+    ry: Math.max(1.2, Math.cos(rad) * GLOBE_R * 0.2 + Math.abs(Math.sin(rad)) * 5)
+  }
+})
+/** Meridians collapse and reopen on a stagger. Six of them at a sixth of a turn
+ *  apart is enough for the eye to read it as one sphere rotating. */
+const MERIDIANS = [0, 1, 2, 3, 4, 5]
+
+/**
+ * Dial graduations, in degrees.
+ *
+ * Fixed bearings on a bezel, NOT telemetry. The distinction is the same one the
+ * tick marks make above: an ornament may move, but a number may not appear to
+ * be a reading unless something actually read it. Four compass marks are true
+ * of the dial itself, so they can be drawn without lying.
+ */
+const DIAL = [
+  { label: '000', angle: -90 },
+  { label: '090', angle: 0 },
+  { label: '180', angle: 90 },
+  { label: '270', angle: 180 }
+].map((d) => {
+  const rad = (d.angle * Math.PI) / 180
+  return { ...d, x: 100 + Math.cos(rad) * 78, y: 100 + Math.sin(rad) * 78 }
+})
+
+/** Segmented rings. Irregular on purpose: even dashes read as a loading
+ *  spinner, uneven ones read as an instrument. */
+const RINGS = [
+  { key: 'a', r: 88, dash: '14 5 3 9 2 67', cls: 'orb-ring-cw' },
+  { key: 'b', r: 83, dash: '4 3 22 6 5 60', cls: 'orb-ring-ccw' },
+  { key: 'c', r: 68, dash: '30 8 6 4 2 50', cls: 'orb-ring-cw-slow' }
+]
+
 const LABELS: Record<LiveSessionState, string> = {
   off: 'Not in a call',
   starting: 'Opening the microphone',
@@ -115,11 +170,17 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
     >
       <svg className="orb-svg" viewBox="0 0 200 200" aria-hidden="true">
         <defs>
-          <radialGradient id="orb-fill" cx="38%" cy="32%" r="76%">
-            <stop offset="0%" stopColor="var(--orb-c)" stopOpacity="0.85" />
-            <stop offset="55%" stopColor="var(--orb-c)" stopOpacity="0.34" />
-            <stop offset="100%" stopColor="var(--orb-c)" stopOpacity="0.06" />
+          {/* Lit from the centre, not from a corner. A top-left highlight
+              reads as a glass bead catching a lamp; JARVIS is a projection,
+              and a projection is brightest where it is densest. */}
+          <radialGradient id="orb-fill" cx="50%" cy="50%" r="70%">
+            <stop offset="0%" stopColor="var(--orb-hot)" stopOpacity="0.5" />
+            <stop offset="42%" stopColor="var(--orb-c)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--orb-c)" stopOpacity="0.03" />
           </radialGradient>
+          <clipPath id="orb-clip">
+            <circle cx="100" cy="100" r="56" />
+          </clipPath>
           <filter id="orb-soften" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="9" />
           </filter>
@@ -140,25 +201,29 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
           ))}
         </g>
 
-        {/* Two sweeps, counter-rotating, on their own radii. Ornament — they
-            run whenever a call is up and stop dead under reduced motion. */}
+        {/* Segmented rings, counter-rotating on their own radii. Ornament —
+            they run whenever a call is up and stop dead under reduced motion. */}
         <g className="orb-sweeps">
-          <circle
-            className="orb-sweep orb-sweep-cw"
-            cx="100"
-            cy="100"
-            r="88"
-            pathLength="100"
-            strokeDasharray="13 87"
-          />
-          <circle
-            className="orb-sweep orb-sweep-ccw"
-            cx="100"
-            cy="100"
-            r="83"
-            pathLength="100"
-            strokeDasharray="5 45"
-          />
+          {RINGS.map((ring) => (
+            <circle
+              key={ring.key}
+              className={`orb-sweep ${ring.cls}`}
+              cx="100"
+              cy="100"
+              r={ring.r}
+              pathLength="100"
+              strokeDasharray={ring.dash}
+            />
+          ))}
+        </g>
+
+        {/* Bearings on the bezel. See DIAL: graduations, not readings. */}
+        <g className="orb-dial">
+          {DIAL.map((d) => (
+            <text key={d.label} className="orb-dial-mark" x={d.x} y={d.y}>
+              {d.label}
+            </text>
+          ))}
         </g>
 
         {/* Corner brackets. They frame the core the way a reticle frames a
@@ -186,6 +251,37 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
         <circle className="orb-ping orb-ping-2" cx="100" cy="100" r="60" />
 
         <circle className="orb-shell" cx="100" cy="100" r="56" fill="url(#orb-fill)" />
+
+        {/* The globe. Clipped to the shell so the scan line cannot escape it. */}
+        <g className="orb-globe" clipPath="url(#orb-clip)">
+          {LATITUDES.map((l) => (
+            <ellipse
+              key={l.key}
+              className={l.equator ? 'orb-lat orb-lat-equator' : 'orb-lat'}
+              cx="100"
+              cy={l.cy}
+              rx={l.rx}
+              ry={l.ry}
+            />
+          ))}
+          <circle className="orb-limb" cx="100" cy="100" r={GLOBE_R} />
+          {MERIDIANS.map((i) => (
+            <ellipse
+              key={i}
+              className="orb-meridian"
+              cx="100"
+              cy="100"
+              rx={GLOBE_R}
+              ry={GLOBE_R}
+              // NEGATIVE, so the six start already spread through the cycle.
+              // A positive delay leaves them stacked as one circle until the
+              // last one joins, and for those first seconds it is not a sphere.
+              style={{ animationDelay: `${(-i * 7) / MERIDIANS.length}s` }}
+            />
+          ))}
+          <rect className="orb-sweepline" x="42" y="98" width="116" height="2.5" />
+        </g>
+
         <circle className="orb-edge" cx="100" cy="100" r="56" />
 
         {/* The meter. pathLength normalises the circumference so the dash array

@@ -17,7 +17,7 @@ import {
 
 import { useStore } from '@renderer/state/store'
 import { basename, formatMs, formatTokens } from '@renderer/lib/format'
-import { WORKFLOW_BY_ID } from '@shared/workflows'
+import { WORKFLOW_BY_ID, isVoiceWorkflow } from '@shared/workflows'
 import type { ModelInfo, ServerHealth } from '@shared/types'
 
 // Default imports throughout: every sibling exports its component as the module
@@ -204,7 +204,7 @@ export default function App(): ReactElement {
             <EditWorkspace />
           ) : workflow.id === 'code' ? (
             <CodeWorkspace />
-          ) : workflow.id === 'live' || workflow.id === 'booker' ? (
+          ) : isVoiceWorkflow(workflow.id) ? (
             <LiveWorkspace />
           ) : (
             <ChatView />

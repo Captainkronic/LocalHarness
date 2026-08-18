@@ -88,6 +88,17 @@ export interface WorkflowDefinition {
   mcpTools?: Record<string, string[]>
   /** Native (in-process) tool ids enabled by default in this workflow. */
   nativeTools: NativeToolId[]
+  /**
+   * Whether this workflow is SPOKEN — driven by LiveSession rather than by a
+   * typed turn in the Orchestrator.
+   *
+   * Load-bearing rather than cosmetic. A spoken turn cannot show an approval
+   * dialog and cannot run native tools, so `live:start` refuses a workflow
+   * that is not marked here; and the renderer picks the workspace from this
+   * rather than from a list of ids, which is what let Flight Booker fall back
+   * into Live's chair.
+   */
+  voice?: boolean
   /** Which contextual panel to render alongside the conversation. */
   panel: PanelKind
   /** Workflow-specific system prompt appended to the base prompt. */

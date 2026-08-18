@@ -23,7 +23,7 @@ import {
   type IpcEventChannel,
   type IpcEvents
 } from '@shared/ipc'
-import { DEFAULT_WORKFLOW, WORKFLOWS } from '@shared/workflows'
+import { DEFAULT_WORKFLOW, WORKFLOWS, isVoiceWorkflow } from '@shared/workflows'
 import type {
   ReasoningEffort,
   ApprovalDecision,
@@ -717,7 +717,13 @@ export const useStore = create<AppState>()((set, get) => {
 
     /* --- live voice -------------------------------------------------- */
     startLive: async () => {
-      const conversationId = await ensureConversation('live')
+      // The active workflow, NOT a hardcoded 'live'. Pressing Start call in
+      // Flight Booker used to file the conversation under Live, and because a
+      // conversation carries its workflow, the whole app then followed it there
+      // — the user pressed a button in one section and landed in another.
+      const here = get().activeWorkflow
+      const target: WorkflowId = isVoiceWorkflow(here) ? here : 'live'
+      const conversationId = await ensureConversation(target)
       if (!conversationId) {
         return { ok: false, error: 'Could not open a conversation for the session.' }
       }
