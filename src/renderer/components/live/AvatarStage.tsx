@@ -36,6 +36,19 @@ export interface AvatarStageProps {
   avatar: Avatar
   /** Reads the assistant's current output level, 0..1. */
   readLevel: () => number
+  /**
+   * Whether audio is still coming out of the speaker.
+   *
+   * NOT the same as `state === 'speaking'`, and this is the whole bug this
+   * prop exists to fix. Main leaves 'speaking' when the last sentence has been
+   * SYNTHESISED, and Kokoro synthesises far faster than real time — so for a
+   * three-sentence reply the session reports 'listening' after about a second
+   * while some seven seconds of audio is still queued against the AudioContext
+   * clock. Gating the mouth on the session state stopped it dead a second into
+   * every reply. Anything that means "still talking" has to ask the audio
+   * clock, exactly as barge-in already does.
+   */
+  isPlaying: () => boolean
   state: LiveSessionState
 }
 
@@ -48,7 +61,12 @@ const BLINK_MS = 130
 const BLINK_GAP_MIN = 2600
 const BLINK_GAP_MAX = 7000
 
-export function AvatarStage({ avatar, readLevel, state }: AvatarStageProps): JSX.Element {
+export function AvatarStage({
+  avatar,
+  readLevel,
+  isPlaying,
+  state
+}: AvatarStageProps): JSX.Element {
   const [sources, setSources] = useState<Partial<Record<AvatarFrame, string>>>({})
   const nodes = useRef(new Map<AvatarFrame, HTMLImageElement>())
   const opacity = useRef(new Map<AvatarFrame, number>())
@@ -103,7 +121,7 @@ export function AvatarStage({ avatar, readLevel, state }: AvatarStageProps): JSX
       let target: AvatarFrame
       if (blinking) {
         target = 'blink'
-      } else if (stateRef.current === 'speaking') {
+      } else if (stateRef.current === 'speaking' || isPlaying()) {
         target = mouthForLevel(readLevel())
       } else if (stateRef.current === 'listening' && sources.listening !== undefined) {
         target = 'listening'
@@ -132,7 +150,7 @@ export function AvatarStage({ avatar, readLevel, state }: AvatarStageProps): JSX
     }
     raf = window.requestAnimationFrame(tick)
     return () => window.cancelAnimationFrame(raf)
-  }, [present, sources, readLevel])
+  }, [present, sources, readLevel, isPlaying])
 
   if (present.length === 0) {
     return (

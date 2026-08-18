@@ -146,33 +146,7 @@ export class AvatarBuilder {
       report(1, 'Portrait ready', 'saved')
 
       /* ---- one edit per frame ---- */
-      for (let i = 0; i < wanted.length; i++) {
-        if (this.cancelled) {
-          report(i + 1, 'Cancelled', 'cancelled')
-          return avatar
-        }
-        const frameSpec = wanted[i]
-        report(i + 1, frameSpec.label, 'working')
-
-        const path = await this.callImage('edit', [
-          base,
-          frameSpec.instruction,
-          '--out', dir
-        ])
-        if (path === null) {
-          // One bad frame is not a failed avatar. AvatarStage steps down the
-          // mouth ladder, so the set stays usable without it.
-          this.o.onLog('warn', 'avatar', `${frameSpec.label} did not render; skipping it.`)
-          report(i + 1, `${frameSpec.label} — skipped`, 'error')
-          continue
-        }
-        avatar = this.o.store.save({
-          ...avatar,
-          frames: { ...avatar.frames, [frameSpec.frame]: path }
-        })
-        report(i + 1, frameSpec.label, 'saved')
-      }
-
+      avatar = await this.renderFrames(avatar, base, wanted, report)
       report(total, 'Done', 'done')
       return avatar
     } catch (err) {
@@ -184,6 +158,96 @@ export class AvatarBuilder {
       this.building = false
       this.cancelled = false
     }
+  }
+
+  /**
+   * Fills in whatever frames an existing avatar is missing.
+   *
+   * A twelve-minute job gets interrupted — the app is quit, the machine
+   * sleeps, someone reinstalls mid-build — and without this the only remedy is
+   * to throw away the frames that did land and start again. Which nobody does,
+   * so they live with a two-frame face that barely moves.
+   */
+  async finish(avatarId: string): Promise<Avatar | null> {
+    if (this.building) {
+      this.o.onLog('warn', 'avatar', 'A build is already running.')
+      return null
+    }
+    const existing = this.o.store.get(avatarId)
+    if (existing === null) return null
+    const base = existing.frames.rest
+    if (base === undefined) return null
+
+    const missing = AVATAR_FRAME_SPECS.filter((spec) => existing.frames[spec.frame] === undefined)
+    if (missing.length === 0) return existing
+
+    this.building = true
+    this.cancelled = false
+    const total = missing.length
+    const report = (
+      step: number,
+      label: string,
+      status: AvatarBuildProgress['status'],
+      error?: string
+    ): void => this.o.onProgress({ avatarId, step, total, label, status, error })
+
+    try {
+      const done = await this.renderFrames(existing, base, missing, report, 0)
+      report(total, 'Done', 'done')
+      return done
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.o.onLog('error', 'avatar', `finish failed: ${message}`)
+      report(0, 'Failed', 'error', message)
+      return this.o.store.get(avatarId)
+    } finally {
+      this.building = false
+      this.cancelled = false
+    }
+  }
+
+  /**
+   * Renders a list of frames onto an avatar, saving after each one.
+   *
+   * `offset` shifts the reported step numbers, because a fresh build counts the
+   * base portrait as step zero and a resume does not.
+   */
+  private async renderFrames(
+    avatar: Avatar,
+    base: string,
+    specs: readonly (typeof AVATAR_FRAME_SPECS)[number][],
+    report: (
+      step: number,
+      label: string,
+      status: AvatarBuildProgress['status'],
+      error?: string
+    ) => void,
+    offset = 1
+  ): Promise<Avatar> {
+    let current = avatar
+    for (let i = 0; i < specs.length; i++) {
+      if (this.cancelled) {
+        report(i + offset, 'Cancelled', 'cancelled')
+        return current
+      }
+      const spec = specs[i]
+      report(i + offset, spec.label, 'working')
+
+      const path = await this.callImage('edit', [base, spec.instruction, '--out', dirOf(base)])
+      if (path === null) {
+        // One bad frame is not a failed avatar. AvatarStage steps down the
+        // mouth ladder, so the set stays usable without it.
+        this.o.onLog('warn', 'avatar', `${spec.label} did not render; skipping it.`)
+        report(i + offset, `${spec.label} — skipped`, 'error')
+        continue
+      }
+      current = this.o.store.save({
+        ...current,
+        frames: { ...current.frames, [spec.frame]: path }
+      })
+      report(i + offset, spec.label, 'saved')
+    }
+    return current
   }
 
   /* ---------------------------------------------------------------- */
@@ -212,4 +276,9 @@ export class AvatarBuilder {
     const match = /^Full path:\s*(.+)$/m.exec(stdout)
     return match?.[1]?.trim() ?? null
   }
+}
+
+/** The folder a frame lives in, so resumed frames land beside the originals. */
+function dirOf(file: string): string {
+  return file.slice(0, file.lastIndexOf('/')) || '.'
 }

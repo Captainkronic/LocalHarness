@@ -60,6 +60,7 @@ export interface IpcApi {
   'avatars:delete': (id: string) => Promise<void>
   'avatars:build': (spec: AvatarBuildSpec) => Promise<Avatar | null>
   'avatars:cancelBuild': () => Promise<void>
+  'avatars:finish': (id: string) => Promise<Avatar | null>
   'settings:pickDirectory': () => Promise<string | null>
 
   /* ---- models ---- */
@@ -262,6 +263,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'avatars:delete',
   'avatars:build',
   'avatars:cancelBuild',
+  'avatars:finish',
   'settings:pickDirectory',
   'models:list',
   'models:refresh',

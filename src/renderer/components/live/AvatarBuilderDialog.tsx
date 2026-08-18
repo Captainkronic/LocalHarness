@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { Avatar } from '@shared/types'
+import { AVATAR_FRAME_SPECS } from '@shared/avatar'
 import { useStore } from '@renderer/state/store'
 import './live.css'
 
@@ -26,7 +27,12 @@ export interface AvatarBuilderDialogProps {
   onClose: () => void
   /** Called when a build finishes, so the caller can refresh its list. */
   onBuilt: (avatar: Avatar) => void
+  /** Existing faces, so an interrupted one can be offered a way to finish. */
+  avatars: Avatar[]
 }
+
+/** rest plus one per recipe entry. */
+const TOTAL_FRAMES = AVATAR_FRAME_SPECS.length + 1
 
 const EXAMPLES = [
   'a man in his fifties with grey stubble and round glasses, wearing a charcoal roll-neck',
@@ -38,7 +44,8 @@ const EXAMPLES = [
 export function AvatarBuilderDialog({
   open,
   onClose,
-  onBuilt
+  onBuilt,
+  avatars
 }: AvatarBuilderDialogProps): JSX.Element | null {
   const progress = useStore((s) => s.avatarBuild)
   const [name, setName] = useState('')
@@ -56,6 +63,8 @@ export function AvatarBuilderDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  const unfinished = avatars.filter((a) => Object.keys(a.frames).length < TOTAL_FRAMES)
+
   if (!open) return null
 
   const start = async (): Promise<void> => {
@@ -70,6 +79,19 @@ export function AvatarBuilderDialog({
       })
       if (avatar) onBuilt(avatar)
       else setError('The build did not produce a face. The log has the reason.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const finish = async (id: string): Promise<void> => {
+    setRunning(true)
+    setError(null)
+    try {
+      const avatar = await window.harness.invoke('avatars:finish', id)
+      if (avatar) onBuilt(avatar)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -99,6 +121,34 @@ export function AvatarBuilderDialog({
         </header>
 
         <div className="set-body scroll-y">
+          {/* An interrupted build leaves a face that barely moves and no way
+              back to it. Offered first, because someone reopening this dialog
+              after a build died is far more likely to want to finish that one
+              than to start another. */}
+          {!running && unfinished.length > 0 ? (
+            <div className="av-unfinished">
+              <span className="av-field-label">Unfinished</span>
+              {unfinished.map((a) => (
+                <div key={a.id} className="av-unfinished-row">
+                  <span>
+                    {a.name}
+                    <span className="av-hint">
+                      {' '}
+                      — {Object.keys(a.frames).length} of {TOTAL_FRAMES} frames
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => void finish(a.id)}
+                  >
+                    Finish
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           <label className="av-field">
             <span className="av-field-label">Name</span>
             <input

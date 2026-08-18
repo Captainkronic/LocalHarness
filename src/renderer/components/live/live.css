@@ -1162,3 +1162,22 @@
     transition: none;
   }
 }
+
+.av-unfinished {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  margin-bottom: var(--s4);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  background: var(--accent-soft);
+}
+
+.av-unfinished-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  font-size: var(--fs-base);
+}

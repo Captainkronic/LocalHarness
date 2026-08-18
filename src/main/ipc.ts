@@ -411,6 +411,7 @@ export function registerIpc(d: IpcDeps): void {
     'avatars:cancelBuild': async () => {
       d.avatarBuilder.cancel()
     },
+    'avatars:finish': (id) => d.avatarBuilder.finish(id),
 
     'skills:list': () => d.skills.list(),
     'skills:refresh': () => d.skills.refresh(),

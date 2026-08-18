@@ -159,6 +159,35 @@ console.log('\n\x1b[1mAvatar builder\x1b[0m\n')
   await rm(box, { recursive: true, force: true })
 }
 
+/* ---- resuming an interrupted build ----
+ *
+ * This is not hypothetical: the first real build died between rendering a
+ * frame and saving it, leaving a two-frame face and no way back to it. */
+{
+  const { store, builder } = await mk({ onCall: (n) => { if (n === 3) builder.cancel() } })
+  const partial = await builder.build({ name: 'Half', description: 'x', includeExtras: true })
+  const before = Object.keys(partial.frames).length
+  check('an interrupted build leaves a partial face', before > 1 &&
+    before < AVATAR_FRAME_SPECS.length + 1, `${before} frames`)
+
+  const done = await builder.finish(partial.id)
+  check('finish fills in what is missing',
+    Object.keys(done.frames).length === AVATAR_FRAME_SPECS.length + 1,
+    `${before} -> ${Object.keys(done.frames).length}`)
+  check('finish keeps the frames that already existed',
+    done.frames.rest === partial.frames.rest, 'the base must not be re-rendered')
+  check('finishing a complete face is a no-op',
+    Object.keys((await builder.finish(done.id)).frames).length ===
+      AVATAR_FRAME_SPECS.length + 1)
+  check('it is persisted', Object.keys(store.get(done.id).frames).length ===
+    AVATAR_FRAME_SPECS.length + 1)
+}
+
+{
+  const { builder } = await mk()
+  check('finishing an unknown id returns null', (await builder.finish('nope')) === null)
+}
+
 await rm(dir, { recursive: true, force: true })
 console.log(fail === 0 ? '\n\x1b[32mall avatar-builder checks passed\x1b[0m\n'
   : `\n\x1b[31m${fail} avatar-builder check(s) failed\x1b[0m\n`)

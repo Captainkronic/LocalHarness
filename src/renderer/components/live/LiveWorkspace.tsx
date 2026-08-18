@@ -350,7 +350,12 @@ export function LiveWorkspace(): JSX.Element {
             deleted or whose frames have gone falls back to the orb rather than
             leaving an empty stage. */}
         {avatar !== null ? (
-          <AvatarStage avatar={avatar} readLevel={readLevel} state={state} />
+          <AvatarStage
+            avatar={avatar}
+            readLevel={readLevel}
+            isPlaying={playback.isPlaying}
+            state={state}
+          />
         ) : (
           <VoiceOrb state={state} level={level} />
         )}
@@ -508,6 +513,7 @@ export function LiveWorkspace(): JSX.Element {
       <canvas ref={camera.canvasRef} className="lv-canvas" aria-hidden="true" />
       <AvatarBuilderDialog
         open={builderOpen}
+        avatars={avatars}
         onClose={() => setBuilderOpen(false)}
         onBuilt={(a) => {
           // Adopt it straight away: having just described a face,
