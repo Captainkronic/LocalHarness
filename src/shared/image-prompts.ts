@@ -460,19 +460,6 @@ export function imagePromptSamples(): string[] {
   return TEMPLATES.map((t) => renderTemplate(t, () => 0))
 }
 
-/**
- * Which workflows deal a generated hand instead of using their fixed list.
- *
- * Deliberately NOT a field on WorkflowDefinition. That object is sent to the
- * renderer through structured clone, which cannot carry a function — putting
- * one there throws "An object could not be cloned" inside `app:getBootstrap`,
- * and the renderer sits on its splash forever with nothing on screen to say
- * why. Keeping the definition pure data and the behaviour in a lookup keeps
- * that door shut.
- */
-export const STARTER_GENERATORS: Partial<Record<string, (n: number) => string[]>> = {
-  image: (n) => randomImagePrompts(n)
-}
 
 /**
  * `n` starter ideas, deliberately mixed: at least one bare idea and at least

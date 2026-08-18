@@ -549,14 +549,18 @@ You generate audio locally: music and sound effects through ComfyUI, speech and 
 - Generation takes minutes, not seconds. Say what you are starting so the user knows the wait is expected, then report the real path when it lands.
 - For speech, ask which voice only if it matters; otherwise use the default and mention what you used.`,
     sampling: { temperature: 0.7, topP: 0.95, maxTokens: 4096, reasoningEffort: 'low' },
+    // Starters are generated per visit — see STARTER_GENERATORS. This fixed
+    // list is the fallback, and drops two entries that only made sense with a
+    // previous take on screen: "Same brief as the last one but swap the pads
+    // for a Rhodes" names a take that does not exist on an empty state, and
+    // there is no audio-to-audio path to swap anything in anyway; "Read this
+    // paragraph aloud" pointed at a paragraph that is equally absent.
     suggestions: [
       'A 60-second song about missing the last train home',
       'Instrumental, around 90bpm, something to work to',
-      'Same brief as the last one but swap the pads for a Rhodes',
       'A short lo-fi loop for a focus timer',
       'Sound effect: a heavy door closing in a stairwell',
-      'Cinematic riser into a soft piano landing',
-      'Read this paragraph aloud in a calm voice'
+      'Cinematic riser into a soft piano landing'
     ]
   },
   {
