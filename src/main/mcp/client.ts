@@ -151,7 +151,12 @@ export class McpClient {
         // these are Python processes that shell out (ffmpeg, rg, sips, git), and
         // a Finder-launched app hands them launchd's minimal PATH. An explicit
         // PATH in a server's own env still wins, since `env` is spread last.
-        env: { ...process.env, PATH: augmentedPath(), ...env },
+        // Empty values are dropped rather than merged. A registry entry that
+        // names a variable it has no value for — a placeholder documenting
+        // where an API key goes — would otherwise BLANK the real one inherited
+        // from the environment, which is a silent, baffling failure: the
+        // variable is set, and the server sees an empty string.
+        env: { ...process.env, PATH: augmentedPath(), ...nonEmpty(env) },
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false
       })
@@ -837,6 +842,15 @@ function fileArtifact(path: string, mimeType?: string): Artifact {
     label: basename(path) || path,
     createdAt: Date.now()
   }
+}
+
+/** A spec's env, minus keys whose value is empty. See the spawn call. */
+function nonEmpty(env: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== '') out[key] = value
+  }
+  return out
 }
 
 function fileUriToPath(uri: string): string {

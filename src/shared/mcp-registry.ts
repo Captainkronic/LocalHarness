@@ -178,12 +178,15 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     command: PY,
     args: [`${HOME}/.config/flights-mcp/server.py`],
     env: {
-      // Amadeus Self-Service. Fares are the one thing in this stack with no
-      // keyless source — every route into airline inventory needs an account —
-      // so the server starts either way and says so rather than failing in a
-      // way that looks like a bug. Free tier: developers.amadeus.com
-      AMADEUS_CLIENT_ID: '',
-      AMADEUS_CLIENT_SECRET: '',
+      // Credentials are NOT here. They live in
+      // ~/.config/flights-mcp/credentials.json, which the server reads itself.
+      //
+      // Two reasons. This file is source in a git repo, so a key typed here is
+      // a key committed. And a Finder-launched app inherits none of the shell
+      // environment, so exporting it in .zshrc would not reach the server
+      // either — the file is the only route that works however the app starts,
+      // and it works for the other harnesses at the same time.
+      //
       // 'test' serves a cached partial snapshot: plausible routes, indicative
       // prices, many routes missing. Every reply says which environment it came
       // from, because a price with no provenance is worse than no price.
