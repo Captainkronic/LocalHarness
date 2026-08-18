@@ -389,7 +389,11 @@ You have real filesystem and shell access to his workspace. Use it rather than a
     blurb: 'A photographer who turns what you describe into what the image model needs.',
     firstMove:
       'Describe the picture. You see the prompt the model writes before anything renders.',
-    skills: ['photography'],
+    // Five crafts, not one. A photographer's judgement is exactly wrong for a
+    // birthday card, and the range here is the point — each is toggleable, and
+    // a skill costs nothing at all while it is off, because the catalogue that
+    // reaches the prompt is filtered by `enabled`.
+    skills: ['photography', 'digital-design', 'illustration', 'concept-art', 'surface-pattern'],
     glyph: '❖',
     accent: '#c77dbb',
     mcpServers: ['comfy-image'],

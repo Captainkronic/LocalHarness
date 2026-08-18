@@ -9,8 +9,8 @@
  * through the wider door either.
  */
 import { build } from 'esbuild'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, mkdir, readdir, writeFile, rm } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -30,14 +30,15 @@ await writeFile(join(outside, 'secret.txt'), 'TOP SECRET\n')
 const dir = await mkdtemp(join(tmpdir(), 'lh-sr-'))
 await writeFile(join(dir, 'e.ts'),
   `export { ToolExecutor } from '${ROOT}/src/main/agent/executor'
-   export { DEFAULT_SETTINGS } from '${ROOT}/src/main/store/settings'\n`)
+   export { DEFAULT_SETTINGS } from '${ROOT}/src/main/store/settings'
+   export { WORKFLOWS } from '${ROOT}/src/shared/workflows'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'\nexport const app={getPath:()=>tmpdir(),getVersion:()=>'0'}\nexport default{app}\n`)
 const out = join(dir, 'b.mjs')
 await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim } })
-const { ToolExecutor, DEFAULT_SETTINGS } = await import(pathToFileURL(out).href)
+const { ToolExecutor, DEFAULT_SETTINGS, WORKFLOWS } = await import(pathToFileURL(out).href)
 
 const settings = { ...DEFAULT_SETTINGS, workspaceRoots: [workspace], approvalMode: 'auto' }
 let skillsEnabled = true
@@ -101,6 +102,26 @@ check('.. out of a skill folder is REFUSED', !o2.ok, o2.ok ? 'READ IT' : '')
 skillsEnabled = false
 const d1 = await call('read_file', { path: join(skill, 'SKILL.md') })
 check('a DISABLED skill is not readable', !d1.ok, d1.ok ? 'READ IT' : '')
+
+/* Every skill a workflow names must actually be on disk.
+ *
+ * `skills: [...]` is a filter over discovered skills, so a typo is not an error
+ * — the name simply matches nothing, the panel shows one fewer toggle, and the
+ * model is never told that craft exists. Silent, and easy to miss when a
+ * workflow lists five. Checked against the canonical root; sync-skills.sh
+ * copies from there to the other harnesses. */
+const skillRoot = join(homedir(), '.claude', 'skills')
+const onDisk = new Set(
+  (await readdir(skillRoot, { withFileTypes: true }))
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+)
+for (const wf of WORKFLOWS) {
+  for (const name of wf.skills ?? []) {
+    check(`${wf.id} names a skill that exists: ${name}`, onDisk.has(name),
+      onDisk.has(name) ? '' : `not in ${skillRoot}`)
+  }
+}
 
 await rm(box, { recursive: true, force: true })
 await rm(dir, { recursive: true, force: true })
