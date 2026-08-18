@@ -427,14 +427,18 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
 - After generating, look at the result honestly before praising it. If it missed the brief, say which part and offer a specific revision.
 - For edits, prefer edit_image over regenerating — it preserves what already worked.`,
     sampling: { temperature: 0.8, topP: 0.95, maxTokens: 4096, reasoningEffort: 'low' },
+    // Starters are generated per visit — see STARTER_GENERATORS in
+    // image-prompts.ts. This fixed list is the fallback, and is deliberately
+    // generation-only: the two edit-flavoured entries that used to sit here
+    // ("Edit the last image...", "Same subject, but try a colder palette")
+    // pointed at a previous render that does not exist on an empty state, and
+    // at a job the Edit workflow does properly.
     suggestions: [
       'A rain-soaked Tokyo alley at night, neon reflections, 35mm',
       'Product shot: ceramic mug on oak, soft window light',
-      'Edit the last image to warm the colour grade',
       'A minimal logo mark for a coffee roaster, flat vector',
       'Portrait, 85mm, shallow depth of field, overcast light',
-      'Isometric illustration of a home lab rack',
-      'Same subject, but try a colder palette'
+      'Isometric illustration of a home lab rack'
     ]
   },
   {

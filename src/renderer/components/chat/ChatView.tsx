@@ -3,11 +3,13 @@
  * composer pinned below.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type JSX } from 'react'
 import { useStore } from '@renderer/state/store'
 import { workflowPayload } from '@renderer/lib/payload'
 import { formatTokens } from '@renderer/lib/format'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
+import { STARTER_GENERATORS } from '@shared/image-prompts'
+import type { WorkflowDefinition } from '@shared/types'
 import ContextBanner from './ContextBanner'
 import MessageList from './MessageList'
 import Composer from './Composer'
@@ -51,19 +53,6 @@ export default function ChatView() {
     if (!want || !residentModelId || residentModelId === want) return null
     return { from: residentModelId, to: want }
   }, [workflow, residentModelId])
-
-  /* Each workflow now carries a pool of seven starters rather than the three
-     that fit on screen. Re-rolling per empty state keeps a workflow you open
-     ten times a day from reading like the same three-line poster every time —
-     and quietly advertises the range of what the workflow is for. Keyed on the
-     conversation so a fresh chat deals a fresh hand, but stable across
-     re-renders of the same one (a bare Math.random in render would reshuffle
-     the chips on every keystroke in the composer). */
-  const suggestions = useMemo(
-    () => pickSome(workflow.suggestions, 3),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workflow.id, workflow.suggestions, conversation?.id]
-  )
 
   const applySuggestion = useCallback((s: string) => {
     setDraft(s)
@@ -118,23 +107,14 @@ export default function ChatView() {
               </>
             )}
           </p>
-          {suggestions.length > 0 ? (
-            <>
-              <span className="section-label chat-empty-label">Start with</span>
-              <div className="chat-suggestions">
-                {suggestions.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="chip chat-suggestion"
-                    onClick={() => applySuggestion(s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : null}
+          {/* Keyed so it REMOUNTS, which is the whole mechanism: the hand is
+              dealt in a state initialiser, so arriving at an empty state deals
+              a fresh one, while typing in the composer below does not. */}
+          <Starters
+            key={`${workflow.id}:${conversation?.id ?? 'new'}`}
+            workflow={workflow}
+            onPick={applySuggestion}
+          />
         </div>
       )}
       <Composer value={draft} onValueChange={setDraft} focusSignal={focusSignal} />
@@ -142,7 +122,50 @@ export default function ChatView() {
   )
 }
 
-/** Model ids are namespaced and long; the family name is what identifies it. */
+/**
+ * The starter chips, as their own component so that MOUNTING is the thing that
+ * deals a hand.
+ *
+ * It used to be a useMemo in the parent keyed on the conversation id, which
+ * meant a workflow you open ten times a day showed the same three lines every
+ * time — the id had not changed, so neither had the memo. Here the hand is
+ * dealt once in a state initialiser and the parent keys this component on
+ * workflow and conversation, so arriving at an empty state re-rolls while
+ * typing in the composer below leaves it alone.
+ */
+function Starters({
+  workflow,
+  onPick
+}: {
+  workflow: WorkflowDefinition
+  onPick: (s: string) => void
+}): JSX.Element | null {
+  // A generator wins where a workflow has one, because a fixed pool of seven
+  // misrepresents a workflow whose range is "anything you can describe".
+  const [suggestions] = useState(() => {
+    const generate = STARTER_GENERATORS[workflow.id]
+    return generate ? generate(3) : pickSome(workflow.suggestions, 3)
+  })
+  if (suggestions.length === 0) return null
+  return (
+    <>
+      <span className="section-label chat-empty-label">Start with</span>
+      <div className="chat-suggestions">
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className="chip chat-suggestion"
+            onClick={() => onPick(s)}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
 /** Fisher-Yates over a copy, take the first n. Unbiased, and never repeats an
  *  entry the way n independent picks would. */
 function pickSome(pool: string[], n: number): string[] {

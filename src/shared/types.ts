@@ -93,6 +93,13 @@ export interface WorkflowDefinition {
   /** Sampling defaults that suit this kind of work. */
   sampling: SamplingDefaults
   /** Quick-start prompts offered on an empty conversation. */
+  /**
+   * Fixed starters. Workflows wanting a generated set instead register one in
+   * STARTER_GENERATORS — a function CANNOT live on this object, because the
+   * whole definition crosses IPC by structured clone in `app:getBootstrap`, and
+   * a function makes that throw "An object could not be cloned", which hangs
+   * the renderer on its splash with no error on screen.
+   */
   suggestions: string[]
   /**
    * The model this kind of work actually wants, from Adam's own assessment of
