@@ -1,8 +1,9 @@
 /**
  * The two-stage image edit pipeline: refine, then render.
  *
- * Stage 1 sends the actual photo to a vision model on the Mac Studio together
- * with what the user typed, and asks it for an edit prompt. Stage 2 hands that
+ * Stage 1 sends the actual photo to a vision model on whatever host the chat
+ * endpoint points at, together with what the user typed, and asks it for an edit
+ * prompt. Stage 2 hands that
  * prompt to comfy-image's `edit_image` with `confirm: true`.
  *
  * Both halves exist because of what the renderer on the other end actually is.
@@ -29,6 +30,7 @@ import { basename, extname, resolve } from 'node:path'
 
 import type { EditJob, EditParams, ModelInfo, Settings } from '@shared/types'
 import { EDIT_IMAGE_MIME } from '@shared/types'
+import { hostLabel } from '@shared/hosts'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
@@ -270,11 +272,15 @@ export class EditPipeline {
       )
     }
 
+    const settings = this.o.getSettings()
+
     job.status = 'refining'
     job.error = undefined
+    // The turn goes to `settings.baseUrl`, so that is the machine to name — not
+    // wherever the model was discovered.
+    job.refineHost = hostLabel(settings.baseUrl) ?? undefined
     this.commit(job)
 
-    const settings = this.o.getSettings()
     const wf = WORKFLOW_BY_ID.edit
     const controller = new AbortController()
     this.refines.set(jobId, controller)
@@ -389,6 +395,7 @@ export class EditPipeline {
 
     job.status = 'rendering'
     job.error = undefined
+    job.renderHost = this.comfyHost() ?? undefined
     this.commit(job)
     this.renders.add(jobId)
 
@@ -554,6 +561,16 @@ export class EditPipeline {
     if (suitable(resident)) return resident
 
     return models.find((m) => !needsVision || m.supportsVision) ?? null
+  }
+
+  /**
+   * Where the renderer actually is: comfy-image's own COMFY_HOST, which is
+   * 127.0.0.1 unless the spec has been changed. Nothing about it follows the
+   * chat endpoint, so it has to be read from the server's environment.
+   */
+  private comfyHost(): string | null {
+    const spec = this.o.mcp.specs().find((s) => s.id === COMFY_SERVER_ID)
+    return hostLabel(spec?.env?.COMFY_HOST)
   }
 
   /**

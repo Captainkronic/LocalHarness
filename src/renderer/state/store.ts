@@ -382,6 +382,11 @@ export const useStore = create<AppState>()((set, get) => {
       set((s) => ({
         logs: [...s.logs, { ...entry, at: Date.now() }].slice(-LOG_CAP)
       })),
+    // The native menu and the tray live in main; the actions they name are
+    // renderer state. This is the one bridge between them.
+    'event:menuCommand': ({ command }) => {
+      if (command === 'newConversation') void get().newConversation()
+    },
     'event:editJob': (job) =>
       set((s) => {
         const i = s.editJobs.findIndex((j) => j.id === job.id)

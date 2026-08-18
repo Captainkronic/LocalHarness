@@ -40,15 +40,33 @@ import { SkillRegistry } from './skills/registry'
 import { Orchestrator } from './orchestrator'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
+import { createTray, type TrayHandle } from './tray'
 import { setupScreenshots } from './screenshot'
 
 let mainWindow: BrowserWindow | null = null
 
+let tray: TrayHandle | null = null
+
 /** Push to the renderer. Safe before the window exists and after it is gone. */
-function emit<K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]): void {
+function emitToWindow<K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload)
   }
+}
+
+/**
+ * Everything main tells the renderer passes through here, so the tray can watch
+ * the same traffic instead of needing its own accessors.
+ *
+ * That matters for one field in particular: LiveMetrics lives on
+ * Orchestrator.active.meter, which is private with no getter. Rather than open
+ * the orchestrator up or add an IPC method, the tray reads the snapshot already
+ * flowing past at ~4Hz — one wrapper, and no second source of truth that could
+ * disagree with the in-app HUD.
+ */
+function emit<K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]): void {
+  emitToWindow(channel, payload)
+  tray?.observe(channel, payload)
 }
 
 function log(level: 'info' | 'warn' | 'error', scope: string, message: string): void {
@@ -267,8 +285,26 @@ app.whenReady().then(async () => {
   skills.start()
 
   mainWindow = createWindow()
+  tray = createTray({
+    onOpen: () => {
+      if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow()
+      mainWindow.show()
+      mainWindow.focus()
+    },
+    onNewConversation: () => emit('event:menuCommand', { command: 'newConversation' }),
+    residentModelId: () => models.residentModelId(),
+    contextWindow: (id) => models.contextWindow(id),
+    unloadModel: (id) => {
+      void control.unload(id).catch((err: unknown) => {
+        log('warn', 'tray', `could not unload ${id}: ${String(err)}`)
+      })
+    }
+  })
+
   buildMenu({
-    onNewConversation: () => emit('event:log', { level: 'info', scope: 'menu', message: 'new' }),
+    // Was a log line and nothing else, so File > New Conversation had never
+    // done anything — it looked wired because the menu item existed.
+    onNewConversation: () => emit('event:menuCommand', { command: 'newConversation' }),
     onToggleDevTools: () => mainWindow?.webContents.toggleDevTools(),
     onReload: () => mainWindow?.webContents.reload()
   })
@@ -303,6 +339,10 @@ app.whenReady().then(async () => {
   })
 
   const shutdown = async (): Promise<void> => {
+    // Before the subsystems it observes go away, or it repaints against a
+    // half-torn-down app on the way out.
+    tray?.destroy()
+    tray = null
     models.stop()
     lab.stop()
     control.stop()

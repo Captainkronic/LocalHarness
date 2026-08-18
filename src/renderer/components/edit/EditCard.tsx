@@ -48,6 +48,18 @@ function remember(path: string, src: string): void {
   }
 }
 
+/**
+ * ` on <machine>` for the progress line, or nothing at all.
+ *
+ * The two stages run in different places — refining on the chat endpoint,
+ * rendering on ComfyUI — and this used to name the Mac Studio for both, which
+ * was simply wrong whenever either was local. The host comes from the job now;
+ * when it is unknown the phrase is dropped rather than guessed.
+ */
+function on(host: string | undefined): string {
+  return host === undefined || host === '' ? '' : ` on ${host}`
+}
+
 export interface ImageState {
   status: 'pending' | 'ready' | 'missing'
   src: string | null
@@ -616,8 +628,8 @@ export function EditCard({ job }: EditCardProps): JSX.Element {
           <span className="ed-progress-bar" aria-hidden="true" />
           <span className="ed-progress-text">
             {job.status === 'refining'
-              ? 'Reading the photo and writing the render prompt on the Mac Studio.'
-              : `Rendering on the Mac Studio at ${job.params.steps} step${job.params.steps === 1 ? '' : 's'}.`}
+              ? `Reading the photo and writing the render prompt${on(job.refineHost)}.`
+              : `Rendering${on(job.renderHost)} at ${job.params.steps} step${job.params.steps === 1 ? '' : 's'}.`}
           </span>
           <span className="ed-progress-elapsed tnum">{formatMs(elapsed)}</span>
           <button type="button" className="btn btn-sm" onClick={() => void cancelEdit(job.id)}>

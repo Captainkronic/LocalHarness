@@ -204,6 +204,15 @@ export interface IpcEvents {
   'event:approvalResolved': { requestId: string; decision: ApprovalDecision }
   'event:artifact': Artifact
   'event:log': { level: 'info' | 'warn' | 'error'; scope: string; message: string }
+  /**
+   * Main asking the renderer to do something the user invoked from the native
+   * menu or the tray.
+   *
+   * Needed because those live in the main process while the actions they name
+   * are renderer state. Without it the File > New Conversation item had nothing
+   * to call and silently logged instead — it looked wired and was not.
+   */
+  'event:menuCommand': { command: 'newConversation' }
   'event:controlState': ControlState
   'event:loadProgress': LoadProgress
   'event:editJob': EditJob
@@ -319,6 +328,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:approvalResolved',
   'event:artifact',
   'event:log',
+  'event:menuCommand',
   'event:controlState',
   'event:loadProgress',
   'event:editJob',

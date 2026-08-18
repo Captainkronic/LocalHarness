@@ -689,6 +689,16 @@ export interface EditJob {
   error?: string
   params: EditParams
   timings?: { refineMs?: number; renderMs?: number }
+  /**
+   * Which machine each stage is running on, as a label for the progress line.
+   *
+   * The two stages are not on the same box: refining goes to the chat endpoint
+   * (often the Mac Studio), rendering goes to ComfyUI at comfy-image's
+   * COMFY_HOST, which is loopback by default. Set when the stage starts, so the
+   * UI states where the work is instead of assuming.
+   */
+  refineHost?: string
+  renderHost?: string
   /** Set when this job was started from another job's output, so the UI can
    *  show an iteration chain. */
   parentId?: string
