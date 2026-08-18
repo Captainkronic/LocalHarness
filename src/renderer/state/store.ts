@@ -176,7 +176,8 @@ const INITIAL_SETTINGS: Settings = {
   modelPollMs: 15_000,
   extraEndpoints: [],
   workflowReasoning: {},
-  workflowMcpOverrides: {}
+  workflowMcpOverrides: {},
+  panelLayout: {}
 }
 
 const IDLE_LIVE: LiveMetrics = {

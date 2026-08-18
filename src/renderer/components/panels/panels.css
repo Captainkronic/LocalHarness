@@ -6,6 +6,8 @@
  */
 
 .ctx-panel {
+  /* Width is set inline from settings; the token is the fallback for the first
+     paint before settings have landed. */
   width: var(--panel-w);
   flex: none;
   display: flex;
@@ -818,4 +820,108 @@
   color: var(--accent);
   font-size: var(--fs-micro);
   font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* Resize and collapse                                                 */
+/* ------------------------------------------------------------------ */
+
+/* A 6px grab strip straddling the seam. Wider than the 1px border it sits on,
+   because a border-width hit area is a target you have to aim at. */
+.ctx-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 3;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ctx-resize:hover,
+.ctx-resize:focus-visible {
+  background: var(--accent-line);
+  outline: none;
+}
+
+/* While dragging, the whole panel opts out of transitions and text selection —
+   otherwise the width animates behind the cursor and the panel contents
+   highlight as the pointer sweeps across them. */
+.ctx-panel.is-resizing {
+  user-select: none;
+}
+
+.ctx-panel.is-resizing .ctx-resize {
+  background: var(--accent);
+}
+
+.ctx-collapse {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r);
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.ctx-collapse:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* Collapsed: a strip with the panel's own name running up it, so it is obvious
+   what is behind the button rather than being an anonymous sliver. */
+.ctx-panel.is-collapsed {
+  overflow: hidden;
+}
+
+.ctx-reopen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.ctx-reopen:hover {
+  color: var(--fg);
+}
+
+.ctx-reopen-label {
+  writing-mode: vertical-rl;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ctx-reopen-count {
+  font-size: var(--fs-micro);
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-resize,
+  .ctx-collapse,
+  .ctx-reopen {
+    transition: none;
+  }
 }

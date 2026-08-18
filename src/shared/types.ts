@@ -1000,7 +1000,31 @@ export interface Settings {
   extraEndpoints: LlmEndpoint[]
   workflowReasoning: Partial<Record<WorkflowId, ReasoningEffort>>
   workflowMcpOverrides: Partial<Record<WorkflowId, string[]>>
+  /**
+   * Right-hand panel size, per KIND rather than per workflow.
+   *
+   * A gallery wants to be wide enough to show two thumbnails; a transcript rail
+   * wants to be narrow. Those are properties of the panel, not of the workflow
+   * that happens to be showing it — so Image and Edit, which both show pictures,
+   * should not each need dragging to the same width.
+   */
+  panelLayout: Partial<Record<PanelKind, PanelLayout>>
 }
+
+/** A right-hand panel's remembered size and state. */
+export interface PanelLayout {
+  width: number
+  collapsed: boolean
+}
+
+/** Bounds for a panel width. Narrower than MIN and the content is unreadable;
+ *  wider than MAX and the centre column stops being the centre. */
+export const PANEL_W_MIN = 240
+export const PANEL_W_MAX = 720
+export const PANEL_W_DEFAULT = 340
+/** Width of the strip left behind when a panel is collapsed — enough for the
+ *  button that brings it back, because a panel with no way back is just gone. */
+export const PANEL_W_COLLAPSED = 34
 
 /* ------------------------------------------------------------------ */
 /* Misc                                                                */

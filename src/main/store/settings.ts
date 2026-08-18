@@ -10,8 +10,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { REASONING_EFFORTS } from '@shared/types'
-import type { ApprovalMode, LlmEndpoint, ReasoningEffort, Settings, WorkflowId } from '@shared/types'
+import { PANEL_W_DEFAULT, PANEL_W_MAX, PANEL_W_MIN, REASONING_EFFORTS } from '@shared/types'
+import type {
+  ApprovalMode,
+  LlmEndpoint,
+  PanelKind,
+  ReasoningEffort,
+  Settings,
+  WorkflowId
+} from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { atomicWriteSync, expandTilde } from './paths'
@@ -52,7 +59,8 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'mtp', label: 'MTP MLX', baseUrl: 'http://127.0.0.1:1236/v1' }
   ],
   workflowReasoning: {},
-  workflowMcpOverrides: {}
+  workflowMcpOverrides: {},
+  panelLayout: {}
 }
 
 const APPROVAL_MODES: readonly ApprovalMode[] = ['always_ask', 'auto_read', 'auto_all']
@@ -104,6 +112,27 @@ function asClampedNumber(v: unknown, min: number, max: number): number | undefin
  * the user does want none, one toggle says so again. Non-empty overrides are
  * left exactly as they are — those are real choices about real servers.
  */
+/**
+ * Panel sizes, clamped rather than trusted.
+ *
+ * This file is hand-editable and survives upgrades, so a width of 5 or 50000
+ * would otherwise reach the layout and leave a panel that cannot be grabbed to
+ * fix it. Anything unusable is dropped back to the default.
+ */
+function asPanelLayout(v: unknown): Settings['panelLayout'] | null {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return null
+  const out: Settings['panelLayout'] = {}
+  for (const [kind, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const entry = raw as Record<string, unknown>
+    const w = typeof entry.width === 'number' && Number.isFinite(entry.width)
+      ? Math.round(Math.min(PANEL_W_MAX, Math.max(PANEL_W_MIN, entry.width)))
+      : PANEL_W_DEFAULT
+    out[kind as PanelKind] = { width: w, collapsed: entry.collapsed === true }
+  }
+  return out
+}
+
 function asWorkflowOverrides(v: unknown): Partial<Record<WorkflowId, string[]>> | undefined {
   if (!isRecord(v)) return undefined
   const out: Partial<Record<WorkflowId, string[]>> = {}
@@ -151,7 +180,9 @@ function dedupe(values: string[]): string[] {
  * Merge `raw` over `base` key by key. Used both for the on-disk file (base =
  * DEFAULT_SETTINGS) and for update patches (base = current settings).
  */
-function mergeSettings(base: Settings, raw: unknown): Settings {
+/** Exported for tests: the clamping here is what makes a hand-edited settings
+ *  file safe, and it is only exercised by a file nobody writes by hand. */
+export function mergeSettings(base: Settings, raw: unknown): Settings {
   const src: Record<string, unknown> = isRecord(raw) ? raw : {}
 
   const roots = asStringArray(src.workspaceRoots)
@@ -184,7 +215,8 @@ function mergeSettings(base: Settings, raw: unknown): Settings {
     modelPollMs: asClampedNumber(src.modelPollMs, MIN_POLL_MS, MAX_POLL_MS) ?? base.modelPollMs,
     extraEndpoints: asEndpoints(src.extraEndpoints) ?? base.extraEndpoints,
     workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
-    workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides
+    workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides,
+    panelLayout: asPanelLayout(src.panelLayout) ?? base.panelLayout
   }
 }
 
