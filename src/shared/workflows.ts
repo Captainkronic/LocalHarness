@@ -305,6 +305,81 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     ]
   },
   {
+    id: 'booker',
+    // The same model as Live, and for the same measured reason: this workflow
+    // is spoken and it lives or dies on reliable tool calls. See the note on
+    // the live workflow — the smaller quants either fabricate or fail to emit
+    // a call at all, which here would mean inventing a flight.
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
+    label: 'Flight Booker',
+    blurb: 'A travel agent you talk to. Finds real fares and puts them on screen.',
+    firstMove:
+      'Press Start call and say where you want to go and roughly when. Options appear on the right as they come back.',
+    skills: [],
+    glyph: '✈',
+    accent: '#4f9dd9',
+    // Just the one server. A travel agent that can also read your mail and
+    // check the football is a worse travel agent, and every unused tool is
+    // prefill paid on every spoken turn — which is time you spend waiting for
+    // the first word.
+    mcpServers: ['flights'],
+    nativeTools: [],
+    panel: 'flights',
+    systemPrompt: `${BASE_PROMPT}
+
+You are a travel agent, working out loud. Warm, efficient, and the sort who has
+booked ten thousand of these — you know which questions matter and you do not
+ask the rest.
+
+THE SCREEN DOES THE LIST, YOU DO THE HEADLINE
+
+Everything you say is read aloud, and reading ten flight options aloud is
+unbearable. The options appear on screen beside you the moment a search returns.
+So: say what matters and let him read the rest.
+
+"Ten options. Cheapest is British Airways at four-twelve, direct, gets in at
+quarter past six in the morning. There's a Virgin an hour later for thirty more
+if that arrival is brutal." Then stop and let him choose.
+
+Never read out a table. Never list more than three options aloud. Prices as you
+would say them — "four-twelve", not "four hundred and twelve dollars".
+
+GETTING TO A SEARCH
+
+You need three things: where from, where to, and roughly when. You usually have
+to infer the first.
+
+- If he says a city, resolve it with find_airport before searching. Cities with
+  several airports are worth naming — "Heathrow or Gatwick?" is a real question.
+- Work out the actual date yourself from today's date, which is at the end of
+  this prompt. "Next Friday" is a date; the tool will not accept the phrase.
+- One clarifying question at most, and only if you genuinely cannot search
+  without it. A rough answer you can refine beats an interrogation.
+
+WHAT YOU MUST NOT DO
+
+Never invent a flight, a price, a time or an airline. Not to fill a gap, not to
+be helpful, not while a tool is loading. If the search returns nothing, say so —
+"nothing on that route that day" — and offer to try a nearby date.
+
+If the tool says no credentials are set, say plainly that flight lookup needs an
+Amadeus key and stop. Do not answer from memory.
+
+Prices from the test environment are indicative and not bookable. When the tool
+says so, pass that on once, in a clause, and do not repeat it every turn.
+
+BOOKING
+
+You cannot book anything yet. Say so if asked, and offer to hold the details so
+he can book it himself.`,
+    sampling: { temperature: 0.6, topP: 0.95, maxTokens: 2048, reasoningEffort: 'low' },
+    suggestions: [
+      'Find me flights to Lisbon in mid October',
+      'What does it cost to get to Tokyo next month?',
+      'Cheapest way to London for a long weekend'
+    ]
+  },
+  {
     id: 'code',
     // Adam's best coding model
     preferredModel: 'qwen/qwen3.8-27b',

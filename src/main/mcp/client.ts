@@ -48,6 +48,16 @@ export interface McpClientOptions {
 export interface McpCallResult {
   text: string
   artifacts: Artifact[]
+  /**
+   * The server's own structured result, kept for the UI.
+   *
+   * MCP lets a tool return both prose for the model and structured data beside
+   * it. Only the prose was kept, so a panel that wanted to DRAW a result had to
+   * parse the sentence written for the model — and then any rewording of that
+   * sentence silently breaks the display. Keeping both means the two audiences
+   * are served by the two channels they were designed for.
+   */
+  structured?: unknown
   isError: boolean
 }
 
@@ -713,6 +723,9 @@ function parseCallResult(raw: unknown, toolName: string): McpCallResult {
   }
 
   const text = chunks.join('\n')
+  // Preserved whether or not there was prose. The branch above only falls back
+  // to it when there is no text at all, which is a different question.
+  const structured = result.structuredContent
 
   // Several of these servers only report the file they wrote in prose
   // ("Saved to /Users/adam/Documents/llm-audio/foo.mp3"), so mine the text too.
@@ -722,7 +735,7 @@ function parseCallResult(raw: unknown, toolName: string): McpCallResult {
     artifacts.push(fileArtifact(path))
   }
 
-  return { text, artifacts, isError }
+  return { text, artifacts, isError, structured }
 }
 
 function dataArtifact(

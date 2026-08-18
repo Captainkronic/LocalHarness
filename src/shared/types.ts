@@ -18,6 +18,7 @@
 export type WorkflowId =
   | 'chat'
   | 'live'
+  | 'booker'
   | 'code'
   | 'image'
   | 'edit'
@@ -30,6 +31,7 @@ export type WorkflowId =
 export type PanelKind =
   | 'none'
   | 'transcript'
+  | 'flights'
   | 'files'
   | 'gallery'
   | 'edits'
@@ -271,6 +273,14 @@ export interface ToolCall {
   origin: 'native' | 'mcp'
   status: 'pending' | 'awaiting_approval' | 'running' | 'ok' | 'error' | 'denied'
   result?: string
+  /**
+   * The server's structured result, when it returned one alongside the prose.
+   *
+   * This is what a panel draws from. The `result` string is written for the
+   * model to read aloud; parsing it in the UI would couple the display to a
+   * sentence that exists to be reworded.
+   */
+  structured?: unknown
   /** Non-text results (images, audio, files) the tool produced. */
   artifacts?: Artifact[]
   error?: string

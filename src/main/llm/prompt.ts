@@ -61,6 +61,16 @@ export interface BuildOptions {
   onTrim?: (info: TrimInfo) => void
 }
 
+/** e.g. "Today is Tuesday, 18 August 2026." — the model's only clock. */
+export function todayLine(now: Date = new Date()): string {
+  return `Today is ${now.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  })}.`
+}
+
 export function buildMessages(
   conv: Conversation,
   systemPrompt: string,
@@ -69,7 +79,15 @@ export function buildMessages(
 ): WireMessage[] {
   const out: WireMessage[] = []
   if (systemPrompt.trim().length > 0) {
-    out.push({ role: 'system', content: systemPrompt })
+    // Today's date, appended to every system prompt.
+    //
+    // A model has no clock. Left to itself it answers "next Friday" from its
+    // training cutoff, which is silently months or years wrong — and wrong in a
+    // way that looks authoritative. That matters anywhere a date is computed
+    // rather than quoted: booking a flight, "how long until", "is that still
+    // current". Roughly a dozen tokens, and it removes a whole class of
+    // confident nonsense.
+    out.push({ role: 'system', content: `${systemPrompt}\n\n${todayLine()}` })
   }
 
   // Tool results the conversation stores as their own messages. Results held on

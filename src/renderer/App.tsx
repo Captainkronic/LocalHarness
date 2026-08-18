@@ -204,7 +204,7 @@ export default function App(): ReactElement {
             <EditWorkspace />
           ) : workflow.id === 'code' ? (
             <CodeWorkspace />
-          ) : workflow.id === 'live' ? (
+          ) : workflow.id === 'live' || workflow.id === 'booker' ? (
             <LiveWorkspace />
           ) : (
             <ChatView />

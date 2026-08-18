@@ -573,6 +573,9 @@ export class Orchestrator {
         })
         call.result = result.text
         call.artifacts = result.artifacts
+        // Kept alongside the prose, so a panel can draw the result rather than
+        // parsing the sentence written for the model to read aloud.
+        call.structured = result.structured
         call.status = result.isError ? 'error' : 'ok'
         if (result.isError) call.error = result.text
       }
