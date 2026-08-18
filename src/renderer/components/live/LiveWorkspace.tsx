@@ -33,6 +33,7 @@ import {
 } from 'react'
 
 import type {
+  Avatar,
   LiveAudioChunk,
   LiveSessionState,
   LiveSettings,
@@ -42,6 +43,7 @@ import { useStore } from '@renderer/state/store'
 import { basename, formatMs } from '@renderer/lib/format'
 import { VOICE_PRESETS } from '@shared/workflows'
 import { useAudioCapture } from './useAudioCapture'
+import AvatarStage from './AvatarStage'
 import VoiceOrb from './VoiceOrb'
 import './live.css'
 
@@ -75,6 +77,8 @@ const WAITING_STATES = new Set<LiveSessionState>(['listening', 'capturing'])
 export function LiveWorkspace(): JSX.Element {
   const status = useStore((s) => s.liveStatus)
   const live = useStore((s) => s.liveSettings)
+  const settings = useStore((s) => s.settings)
+  const updateSettings = useStore((s) => s.updateSettings)
   const models = useStore((s) => s.models)
   const health = useStore((s) => s.health)
   const pinnedModelId = useStore((s) => s.settings.defaultModelId)
@@ -93,6 +97,7 @@ export function LiveWorkspace(): JSX.Element {
   const [speedDraft, setSpeedDraft] = useState<number | null>(null)
   const [micOn, setMicOn] = useState(true)
   const [level, setLevel] = useState(0)
+  const [avatars, setAvatars] = useState<Avatar[]>([])
   /** How far into the reply the speaker has actually got. */
   const [spokenTo, setSpokenTo] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
@@ -151,6 +156,28 @@ export function LiveWorkspace(): JSX.Element {
   /* ---- capture ----------------------------------------------------- */
 
   const camera = useCamera(inCall && live.video)
+
+  /* Loaded once. The set changes only when the user builds or deletes one, and
+     both of those go through a dialog that can refresh this itself. */
+  useEffect(() => {
+    let alive = true
+    void window.harness
+      .invoke('avatars:list')
+      .then((list) => {
+        if (alive) setAvatars(list)
+      })
+      .catch(() => {
+        if (alive) setAvatars([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const avatar = useMemo(
+    () => avatars.find((a) => a.id === settings.liveAvatarId) ?? null,
+    [avatars, settings.liveAvatarId]
+  )
 
   const activeModelId = pinnedModelId ?? health.residentModelId
   const activeModel = useMemo(
@@ -311,7 +338,15 @@ export function LiveWorkspace(): JSX.Element {
   return (
     <div className="lv" data-state={state}>
       <div className="lv-stage">
-        <VoiceOrb state={state} level={level} />
+        {/* The orb and the avatar are the same object in two costumes — one
+            reads level as a glow, the other as a mouth. An avatar that was
+            deleted or whose frames have gone falls back to the orb rather than
+            leaving an empty stage. */}
+        {avatar !== null ? (
+          <AvatarStage avatar={avatar} readLevel={readLevel} state={state} />
+        ) : (
+          <VoiceOrb state={state} level={level} />
+        )}
 
         {/* Only during a call. The setting persists, so a preview tied to the
             toggle alone would open the camera the moment this workflow was
@@ -430,8 +465,11 @@ export function LiveWorkspace(): JSX.Element {
           voices={voices ?? []}
           micOn={micOn}
           onMic={() => setMicOn((v) => !v)}
+          avatars={avatars}
+          avatarId={settings.liveAvatarId}
           onPatch={updateLiveSettings}
           onSpeed={patchSpeed}
+          onAvatar={(id) => void updateSettings({ liveAvatarId: id })}
         />
 
         <div className="lv-call-wrap">
@@ -799,9 +837,13 @@ interface ControlsProps {
   speed: number
   voices: string[]
   micOn: boolean
+  avatars: Avatar[]
+  /** Which avatar is showing, or null for the orb. */
+  avatarId: string | null
   onMic: () => void
   onPatch: (patch: Partial<LiveSettings>) => void
   onSpeed: (speed: number) => void
+  onAvatar: (id: string | null) => void
 }
 
 function Controls({
@@ -809,9 +851,12 @@ function Controls({
   speed,
   voices,
   micOn,
+  avatars,
+  avatarId,
   onMic,
   onPatch,
-  onSpeed
+  onSpeed,
+  onAvatar
 }: ControlsProps): JSX.Element {
   // A voice main is using that the server did not list still has to be
   // selectable, or opening the menu would silently change it.
@@ -875,6 +920,26 @@ function Controls({
       >
         {settings.speak ? <SpeakerIcon /> : <SpeakerOffIcon />}
       </Toggle>
+
+      {/* Only offered once there is something to choose. A picker whose only
+          option is the thing already on screen is a control that does nothing. */}
+      {avatars.length > 0 ? (
+        <label className="lv-field">
+          <span className="lv-field-label">Face</span>
+          <select
+            className="lv-select"
+            value={avatarId ?? ''}
+            onChange={(e) => onAvatar(e.target.value === '' ? null : e.target.value)}
+          >
+            <option value="">Orb</option>
+            {avatars.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <label className="lv-field">
         <span className="lv-field-label">Voice</span>

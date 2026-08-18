@@ -60,7 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   workflowReasoning: {},
   workflowMcpOverrides: {},
-  panelLayout: {}
+  panelLayout: {},
+  liveAvatarId: null
 }
 
 const APPROVAL_MODES: readonly ApprovalMode[] = ['always_ask', 'auto_read', 'auto_all']
@@ -216,7 +217,8 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     extraEndpoints: asEndpoints(src.extraEndpoints) ?? base.extraEndpoints,
     workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
     workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides,
-    panelLayout: asPanelLayout(src.panelLayout) ?? base.panelLayout
+    panelLayout: asPanelLayout(src.panelLayout) ?? base.panelLayout,
+    liveAvatarId: typeof src.liveAvatarId === 'string' ? src.liveAvatarId : base.liveAvatarId
   }
 }
 

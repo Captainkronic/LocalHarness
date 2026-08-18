@@ -971,3 +971,65 @@
 .orb[data-state='tool'] {
   --orb-c: var(--metric-payload);
 }
+
+/* ------------------------------------------------------------------ */
+/* Avatar                                                              */
+/* ------------------------------------------------------------------ */
+
+/* Every frame is stacked in the same box at the same size, so the crossfade is
+   between two registrations of one face rather than between two layouts. */
+.av-stage {
+  position: relative;
+  width: min(420px, 60vh);
+  aspect-ratio: 1;
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--bg-void);
+  border: 1px solid var(--line);
+  /* No vignette. A radial mask was the first instinct — soften the edge so
+     frame-to-frame drift cannot show as a moving boundary — but the frames
+     share a background and all the drift is in the FACE, so it guarded nothing
+     and turned a light portrait into a glowing disc floating on the dark app.
+     A plain card is what a portrait wants. */
+}
+
+.av-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* Opacity is driven per-frame from rAF, so it must NOT also be transitioned
+     here — a CSS transition would fight the loop and lag the mouth behind the
+     voice, which is the one thing this feature cannot get wrong. */
+}
+
+.av-stage-empty {
+  display: grid;
+  place-items: center;
+}
+
+.av-loading {
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+/* A soft bloom while speaking, borrowed from the orb so the two read as the
+   same object in two costumes rather than two unrelated widgets. */
+.av-stage[data-state='speaking'] {
+  box-shadow: 0 0 60px -12px var(--accent);
+}
+
+.av-stage[data-state='listening'] {
+  box-shadow: 0 0 40px -18px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The mouth still moves — that is the feature, and it is tied to real audio
+     rather than being decoration. The ambient glow is what goes. */
+  .av-stage {
+    box-shadow: none;
+  }
+}

@@ -26,6 +26,7 @@ import type {
 import { SettingsStore } from './store/settings'
 import { ConversationStore } from './store/conversations'
 import { ArtifactStore } from './store/artifacts'
+import { AvatarStore } from './store/avatars'
 import { McpManager } from './mcp/manager'
 import { ModelRegistry } from './llm/models'
 import { LabFeed } from './telemetry/lab'
@@ -155,6 +156,7 @@ app.whenReady().then(async () => {
   const settings = new SettingsStore(userData)
   const conversations = new ConversationStore(userData)
   const artifacts = new ArtifactStore(userData)
+  const avatars = new AvatarStore(userData)
   // Said out loud rather than dropped quietly: the only entries this removes
   // are ones whose file the user deleted themselves, and a gallery that
   // silently shrinks is indistinguishable from one that lost your work.
@@ -285,6 +287,7 @@ app.whenReady().then(async () => {
     activity,
     live,
     skills,
+    avatars,
     orchestrator,
     getWindow: () => mainWindow,
     emit

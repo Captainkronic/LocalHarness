@@ -1009,6 +1009,71 @@ export interface Settings {
    * should not each need dragging to the same width.
    */
   panelLayout: Partial<Record<PanelKind, PanelLayout>>
+  /**
+   * The Live avatar shown instead of the orb, or null for the orb.
+   *
+   * Here rather than in LiveSettings, which reads like the natural home for it,
+   * because LiveSettings is held in memory and never written to disk — voice
+   * and speed already reset on every launch. A face you have to pick again
+   * every time you open the app is worse than no face.
+   */
+  liveAvatarId: string | null
+}
+
+/* ------------------------------------------------------------------ */
+/* Live avatar                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The frames an avatar is made of.
+ *
+ * Deliberately few. This is amplitude-driven lip sync, not phoneme-accurate
+ * visemes: the audio gives a level, not a phoneme, so more mouth shapes than
+ * the level can distinguish would be frames nobody ever sees. Four mouth
+ * positions read as speech because the ear leads the eye — the mouth only has
+ * to move plausibly IN TIME, not to form the right letter.
+ *
+ * `rest` is the only required one; everything else degrades to it, so a
+ * half-built avatar still shows a face rather than nothing.
+ */
+export type AvatarFrame =
+  | 'rest'
+  | 'mouthSlight'
+  | 'mouthMid'
+  | 'mouthWide'
+  | 'blink'
+  | 'smile'
+  | 'listening'
+
+export const AVATAR_FRAMES: readonly AvatarFrame[] = [
+  'rest',
+  'mouthSlight',
+  'mouthMid',
+  'mouthWide',
+  'blink',
+  'smile',
+  'listening'
+]
+
+/** What each frame is generated from, and what it is for at runtime. */
+export interface AvatarFrameSpec {
+  frame: AvatarFrame
+  /** The edit instruction, applied to the base portrait. */
+  instruction: string
+  /** Shown in the builder while it renders. */
+  label: string
+}
+
+export interface Avatar {
+  id: string
+  name: string
+  /** The prompt that produced the base portrait, kept so the look can be
+   *  varied or the set rebuilt without starting from a blank field. */
+  basePrompt: string
+  /** Absolute paths, by frame. `rest` is always present on a usable avatar. */
+  frames: Partial<Record<AvatarFrame, string>>
+  createdAt: number
+  updatedAt: number
 }
 
 /** A right-hand panel's remembered size and state. */

@@ -42,7 +42,8 @@ import type {
   ServerHealth,
   Settings,
   WorkflowDefinition,
-  WorkflowId
+  WorkflowId,
+  Avatar
 } from './types'
 
 export interface IpcApi {
@@ -52,6 +53,9 @@ export interface IpcApi {
   /* ---- settings ---- */
   'settings:get': () => Promise<Settings>
   'settings:update': (patch: Partial<Settings>) => Promise<Settings>
+  'avatars:list': () => Promise<Avatar[]>
+  'avatars:save': (avatar: Avatar) => Promise<Avatar>
+  'avatars:delete': (id: string) => Promise<void>
   'settings:pickDirectory': () => Promise<string | null>
 
   /* ---- models ---- */
@@ -248,6 +252,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'app:getBootstrap',
   'settings:get',
   'settings:update',
+  'avatars:list',
+  'avatars:save',
+  'avatars:delete',
   'settings:pickDirectory',
   'models:list',
   'models:refresh',

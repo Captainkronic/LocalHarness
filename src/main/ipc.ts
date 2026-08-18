@@ -25,7 +25,8 @@ import type {
   ModelInfo,
   Settings,
   WorkflowId,
-  Artifact
+  Artifact,
+  Avatar
 } from '@shared/types'
 import { WORKFLOWS, WORKFLOW_BY_ID } from '@shared/workflows'
 
@@ -40,6 +41,7 @@ import type { EditPipeline } from './edit/pipeline'
 import { MAX_IMAGE_BYTES } from './edit/pipeline'
 import type { ActivityTracker } from './agent/activity'
 import type { SkillRegistry } from './skills/registry'
+import type { AvatarStore } from './store/avatars'
 import type { LiveSession } from './live/session'
 import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
@@ -59,6 +61,7 @@ export interface IpcDeps {
   activity: ActivityTracker
   live: LiveSession
   skills: SkillRegistry
+  avatars: AvatarStore
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
   emit: <K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]) => void
@@ -397,6 +400,12 @@ export function registerIpc(d: IpcDeps): void {
     },
 
     /* ---- skills ---- */
+    'avatars:list': async () => d.avatars.list(),
+    'avatars:save': async (avatar) => d.avatars.save(avatar),
+    'avatars:delete': async (id) => {
+      d.avatars.delete(id)
+    },
+
     'skills:list': () => d.skills.list(),
     'skills:refresh': () => d.skills.refresh(),
     'skills:setEnabled': (path: string, enabled: boolean) =>

@@ -177,7 +177,8 @@ const INITIAL_SETTINGS: Settings = {
   extraEndpoints: [],
   workflowReasoning: {},
   workflowMcpOverrides: {},
-  panelLayout: {}
+  panelLayout: {},
+  liveAvatarId: null
 }
 
 const IDLE_LIVE: LiveMetrics = {
