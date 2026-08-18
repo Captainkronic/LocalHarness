@@ -45,6 +45,20 @@ model which was which.
 The denoise-0.4 row is the one that matches the complaint most exactly: the
 conservative setting, failing at both jobs at once.
 
+**The control that closes the argument.** The obvious objection to all of the
+above is that stage 1 simply wrote a bad prompt. So: img2img at the shipped
+denoise 0.6, given the best description I could write by hand — one that says
+*"a queue of New York taxi cabs painted HOT PINK, roof signs lit"* in as many
+words, with the pedestrians, the cart and the sunset all itemised.
+
+**The taxis came back yellow.** The change did not happen at all. And the photo
+drifted anyway: different people, a different cart, different buildings.
+
+Better prompting cannot rescue this. The description does buy slightly *more*
+preservation than the raw instruction did at the same denoise — it anchors the
+scene — but it buys nothing at all for the edit, because there is no mechanism
+by which "painted HOT PINK" outranks the yellow pixels already in the canvas.
+
 That is not a tuning problem. Img2img re-derives every pixel from noise; the
 only thing anchoring it to the original is how little noise was added. There is
 no setting at which "the taxis" are treated differently from "the woman's
