@@ -325,6 +325,11 @@ def fetch(img, dest):
 # ---------------------------------------------------------------- runner
 
 
+def write_manifest(out_dir, manifest):
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--path", default="klein", choices=sorted(PATHS))
@@ -383,7 +388,12 @@ def main():
             imgs, secs = wait(res["prompt_id"])
         except Exception as e:
             print(f" \033[31mFAILED\033[0m {e}")
-            manifest["cases"][name] = {"error": str(e), "ask": case["ask"]}
+            # Recorded, not just printed. A path that cannot render at all is a
+            # result -- it is how the fp8 checkpoint was ruled out -- and a run
+            # whose every case failed used to leave no manifest behind at all.
+            manifest["cases"][name] = {"error": str(e), "ask": case["ask"],
+                                       "check": case["check"], "source": src}
+            write_manifest(out_dir, manifest)
             continue
         dest = os.path.join(out_dir, f"{name}.png")
         size = fetch(imgs[0], dest)
@@ -392,8 +402,7 @@ def main():
             "ask": case["ask"], "check": case["check"], "source": src,
             "sent": text, "output": dest, "seconds": round(secs, 1),
         }
-        with open(os.path.join(out_dir, "manifest.json"), "w") as f:
-            json.dump(manifest, f, indent=2)
+        write_manifest(out_dir, manifest)
 
     print()
 

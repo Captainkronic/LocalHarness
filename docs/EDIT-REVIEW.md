@@ -26,15 +26,23 @@ faults**, either of which alone would be enough to ruin the result.
 Source: `city_nights.png`. Request: *"turn all the taxi cabs pink while keeping
 everything else the same"*. Same seed throughout.
 
-| path | result |
-|---|---|
-| sdedit, denoise 0.4 | **taxis still yellow.** And yet the woman's jacket changed from brown to maroon, the food cart changed, buildings changed, sky changed |
-| klein reference-latent | every taxi pink; crowd, cart, lamps, skyline, manhole covers all held |
+| path | time | did the change happen | did the rest survive |
+|---|---|---|---|
+| sdedit, denoise 0.4 | 431s | **no** — taxis still yellow | no — jacket brown→maroon, cart changed, buildings and sky changed |
+| sdedit, denoise 0.6 *(shipped default)* | 346s | **no** — taxis went red | **no** — a different city: different people, different signage, cart gone |
+| sdedit, denoise 0.8 | 399s | yes — taxis pink | **no** — different city, camera moved into the road, crowd erased |
+| klein reference-latent | 654s | yes — every taxi pink | yes — crowd, cart, lamps, skyline, manhole covers all held |
 
-The denoise-0.4 result is the important one: it is the failure Adam is
-describing. The change does not happen *and* the things he did not mention
-change anyway — the worst of both outcomes, from the setting that is supposed to
-be the conservative one.
+Read the sdedit rows as a curve, because that is the whole argument. Turn
+denoise down and the edit does not happen but the photo drifts anyway; turn it
+up and the edit happens to a photograph that is no longer the one you gave it.
+**There is no setting in between that does the job.** That is not a tuning
+problem to be solved with a better default — denoise cannot distinguish the
+subject of the edit from the rest of the frame, because nothing ever told the
+model which was which.
+
+The denoise-0.4 row is the one that matches the complaint most exactly: the
+conservative setting, failing at both jobs at once.
 
 That is not a tuning problem. Img2img re-derives every pixel from noise; the
 only thing anchoring it to the original is how little noise was added. There is
@@ -90,9 +98,25 @@ the conditioning, so there is no longer a tradeoff axis to lose on. Stage 1's
 job shrinks from "describe everything" to "name the change", which is both far
 more reliable and a better lesson.
 
+## Speed, and a dead end worth recording
+
+Klein base is a real edit but a slow one: 20 steps at cfg 5 is 40 forward
+passes, ~11 minutes here. The distilled build needs 4 steps at cfg 1 — and
+because ComfyUI skips the unconditional pass entirely at cfg 1.0, that is 4
+passes, not 8. About a tenth of the work, and less than the img2img path it
+replaces.
+
+**The fp8 distilled build does not run on this Mac.** `flux-2-klein-4b-fp8`
+loads happily and then dies in the sampler with `Trying to convert
+Float8_e4m3fn to the MPS backend but it does not have support for that dtype`.
+Apple Silicon has no fp8 at all. The bf16 build of the same distilled model
+(`black-forest-labs/FLUX.2-klein-4B`, 7.75GB) is what to use, and is what
+`klein-edit` now points at. Worth knowing before reaching for any other fp8
+checkpoint on this machine.
+
 ## Open / to verify
 
-- distilled Klein 4B (4 steps, cfg 1) vs base (20 steps, cfg 5) — quality and speed
+- distilled Klein bf16: quality against base, and the real speed
 - whether the instruction-style stage 1 beats the description style for Klein
 - the full six-case suite on the winner
 

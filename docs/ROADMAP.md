@@ -225,16 +225,20 @@ that a shell timeout of two minutes is not enough to wait on one.
 Full detail in the workflow output; these are the ones still standing, roughly
 in the product owner's order.
 
-1. **Edit lost its teaching step and should get it back properly.** The
-   "show your working" block was removed because Edit has NO chat view — its
-   system prompt has one consumer, the single-shot refiner, whose whole reply
-   becomes the img2img instruction (sent `confirm: true`, i.e. verbatim). The
-   narration was landing in the text encoder as image content. But per Adam the
-   confirm step exists precisely so he can watch the translation, so Edit needs
-   it back as a SECOND field: a short second call after the refine succeeds,
-   stored on a new optional `EditJob.protectedNote`, rendered under the textarea
-   in EditCard. Do NOT bodge it into `cleanPrompt` — heuristically stripping
-   prose from a free-text reply will eat real sentences of the description.
+1. **Edit lost its teaching step and should get it back properly.** Still open,
+   and the constraint that forced its removal is unchanged: Edit has NO chat
+   view, and the refiner's whole reply goes to the renderer verbatim (`confirm:
+   true`), so narration lands in the text encoder as image content. It needs a
+   SECOND field — a short second call after the refine succeeds, stored on a new
+   optional `EditJob.protectedNote`, rendered under the textarea in EditCard. Do
+   NOT bodge it into `cleanPrompt`; heuristically stripping prose from a
+   free-text reply will eat real sentences.
+
+   What changed in the meantime (2026-08-18): the handoff itself is now legible
+   without narration. On the instruction method the refiner returns ~16 words
+   rather than an ~80-word scene description, so the prompt box shows Adam the
+   whole translation at a glance — which was most of what the teaching step was
+   for. The remaining gap is the *why*, not the *what*. See `docs/EDIT-REVIEW.md`.
 2. **Numbers that disagree.** The empty-state cost line attributes MCP-only
    tokens to a count that includes native tools; the HUD PAYLOAD omits the
    `use_skill` schema that genuinely ships every message; Chat's empty state
