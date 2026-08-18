@@ -199,8 +199,8 @@ export function GalleryPanel(): JSX.Element {
   if (images.length === 0) {
     return (
       <p className="pnl-empty">
-        No images yet. Anything ComfyUI renders or edits in this conversation lands here,
-        newest first, with its path and dimensions.
+        No images yet. Everything ComfyUI renders or edits lands here, newest first, with
+        its path and dimensions — and stays, across conversations and restarts.
       </p>
     )
   }

@@ -120,8 +120,9 @@ export function AudioPanel(): JSX.Element {
   if (clips.length === 0) {
     return (
       <p className="pnl-empty">
-        No audio yet. Music, sound effects and speech generated in this conversation appear
-        here with an inline player. Generation runs for minutes, not seconds.
+        No audio yet. Every track, sound effect and take appears here with an inline
+        player, and stays across conversations and restarts. Generation runs for minutes,
+        not seconds.
       </p>
     )
   }

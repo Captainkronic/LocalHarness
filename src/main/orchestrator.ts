@@ -36,6 +36,7 @@ import type { ModelRegistry } from './llm/models'
 import type { ToolExecutor } from './agent/executor'
 import type { ApprovalBroker } from './agent/approval'
 import type { SkillRegistry } from './skills/registry'
+import type { ArtifactStore } from './store/artifacts'
 import type { LmStudioControl } from './llm/control'
 import { streamChat, type WireMessage } from './llm/client'
 import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
@@ -73,6 +74,9 @@ export interface OrchestratorDeps {
   approvals: ApprovalBroker
   skills: SkillRegistry
   control: LmStudioControl
+  /** Survives restarts, so the gallery is a growing record rather than a
+   *  session scratchpad. */
+  artifacts: ArtifactStore
   emit: Emit
 }
 
@@ -122,7 +126,6 @@ function truncateValue(v: string | number | undefined): string {
 export class Orchestrator {
   private readonly d: OrchestratorDeps
   private readonly calibrator = new RateCalibrator()
-  private readonly artifactsByWorkflow = new Map<WorkflowId, Artifact[]>()
   private active: ActiveTurn | null = null
   private convEmitAt = 0
 
@@ -151,7 +154,7 @@ export class Orchestrator {
   }
 
   artifacts(workflowId: WorkflowId): Artifact[] {
-    return this.artifactsByWorkflow.get(workflowId) ?? []
+    return this.d.artifacts.list(workflowId)
   }
 
   /**
@@ -786,9 +789,7 @@ export class Orchestrator {
   }
 
   private recordArtifact(workflowId: WorkflowId, artifact: Artifact): void {
-    const list = this.artifactsByWorkflow.get(workflowId) ?? []
-    list.unshift(artifact)
-    this.artifactsByWorkflow.set(workflowId, list.slice(0, 200))
+    this.d.artifacts.add(workflowId, artifact)
     this.d.emit('event:artifact', artifact)
   }
 

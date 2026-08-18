@@ -479,7 +479,11 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     blurb: 'A musician and sound designer, working in tempo, texture and space.',
     firstMove:
       'Describe the sound or the music you want. A cold render takes a few minutes.',
-    skills: [],
+    // Four crafts, where there were none. Songwriting and sound design are not
+    // the same job — one composes, the other records a physical event in a
+    // space — and a chime heard fifty times a day is a third. Each is
+    // toggleable and costs nothing while off.
+    skills: ['songwriting', 'sound-design', 'audio-branding', 'voice-direction'],
     glyph: '♪',
     accent: '#5fb49c',
     mcpServers: ['comfy-audio', 'voice'],

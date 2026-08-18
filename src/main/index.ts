@@ -25,6 +25,7 @@ import type {
 
 import { SettingsStore } from './store/settings'
 import { ConversationStore } from './store/conversations'
+import { ArtifactStore } from './store/artifacts'
 import { McpManager } from './mcp/manager'
 import { ModelRegistry } from './llm/models'
 import { LabFeed } from './telemetry/lab'
@@ -153,6 +154,15 @@ app.whenReady().then(async () => {
   /* ---- subsystems ---- */
   const settings = new SettingsStore(userData)
   const conversations = new ConversationStore(userData)
+  const artifacts = new ArtifactStore(userData)
+  // Said out loud rather than dropped quietly: the only entries this removes
+  // are ones whose file the user deleted themselves, and a gallery that
+  // silently shrinks is indistinguishable from one that lost your work.
+  const prunedArtifacts = artifacts.takePrunedCount()
+  if (prunedArtifacts > 0) {
+    log('info', 'artifacts',
+      `dropped ${prunedArtifacts} gallery entr${prunedArtifacts === 1 ? 'y' : 'ies'} whose file is gone`)
+  }
 
   // Note the three-arg shape: LogFn is (level, scope, message). Binding a
   // two-arg function here compiles fine — a shorter function is assignable —
@@ -259,6 +269,7 @@ app.whenReady().then(async () => {
     approvals,
     skills,
     control,
+    artifacts,
     emit
   })
 
