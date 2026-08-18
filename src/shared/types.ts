@@ -114,6 +114,10 @@ export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 
 export interface SamplingDefaults {
+  /** See ChatRequest — measured levers against runaway reasoning. */
+  frequencyPenalty?: number
+  presencePenalty?: number
+  repetitionPenalty?: number
   temperature: number
   topP: number
   /** Cap on generated tokens. Reasoning models burn budget on reasoning_content,

@@ -376,6 +376,9 @@ export class Orchestrator {
           tools: tools.length ? tools : undefined,
           temperature: wf.sampling.temperature,
           topP: wf.sampling.topP,
+          frequencyPenalty: wf.sampling.frequencyPenalty,
+          presencePenalty: wf.sampling.presencePenalty,
+          repetitionPenalty: wf.sampling.repetitionPenalty,
           maxTokens: wf.sampling.maxTokens,
           // Reasoning is billed against maxTokens, so an unbounded default can
           // spend the entire answer budget thinking — qwen once used all 8,192

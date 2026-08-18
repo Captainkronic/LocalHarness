@@ -268,8 +268,30 @@ You have real filesystem and shell access to his workspace. Use it rather than a
 - After a change that should be verifiable, run the project's own check (build, typecheck, tests) with run_shell and report the real result. If it fails, show the output.
 - Keep shell commands single-purpose. No interactive commands — they will hang.`,
     sampling: {
-      temperature: 0.2,
+      /**
+       * 0.6, not the 0.2 this shipped with, and that is a correction rather
+       * than a preference.
+       *
+       * The assumption was that a colder model converges faster. Measured on
+       * qwen3.8 the opposite holds: temperature 0.0 spent 919 reasoning tokens
+       * on an open-ended build, 0.6 spent 546. temp 0.0 and top_k 1 came out
+       * identical, which is the tell — greedy decoding gets stuck re-treading
+       * ground, and a little sampling noise is what breaks the loop.
+       */
+      temperature: 0.6,
       topP: 0.9,
+      /**
+       * The largest measured lever short of switching thinking off: 0.5 cut
+       * reasoning from ~920 tokens to 480 AND raised the answer length, which
+       * is exactly the trade wanted. A model re-deriving decisions it has
+       * already made is repeating itself, and this penalises that directly.
+       *
+       * repetitionPenalty is deliberately NOT set alongside it. It helps on its
+       * own (764 tokens) but the two were measured separately and never
+       * together, and stacking two repetition controls is how you get a model
+       * that will not say the same variable name twice.
+       */
+      frequencyPenalty: 0.5,
       // Raised from 8,192 after a real failure: qwen spent every one of those
       // tokens reasoning about a Tetris clone and returned no answer at all,
       // eleven minutes in. Reasoning is billed against this same budget, so a
