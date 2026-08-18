@@ -105,17 +105,31 @@ check('every prompt starts with a capital', all.every((s) => /^[A-Z]/.test(s)),
 const trios = Array.from({ length: 500 }, () => randomImagePrompts(3))
 check('a trio always has three', trios.every((t) => t.length === 3))
 check('a trio never repeats a line', trios.every((t) => new Set(t).size === t.length))
-// Spread rather than absolute lengths: some briefs land at 110 characters and
-// some at 250, and pinning a threshold to the shortest of those made this fail
-// on a perfectly good hand.
-const spread = trios.map((t) => {
-  const lens = t.map((s) => s.length)
-  return Math.max(...lens) / Math.min(...lens)
-})
-check('a trio is never three lines of the same length',
-  spread.every((r) => r >= 1.5),
-  `thinnest spread seen: ${Math.min(...spread).toFixed(1)}x, ` +
-  `median ${spread.sort((a, b) => a - b)[Math.floor(spread.length / 2)].toFixed(1)}x`)
+
+/* Range of KIND, which is the actual requirement.
+ *
+ * This replaced a check on line length, which was the wrong measure twice over:
+ * it passed for a page of three photographs as long as one was wordier, and it
+ * failed for three genuinely different ideas that happened to be about as long
+ * as each other. What matters is that the suggestions do not all come from one
+ * corner of what the renderer can do — a screen of camera work implies it only
+ * does camera work. */
+const KINDS = {
+  photograph: /\bat sunset\b|\bin the rain\b|foggy|golden afternoon|black and white|first light|A photo of|street scene|shot from above|window light|stormy sky|full moon|long shadows/i,
+  'drawn / illustrated': /\bDraw\b|watercolour|cartoon|pencil sketch|cut-paper|pixel art|childrens book|chalk drawing|marker lines|stamp print|pastels|stained glass|comic|embroidery|claymation|linocut|screen print|doodle|woodcut|neon sign|risograph|mosaic|ink style|knitted/i,
+  'cards / occasions': /\bcard\b|save the date|invitation/i,
+  'design work': /\blogo\b|poster|sign|business card|tote|enamel pin|menu|sticker|t-shirt|matchbox|cup sleeve|livery|book cover|album cover|bookmark|beer label|jam jar|badge|awning|keyring|mug design|wrapping paper/i,
+  'abstract / pattern': /abstract|repeating pattern|A design for/i,
+  '3D / isometric': /isometric|clay model|low-poly|paper craft|diorama|cutaway|felt model|wooden toy|model village/i,
+  characters: /character design sheet|Design a character|mascot|Ghibli|comic book panel/i
+}
+const pool = []
+for (let i = 0; i < 1200; i++) pool.push(...randomImagePrompts(3))
+for (const [kind, re] of Object.entries(KINDS)) {
+  const share = pool.filter((s) => re.test(s)).length / pool.length
+  check(`${kind} shows up often enough to be seen`, share > 0.03,
+    `${(share * 100).toFixed(1)}% of draws`)
+}
 
 /* Variety, measured as it is actually experienced.
  *

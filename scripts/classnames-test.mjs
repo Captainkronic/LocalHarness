@@ -105,15 +105,55 @@ console.log(
     `${used.size} used across ${tsxFiles.length} components\n`
 )
 
-if (missing.length === 0) {
+/* ---- custom properties, same failure mode ----
+ *
+ * `var(--fs-sm)` where the token is actually `--fs-small` does not fail, warn,
+ * or look wrong in review: the declaration is dropped and the element inherits
+ * something plausible. It shipped a button at the wrong size and two buttons
+ * with square corners before it was noticed. Variables set from JS as an inline
+ * style are legitimately absent from the stylesheets, so they are listed here
+ * rather than inferred. */
+const INJECTED = new Set(['--meter', '--gut-w', '--cw-gut', '--cw-d', '--wf-accent'])
+const declaredVars = new Set()
+const usedVars = new Map()
+for (const f of cssFiles) {
+  const css = await readFile(f, 'utf8')
+  for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:/g)) declaredVars.add(m[1])
+  for (const m of css.matchAll(/var\((--[a-z0-9-]+)/g)) {
+    if (!usedVars.has(m[1])) usedVars.set(m[1], new Set())
+    usedVars.get(m[1]).add(f.slice(f.lastIndexOf('/') + 1))
+  }
+}
+const undefVars = [...usedVars.keys()].filter(
+  (v) => !declaredVars.has(v) && !INJECTED.has(v)
+)
+console.log(
+  `\x1b[1mCustom properties\x1b[0m  ${declaredVars.size} declared, ` +
+    `${usedVars.size} referenced, ${INJECTED.size} injected from JS\n`
+)
+for (const v of undefVars) {
+  console.log(
+    `  \x1b[31mundefined\x1b[0m ${v.padEnd(26)} ` +
+      `\x1b[2m${[...usedVars.get(v)].join(', ')}\x1b[0m`
+  )
+}
+
+if (missing.length === 0 && undefVars.length === 0) {
   console.log('\x1b[32mall classname checks passed\x1b[0m\n')
   process.exit(0)
 }
 for (const [c, where] of missing) {
   console.log(`  \x1b[31mundefined\x1b[0m .${c.padEnd(26)} \x1b[2m${where}\x1b[0m`)
 }
+const parts = []
+if (missing.length > 0) {
+  parts.push(`${missing.length} class${missing.length === 1 ? '' : 'es'}`)
+}
+if (undefVars.length > 0) {
+  parts.push(`${undefVars.length} custom propert${undefVars.length === 1 ? 'y' : 'ies'}`)
+}
 console.log(
-  `\n\x1b[31m${missing.length} class${missing.length === 1 ? '' : 'es'} used but never defined\x1b[0m` +
-    `\n\x1b[2mAn unknown class fails silently and looks intentional. Define it, or use the real one.\x1b[0m\n`
+  `\n\x1b[31m${parts.join(' and ')} used but never defined\x1b[0m` +
+    `\n\x1b[2mEither fails silently and looks intentional. Define it, or use the real one.\x1b[0m\n`
 )
 process.exit(1)

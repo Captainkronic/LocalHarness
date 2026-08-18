@@ -102,6 +102,60 @@
   border-color: var(--accent-line);
 }
 
+/* The label and the re-deal sit on one line, so the control reads as belonging
+   to the suggestions rather than to the composer below them. */
+.chat-starters-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.chat-reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--fg-faint);
+  font-family: inherit;
+  /* Matched to the section label beside it. At --fs-sm this read as the
+     primary thing on the row, which is backwards: the label names the
+     section, the button is a quiet affordance next to it. */
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.chat-reroll:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: var(--accent-line);
+}
+
+/* Turning on press, not on hover: the arrow means "again", and spinning it
+   under the cursor promises something is loading when nothing is. */
+.chat-reroll:active .chat-reroll-icon {
+  transform: rotate(-180deg);
+}
+
+.chat-reroll-icon {
+  transition: transform var(--dur) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reroll,
+  .chat-reroll-icon {
+    transition: none;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Message list                                                        */
 /* ------------------------------------------------------------------ */

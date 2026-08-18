@@ -142,14 +142,35 @@ function Starters({
 }): JSX.Element | null {
   // A generator wins where a workflow has one, because a fixed pool of seven
   // misrepresents a workflow whose range is "anything you can describe".
-  const [suggestions] = useState(() => {
+  const deal = useCallback((): string[] => {
     const generate = STARTER_GENERATORS[workflow.id]
     return generate ? generate(3) : pickSome(workflow.suggestions, 3)
-  })
+  }, [workflow.id, workflow.suggestions])
+
+  const [suggestions, setSuggestions] = useState(deal)
+
+  // Only offered where there is something to re-deal into. A workflow with a
+  // fixed pool of five would just cycle the same handful, which makes the
+  // button feel broken rather than exhausted.
+  const canReroll = STARTER_GENERATORS[workflow.id] !== undefined
+
   if (suggestions.length === 0) return null
   return (
     <>
-      <span className="section-label chat-empty-label">Start with</span>
+      <div className="chat-starters-head">
+        <span className="section-label chat-empty-label">Start with</span>
+        {canReroll ? (
+          <button
+            type="button"
+            className="chat-reroll"
+            onClick={() => setSuggestions(deal)}
+            title="Show three new ideas"
+          >
+            <RerollIcon />
+            New ideas
+          </button>
+        ) : null}
+      </div>
       <div className="chat-suggestions">
         {suggestions.map((s) => (
           <button
@@ -163,6 +184,26 @@ function Starters({
         ))}
       </div>
     </>
+  )
+}
+
+function RerollIcon(): JSX.Element {
+  return (
+    <svg
+      className="chat-reroll-icon"
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.9" />
+      <path d="M13.5 2v3.2h-3.2" />
+    </svg>
   )
 }
 

@@ -286,7 +286,7 @@
   padding: var(--s2) var(--s3);
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: var(--r2);
+  border-radius: var(--r);
   background: var(--bg-input);
   color: var(--fg-muted);
   cursor: pointer;
@@ -313,7 +313,7 @@
 }
 
 .ed-method-hint {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-small);
   color: var(--fg-dim);
 }
 

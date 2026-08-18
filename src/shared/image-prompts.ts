@@ -1,509 +1,461 @@
 /**
- * The starter prompts for the Image workflow.
+ * Starter ideas for the Image workflow.
  *
- * Seven fixed suggestions turned the empty state into the same three-line
- * poster every time, which is a poor advertisement for a workflow whose whole
- * range is "anything you can describe". This deals a fresh trio on every visit.
+ * These are IDEAS, not briefs. An earlier version of this file wrote full
+ * photographic specifications — "135mm at f/2, shot on Portra 400, focus
+ * stacked" — which is a fine prompt and a terrible suggestion: it answers every
+ * question before you have had one, and it only ever suggests photography. What
+ * belongs on an empty screen is the thing you had not thought of, said plainly
+ * enough that you can take it somewhere yourself. Adding the craft detail is
+ * the workflow's own job, and it explains what it added while it does it.
  *
- * It is a grammar rather than a list of literal strings, for two reasons. A few
- * hundred fragments compose into six figures of distinct prompts, where the
- * same weight of hand-written lines would give a few hundred. And a grammar can
- * be checked: `imagePromptSpaceSize()` counts the space exactly, so "thousands"
- * is arithmetic rather than a claim.
+ * So the range matters more than the depth. A hand should be able to deal a
+ * photograph, a cartoon, an abstract pattern and a birthday card, because the
+ * renderer does all of those and a page of camera settings implies it does not.
  *
- * The one thing a grammar gets wrong is coherence — slot it together carelessly
- * and you get "isometric flat-vector portrait at 85mm f/1.4". So vocabulary is
- * scoped to the family that uses it: LENSES only ever reaches a template that
- * is photographing something, PALETTES only ever reaches one that is drawn.
- * Nothing is shared across families that would not survive the crossover.
+ * It is a grammar rather than a list: a few hundred fragments compose into
+ * hundreds of thousands of ideas, and `imagePromptSpaceSize()` counts the space
+ * exactly, so "thousands" is arithmetic rather than a claim. Vocabulary is
+ * scoped to the family that uses it, so a photograph never asks for pixel art
+ * and a logo never asks for golden hour.
  *
  * Everything here describes a picture to MAKE. Nothing refers to a previous
- * image, a change, or "the last one" — this workflow generates, and an edit
- * suggestion in it sends the user somewhere the tool cannot follow. There is a
- * test that enforces exactly that.
+ * image or a change to one — this workflow generates, and an edit suggestion on
+ * an empty state points at a render that does not exist. There is a test.
  */
 
 /* ------------------------------------------------------------------ */
-/* Vocabulary — photographic                                           */
+/* Photographic — plain subjects, light direction                      */
 /* ------------------------------------------------------------------ */
 
-const HOUR = [
-  'first light', 'a grey overcast noon', 'late golden hour', 'the blue hour',
-  'harsh midday sun', 'dusk, just after the sun has gone', 'a foggy morning',
-  'midnight under sodium streetlight', 'a bright hazy afternoon',
-  'the last ten minutes before a storm'
+const PHOTO_SUBJECTS = [
+  'a golden retriever asleep in a sunbeam', 'a bowl of ramen', 'an old bicycle against a wall',
+  'a lighthouse in a storm', 'a cat on a windowsill', 'a plate of fresh strawberries',
+  'a busy market street', 'a cabin in the snow', 'a violin on a chair',
+  'a cup of coffee and a paperback', 'a hot air balloon over fields',
+  'a fox in a garden at night', 'a fishing boat coming in', 'a wildflower meadow',
+  'a stack of old suitcases', 'a horse in morning mist', 'a rope bridge in a forest',
+  'a lemon tree in a courtyard', 'a train crossing a viaduct', 'a jar of honey on a table',
+  'a red umbrella in a crowd', 'a barn owl on a fence post', 'a pier at low tide',
+  'a bakery window at dawn', 'a hammock between two palm trees',
+  'a rainy street seen through a bus window', 'a chess board mid-game',
+  'a sheepdog watching a flock', 'a diner counter at midnight', 'a canoe on a still lake',
+  'a puppy in a cardboard box', 'a row of colourful front doors',
+  'a steaming mug on a frosty morning', 'a child jumping in a puddle',
+  'an old typewriter', 'a field of sunflowers', 'a cat stretching on a rug',
+  'a pile of autumn leaves', 'a sailboat on the horizon', 'a bowl of fresh eggs',
+  'a swing hanging from an oak tree', 'a fishmonger at work', 'a snowy park bench',
+  'a bunch of carrots pulled from the ground', 'a vintage camera on a shelf',
+  'a cobbled lane after rain', 'a dog shaking off water', 'a wooden pier at sunrise',
+  'a greengrocer stall', 'a pair of muddy boots by a door', 'a bee on lavender',
+  'a busy café terrace', 'a stack of pancakes on a windowsill',
+  'a rowing boat tied up', 'a sleeping baby elephant', 'a windmill in a flat landscape',
+  'a spiral staircase from below', 'a heron on a riverbank', 'a bookshelf packed tight',
+  'a tram turning a corner'
 ]
 
-const LENS = [
-  '14mm ultra-wide', '24mm', '35mm', '50mm', '85mm at f/1.4', '135mm at f/2',
-  '200mm compressed telephoto', '100mm macro', 'a tilt-shift 45mm',
-  'a wide 28mm held low'
+const PHOTO_PLACES = [
+  'in Tokyo', 'in a small Italian village', 'on the Scottish coast', 'in Marrakech',
+  'in a New York diner', 'in an Icelandic valley', 'in a Paris courtyard',
+  'on a Greek island', 'in the Norwegian fjords', 'in a Kyoto garden',
+  'in the Australian outback', 'in a Dutch tulip field', 'in a Swiss mountain village',
+  'on the Oregon coast', 'in a Lisbon side street',
+  'in Havana', 'in a Welsh valley', 'in Seoul', 'in a Cornish harbour',
+  'in Istanbul', 'in a Bavarian forest', 'in Mexico City', 'in the Yorkshire dales',
+  'in Copenhagen', 'in a Tuscan olive grove'
 ]
 
-const FILM = [
-  'shot on Portra 400', 'on Ektachrome, slightly cool',
-  'pushed Tri-X, heavy grain', 'digital, clean and neutral',
-  'on expired film with a magenta shift', 'large-format, edge-to-edge sharp',
-  'on a disposable camera with flash', 'Cinestill, halated highlights'
-]
-
-const LIGHTING = [
-  'a single softbox from camera left', 'hard sun through venetian blinds',
-  'bounced daylight from a north window', 'practical lamps only, no fill',
-  'backlit, subject mostly in silhouette', 'a ring light close in',
-  'firelight from below', 'overcast light, no shadows to speak of',
-  'a shaft of light through a high window', 'neon spill from a shopfront'
-]
-
-const WEATHER = [
-  'in steady rain', 'in thin snow', 'under low cloud', 'in sea fog',
-  'in dry heat haze', 'after rain, everything still wet', 'in a dust storm',
-  'under a clear hard sky'
-]
-
-/* ------------------------------------------------------------------ */
-/* Vocabulary — drawn and rendered                                     */
-/* ------------------------------------------------------------------ */
-
-const MEDIUM = [
-  'gouache on cold-press paper', 'a two-colour risograph print',
-  'linocut with visible carving marks', 'watercolour with a wet edge',
-  'ink and wash', 'coloured pencil on toned paper', 'oil on board, thick paint',
-  'cut-paper collage', 'scratchboard, white on black', 'silkscreen, three passes',
-  'charcoal, smudged', 'egg tempera'
-]
-
-const PALETTE = [
-  'a two-colour palette of ochre and deep teal', 'muted earth tones',
-  'high-contrast black, white and one red', 'faded pastels',
-  'cold blues with a single warm accent', 'a full saturated primary palette',
-  'sepia and cream only', 'acid green against charcoal',
-  'dusty pink, sand and rust', 'monochrome blue'
-]
-
-const ILLUS_STYLE = [
-  'in the flat style of mid-century travel posters',
-  'like a 1970s science textbook diagram',
-  'in the manner of a botanical plate',
-  'as a woodblock print',
-  'like a childrens picture book spread',
-  'in the style of a vintage seed packet',
-  'as a technical cutaway drawing',
-  'like a hand-painted film poster'
-]
-
-const RENDER_3D = [
-  'clay render, soft studio light', 'low-poly with flat shading',
-  'photoreal 3D with subsurface scattering', 'chrome and frosted glass',
-  'felt and knitted wool materials', 'brushed aluminium and walnut',
-  'translucent resin lit from within', 'matte plastic, toy-like'
+const PHOTO_MOOD = [
+  '', ' at sunset', ' in the rain', ' on a foggy morning', ' at night',
+  ' in golden afternoon light', ' in the snow', ' at first light',
+  ' under a stormy sky', ' on a bright summer day', ' in black and white',
+  ' shot from above', ' in soft window light',
+  ' in early spring', ' on a windy day', ' under a full moon',
+  ' with long shadows', ' on an overcast afternoon', ' in high summer',
+  ' just before a thunderstorm'
 ]
 
 /* ------------------------------------------------------------------ */
-/* Vocabulary — subjects, by family                                    */
+/* Drawn and illustrated                                               */
 /* ------------------------------------------------------------------ */
 
-const PLACES = [
-  'a rain-soaked Tokyo alley', 'a Nevada truck stop', 'a Lisbon tram stop',
-  'an empty municipal swimming pool', 'a Hong Kong wet market',
-  'a Cornish fishing harbour', 'a Soviet-era bus shelter',
-  'a rooftop water tank in Queens', 'an Icelandic petrol station',
-  'a Mumbai laundry yard', 'a snowbound Finnish bus stop',
-  'a New Orleans corner store', 'a Marrakech dye pit',
-  'the loading bay behind a theatre', 'a Berlin U-Bahn platform',
-  'a shuttered seaside arcade', 'a Kyoto side street of small bars',
-  'a Detroit auto plant floor', 'an Alpine funicular station',
-  'a Bangkok canal walkway',
-  'a Naples backstreet strung with washing', 'a Reykjavik swimming pool at dawn',
-  'a Chicago El platform in winter', 'a Havana barbershop', 'a Seoul night market',
-  'a Welsh slate quarry village', 'an Istanbul spice hall', 'a Buenos Aires milonga',
-  'a Newfoundland dock in fog', 'a Rajasthan stepwell', 'a Prague tram depot',
-  'a Sicilian fish auction', 'a Vancouver container port', 'an Edinburgh close'
+const DRAWN_SUBJECTS = [
+  'a friendly robot watering plants', 'a cat wearing a tiny hat',
+  'a whale swimming through clouds', 'a hedgehog having tea',
+  'a dragon curled around a lighthouse', 'a bear riding a bicycle',
+  'a fox in a raincoat', 'an owl reading by candlelight',
+  'a rocket built out of kitchen things', 'a snail with a mushroom for a shell',
+  'a family of ducks crossing a road', 'a wizard who has lost his hat',
+  'a penguin running a coffee stand', 'a tortoise carrying a garden on its back',
+  'a mouse sailing in a walnut shell', 'a giraffe peering over a fence',
+  'a cloud that has been caught in a tree', 'a lion with a very small crown',
+  'a badger running a post office', 'a pigeon wearing headphones',
+  'a rabbit tending a vegetable patch', 'an elephant balancing a teacup',
+  'a crocodile in a knitted jumper', 'a squirrel with an acorn far too big',
+  'a frog conducting an orchestra', 'a sloth taking its time on a scooter',
+  'a walrus running a barber shop', 'a chicken piloting a paper plane',
+  'a bear librarian', 'a llama in sunglasses', 'a hippo doing ballet',
+  'a raccoon picking a lock', 'a moose stuck in a doorway',
+  'a group of mice building a bridge', 'a swan reading the newspaper',
+  'a monkey selling bananas from a cart', 'an octopus juggling teacups',
+  'a puffin delivering letters', 'a goat on a very small mountain',
+  'a tiger napping in a hammock', 'a seal balancing a beach ball',
+  'a dog running a lemonade stand', 'a wolf howling at a lightbulb',
+  'a camel crossing a snowy street', 'a peacock at a fancy party'
 ]
 
-const LANDSCAPES = [
-  'a basalt sea stack', 'wheat fields under a huge sky', 'a tidal salt marsh',
-  'a glacial moraine', 'terraced rice paddies', 'a burnt eucalyptus forest',
-  'chalk cliffs', 'a braided river delta', 'sand dunes with a single track across them',
-  'an alpine tarn', 'mangrove roots at low tide', 'a limestone karst valley',
-  'the edge of a caldera', 'boreal forest after fire', 'a frozen reservoir',
-  'a slot canyon', 'peat bog with standing water', 'a scree slope above a lake',
-  'flooded forest', 'a shingle spit', 'volcanic black sand', 'an oxbow lake from above',
-  'salt flats cracked into hexagons', 'a hanging valley', 'ancient olive terraces'
+const DRAWN_STYLE = [
+  'as a watercolour', 'as a simple flat cartoon', 'as a pencil sketch',
+  'in cut-paper collage', 'as pixel art', 'in a childrens book style',
+  'as a chalk drawing', 'in bold marker lines', 'as a rubber stamp print',
+  'in soft pastels', 'as a stained glass window', 'in a comic book style',
+  'as an embroidery design', 'in claymation style',
+  'as a linocut print', 'in a retro poster style', 'as a felt-tip doodle',
+  'as a screen print', 'in a storybook watercolour style', 'as a paper cut-out puppet',
+  'in a woodcut style', 'as a neon sign', 'in a risograph print style',
+  'as a mosaic', 'in a Japanese ink style', 'as a knitted pattern'
 ]
 
-const PEOPLE = [
-  'a lighthouse keeper', 'a violin maker at her bench', 'a night-shift baker',
-  'an elderly beekeeper', 'a teenage skateboarder catching her breath',
-  'a fishmonger mid-sentence', 'a retired boxer', 'a market gardener',
-  'a chess player deep in thought', 'a welder lifting her mask',
-  'a street barber and his customer', 'a librarian on a rolling ladder',
-  'a ferry pilot', 'a potter centring clay', 'a cellist tuning',
-  'a farrier shoeing a horse', 'a glassblower at the furnace',
-  'a lock keeper', 'a puppeteer backstage', 'a bell ringer',
-  'a wildland firefighter after a shift', 'a sign painter lettering a window',
-  'a bookbinder sewing a spine', 'a shepherd counting a flock', 'a lifeguard off season',
-  'a piano tuner listening', 'a diver checking her gauges', 'a stonemason cutting lettering'
+/* ------------------------------------------------------------------ */
+/* Things people actually need made                                    */
+/* ------------------------------------------------------------------ */
+
+const CARD_OCCASIONS = [
+  'a birthday card for a 3 year old boy', 'a birthday card for a 90th',
+  'a thank you card', 'a get well soon card', 'a new baby card',
+  'a save the date for an autumn wedding', 'a housewarming card',
+  'a card for someone starting a new job', 'a retirement card',
+  'a card for a first day at school', 'an anniversary card',
+  'a sorry-I-forgot card', 'a good luck card for an exam',
+  'a congratulations card for passing a driving test',
+  'a birthday card for a 5 year old girl', 'a birthday card for a teenager',
+  'a Mothers Day card', 'a Fathers Day card', 'a valentines card',
+  'a christmas card', 'a card for a new home', 'a leaving card for a colleague',
+  'a card for a golden wedding anniversary', 'a card to cheer someone up',
+  'a birthday card for a dog owner', 'a card for a graduation',
+  'a card welcoming someone back', 'a card for a 40th birthday',
+  'an invitation to a garden party', 'an invitation to a childrens party'
 ]
 
-const OBJECTS = [
-  'a single ripe fig, split open', 'a worn leather boot',
-  'a stack of vintage cameras', 'a bowl of lemons and a paring knife',
-  'an unmade bed in morning light', 'a brass pocket watch, open',
-  'a chipped enamel coffee pot', 'a folded newspaper and cold tea',
-  'a cracked terracotta pot with a cutting in it', 'a coil of ship rope',
-  'a typewriter with a half-finished page', 'a plate of oysters on ice',
-  'a bundle of dried lavender', 'a pair of well-used secateurs',
-  'a bicycle leaning on a wall',
-  'a jar of buttons spilled', 'a dented tin lunchbox', 'a fountain pen and blotting paper',
-  'a half-knitted jumper with the needles still in', 'a bowl of walnuts and a nutcracker',
-  'a well-thumbed paperback face down', 'a set of dentists tools laid out',
-  'a globe with the varnish crazed', 'a single tulip past its best', 'a boxed chess set mid-game'
+const CARD_THEME = [
+  'with dinosaurs', 'with wildflowers', 'with a hot air balloon',
+  'with cats in party hats', 'in gold and navy', 'with a rainbow',
+  'with a very small dog', 'in soft pastels', 'with rockets and stars',
+  'with a giant slice of cake', 'in a hand-lettered style',
+  'with woodland animals', 'with sailing boats', 'with tropical leaves',
+  'with balloons', 'with a big friendly monster', 'with hedgehogs',
+  'with mountains and pine trees', 'in bright primary colours',
+  'with a cup of tea and biscuits', 'with paper aeroplanes',
+  'with stars and moons', 'with cactuses', 'with vintage cars',
+  'with bees and honeycomb', 'with a very tall cake'
 ]
 
-const CREATURES = [
-  'a barn owl mid-flight', 'a hare in a ploughed field', 'an octopus changing colour',
-  'a herd of reindeer crossing a road', 'a hummingbird at a feeder',
-  'a fox on a suburban street at 3am', 'a pod of dolphins under a boat',
-  'a stag in morning mist', 'a colony of gannets on a cliff',
-  'a sleeping bulldog', 'a heron stalking a shallow', 'a swarm of starlings',
-  'a raven on a fencepost', 'a basking shark at the surface', 'a hedgehog crossing a lawn',
-  'a flock of sheep filling a lane', 'a kingfisher on a branch', 'a tortoise in long grass',
-  'a moth on a lit window', 'a horse shaking off rain'
+const BRANDS = [
+  'a coffee shop called Ember', 'a bookshop called Marginalia',
+  'a bakery called Second Rise', 'a bike repair shop', 'a plant nursery',
+  'a jazz bar called The Blue Room', 'a hiking club', 'a pottery studio',
+  'an ice cream van', 'a dog grooming service', 'a board game café',
+  'a swimming club', 'a hot sauce company', 'a stargazing society',
+  'a ramen bar called Slurp', 'a climbing gym', 'a vintage record shop',
+  'a soap maker', 'a surf school', 'a family dentist', 'a taco truck',
+  'an independent cinema', 'a knitting supply shop', 'a rescue dog charity',
+  'a mushroom foraging tour', 'a village pub called The Crooked Oak',
+  'a skate shop', 'a florist called Stem'
 ]
 
-const INTERIORS = [
-  'a book-lined study with a cold fireplace', 'a mid-century kitchen, all formica',
-  'a monastery refectory', 'a tailor’s workroom', 'a ships galley',
-  'a record shop basement', 'a Victorian glasshouse', 'a submarine control room',
-  'an observatory dome at night', 'a launderette at midnight',
-  'a hotel corridor with too much carpet', 'a village post office',
-  'a lighthouse lamp room', 'a school gym set for exams', 'a greasy spoon at 6am',
-  'a cathedral crypt', 'a fabric warehouse', 'a puppet workshop',
-  'a nuclear bunker canteen', 'a seed library'
+const DESIGN_JOBS = [
+  'a logo', 'a poster', 'a shop sign', 'a business card', 'a tote bag design',
+  'an enamel pin', 'a menu header', 'a sticker', 'a t-shirt print',
+  'a matchbox label', 'a coffee cup sleeve', 'a van livery',
+  'a book cover', 'an album cover', 'a bookmark', 'a beer label',
+  'a jam jar label', 'a badge', 'a shopfront awning', 'a keyring design',
+  'a mug design', 'a wrapping paper design'
 ]
 
-const IMAGINED = [
-  'a lighthouse on a floating island', 'a cathedral grown from coral',
-  'a whale skeleton being used as a market hall',
-  'a library where the shelves are hedgerows',
-  'a train station built inside a hollow tree',
-  'a city where every roof is a garden',
-  'an observatory carried on the back of a walking machine',
-  'a diving bell descending past a sunken cathedral',
-  'a windmill farm on the rings of a gas giant',
-  'a monastery clinging to a rock spire',
-  'a bridge that is also a village', 'a greenhouse orbiting a moon',
-  'a clocktower keeping time for a valley of sleepers',
-  'a market held on the back of a glacier', 'a hotel built into a dam wall',
-  'a forest where the trees are radio masts'
+const POSTER_EVENTS = [
+  'a summer music festival', 'a village fete', 'a film noir season',
+  'a farmers market', 'a charity fun run', 'a science fair',
+  'an open mic night', 'a winter craft fair', 'a school play',
+  'a beekeeping workshop', 'a night at the observatory', 'a chilli cook-off',
+  'a jazz night', 'a dog show', 'a plant swap', 'a cycling race',
+  'a bonfire night', 'a poetry reading', 'a food truck rally',
+  'a christmas market', 'a life drawing class', 'a beach clean-up',
+  'a table tennis tournament', 'a folk festival'
 ]
 
-const FOOD = [
-  'a bowl of ramen with the steam still rising', 'a rough country loaf, torn',
-  'a wedge of blue cheese and a knife', 'a plate of grilled sardines',
-  'a slice of burnt Basque cheesecake', 'a bowl of cherries with the stems on',
-  'a mille-feuille, one slice cut', 'a tagine, lid just lifted',
-  'a stack of pancakes with butter melting',
-  'a wheel of tomme cut open', 'a bowl of pho with herbs alongside',
-  'a tray of cannoli', 'a whole roast chicken resting', 'a bowl of congee with scallion',
-  'a summer pudding turned out', 'a plate of jamon carved thin'
+/* ------------------------------------------------------------------ */
+/* Abstract and pattern                                                */
+/* ------------------------------------------------------------------ */
+
+const ABSTRACT = [
+  'waves of blue and gold', 'overlapping circles', 'a slow gradient from dusk to dawn',
+  'torn paper edges', 'ink spreading in water', 'soft folded fabric',
+  'sharp geometric shapes', 'scattered confetti', 'concentric ripples',
+  'drifting smoke', 'cracked glaze', 'looping ribbons', 'shifting sand ridges',
+  'a tangle of thin lines', 'stacked translucent panes',
+  'nested arches', 'a grid slowly falling apart', 'melting stripes',
+  'blooming ink flowers', 'stacked pebbles', 'frosted glass shapes',
+  'a spiral of small dots', 'crumpled foil', 'woven threads',
+  'floating soap bubbles', 'layered paper cutouts', 'a starburst of lines'
 ]
 
-const SUBJECTS_GRAPHIC = [
-  'a coffee roaster', 'a mountain rescue team', 'a small-batch distillery',
-  'a marine biology lab', 'a bicycle repair shop', 'a jazz record label',
-  'a seed bank', 'an observatory', 'a ferry company', 'a bookbindery',
-  'a mushroom farm', 'a lighthouse preservation trust'
+const ABSTRACT_COLOUR = [
+  'in pastel colours', 'in black and white', 'in warm reds and oranges',
+  'in deep sea blues', 'in a single shade of green', 'in bright primaries',
+  'in dusty pinks and browns', 'in metallic gold and cream',
+  'in neon on black', 'in muted earth tones',
+  'in soft lilac and grey', 'in autumn colours', 'in teal and coral',
+  'in monochrome blue', 'in sunset oranges and purples', 'in forest greens and browns'
 ]
 
-const MACHINES = [
-  'a home lab rack', 'a linotype machine', 'a 1960s reel-to-reel deck',
-  'an espresso machine, cut away', 'a mechanical watch movement',
-  'a wind turbine nacelle', 'a lunar lander', 'a pipe organ console',
-  'a hand-built motorcycle engine', 'a telephone exchange switchboard',
-  'a loom mid-weave', 'a printing press', 'a diesel locomotive cab',
-  'a church clock mechanism', 'a fairground carousel motor', 'a diving bell',
-  'a hand-cranked telephone', 'a seed drill'
+const PATTERN_USES = [
+  'wrapping paper', 'a phone wallpaper', 'a fabric print', 'wallpaper for a nursery',
+  'a tile design', 'a book cover background', 'a scarf print', 'a notebook cover',
+  'a duvet cover', 'a set of coasters', 'a laptop skin', 'a lunchbox design',
+  'a tea towel', 'a jigsaw puzzle'
 ]
 
-/**
- * Short qualifiers for the one-clause starters.
- *
- * These exist for range, not decoration. Every hand contains one short line, so
- * the short pool is what decides how soon a repeat is seen — and two-slot
- * templates gave only ~8k of them, which shows a duplicate within a day's use.
- * One more small slot multiplies each of those templates by ten and keeps the
- * line short enough to have been typed. The empty string is a real member: a
- * bare "A Lisbon tram stop at first light" should still come up.
- */
-const PHOTO_TAIL = [
-  '', ', handheld', ', from above', ', shot from low down', ', close in',
-  ', wide', ', tripod, long exposure', ', through glass', ', from across the street',
-  ', square crop'
+/* ------------------------------------------------------------------ */
+/* Places to be, imagined                                              */
+/* ------------------------------------------------------------------ */
+
+const IMAGINED_PLACES = [
+  'a cosy bookshop on a rainy afternoon', 'a treehouse village in a redwood forest',
+  'a floating market above the clouds', 'a library inside a hollow mountain',
+  'a lighthouse keepers kitchen', 'a train station on the moon',
+  'an underwater greenhouse', 'a bakery run entirely by cats',
+  'a garden growing on a rooftop in winter', 'a workshop full of half-built clocks',
+  'a tiny island with one tree and one house', 'a night market on a frozen lake',
+  'a cathedral made of coral', 'a bus stop at the edge of a desert',
+  'a hotel built into a waterfall',
+  'a post office at the bottom of the sea', 'a village built into a cliff face',
+  'a greenhouse on a moving train', 'a bookshop that is bigger inside',
+  'a lighthouse made of stacked books', 'a bakery on the back of a whale',
+  'a city where everyone travels by hot air balloon',
+  'a laundrette on the edge of space', 'a forest of glass trees',
+  'a clock tower that has grown roots', 'an island shaped like a sleeping cat',
+  'a train that runs along the sea floor', 'a hotel for migrating birds',
+  'a market where the stalls are boats'
 ]
 
-const DRAWN_TAIL = [
-  '', ', flat colour', ', heavy texture', ', loose and quick', ', very fine line work',
-  ', high contrast', ', soft edges', ', limited to three colours',
-  ', with visible paper grain', ', bold and simplified'
+const ROOMS = [
+  'a cosy reading nook', 'a cluttered artists studio', 'a mid-century kitchen',
+  'a greenhouse in winter', 'a childs bedroom full of space posters',
+  'a tiny cabin interior', 'a record shop', 'an old bookshop',
+  'a potting shed', 'a jazz club after closing',
+  'a workshop full of tools', 'a bright modern kitchen', 'a childs playroom',
+  'a tailors shop', 'a village library', 'a garden shed in summer',
+  'a cosy pub snug', 'an artists attic', 'a florist shop', 'a tea room'
+]
+
+/* ------------------------------------------------------------------ */
+/* Characters and worlds                                               */
+/* ------------------------------------------------------------------ */
+
+const CHARACTERS = [
+  'a retired space pilot', 'a young inventor with too many pockets',
+  'a friendly swamp monster', 'a knight who is afraid of horses',
+  'a lighthouse keeper and her dog', 'a market trader selling maps',
+  'a robot learning to garden', 'a witch running a bakery',
+  'a deep sea diver meeting something enormous', 'a chef in a floating kitchen',
+  'a librarian who guards one very dangerous book', 'a courier crossing a desert',
+  'a very small giant', 'a detective who is also a cat',
+  'a gardener who talks to bees', 'a pirate who gets seasick',
+  'an astronaut on their first day', 'a baker who bakes at midnight',
+  'a mapmaker who has never travelled', 'a mechanic with a robot arm',
+  'a shepherd with a very clever dog', 'a clockmaker running late',
+  'a postman on a mountain route', 'a chef who cooks only soup',
+  'a diver who collects lost things', 'a musician playing to nobody',
+  'a beekeeper in a spacesuit', 'a knight on a very small pony'
+]
+
+const CHARACTER_STYLE = [
+  'as a character design sheet', 'in a Studio Ghibli feeling',
+  'as a comic book panel', 'as a friendly cartoon',
+  'in a painted fantasy style', 'as a simple vector mascot',
+  'in a retro sci-fi paperback style', 'as a claymation figure',
+  'as a pixel art sprite', 'as a wooden puppet',
+  'in a watercolour storybook style', 'as a linocut print',
+  'in a bold graphic novel style', 'as a plush toy', 'as a paper doll',
+  'in a 1950s cartoon style'
+]
+
+const CHARACTER_SETTING = [
+  '', ' at work', ' on a rainy day', ' in a cluttered workshop',
+  ' halfway up a mountain', ' waiting for a bus', ' surrounded by cats',
+  ' on a small boat', ' in a busy market', ' at the end of a long day',
+  ' in a snowstorm', ' packing for a trip'
+]
+
+/* ------------------------------------------------------------------ */
+/* Isometric, 3D and diagrams                                          */
+/* ------------------------------------------------------------------ */
+
+const ISO_SUBJECTS = [
+  'a tiny coffee shop', 'a home office', 'a fire station', 'a rooftop garden',
+  'a recording studio', 'a corner shop', 'a train carriage', 'a bakery kitchen',
+  'a lighthouse', 'a campsite', 'a bookshop', 'a greenhouse',
+  'a flower shop', 'a barbershop', 'a music shop', 'a pizza place',
+  'a vet surgery', 'a workshop', 'a tiny apartment', 'a lifeboat station'
+]
+
+const THREE_D_LOOK = [
+  'as a tiny isometric scene', 'as a soft clay model', 'in low-poly 3D',
+  'as a paper craft model', 'as a cutaway diagram', 'as a miniature diorama',
+  'as a felt model', 'as a wooden toy', 'as a tiny model village'
+]
+
+/* ------------------------------------------------------------------ */
+/* Food                                                                */
+/* ------------------------------------------------------------------ */
+
+const DISHES = [
+  'a stack of pancakes with syrup', 'a bowl of pho', 'a slice of lemon tart',
+  'a roast dinner', 'a plate of tacos', 'a cheese board',
+  'a bowl of cherries', 'a birthday cake with candles lit',
+  'fresh bread torn open', 'a bowl of tomato soup and toast',
+  'a tray of cinnamon buns', 'an ice cream cone melting',
+  'a bowl of noodles', 'a full english breakfast', 'a plate of dumplings',
+  'a fruit tart', 'a bowl of curry and rice', 'a sandwich cut in half',
+  'a doughnut with sprinkles', 'a pot of stew', 'a bowl of porridge and berries',
+  'a slice of pizza being lifted'
+]
+
+const FOOD_TREATMENT = [
+  'photographed from above', 'in soft daylight', 'as a watercolour',
+  'as a recipe card illustration', 'close up and steaming',
+  'on a dark background', 'as a flat cartoon', 'on a checked tablecloth',
+  'as a menu illustration', 'in bright colours on white',
+  'as a pencil drawing', 'with steam rising'
 ]
 
 /* ------------------------------------------------------------------ */
 /* Templates                                                           */
 /* ------------------------------------------------------------------ */
 
-/** A literal string, or a set to choose one from. */
 type Part = string | readonly string[]
 
 interface Template {
-  /** `simple` is one clause you could have typed yourself; `rich` is a brief. */
+  /** `simple` is a bare idea; `rich` gives it one line of direction. */
   size: 'simple' | 'rich'
   parts: readonly Part[]
 }
 
 const TEMPLATES: readonly Template[] = [
-  /* -- photographic, simple ---------------------------------------- */
-  { size: 'simple', parts: [PLACES, ' at ', HOUR, PHOTO_TAIL] },
-  { size: 'simple', parts: [PLACES, ', ', LENS, PHOTO_TAIL] },
-  { size: 'simple', parts: [LANDSCAPES, ' ', WEATHER, PHOTO_TAIL] },
-  { size: 'simple', parts: [OBJECTS, ' on a windowsill, ', LIGHTING, PHOTO_TAIL] },
-  { size: 'simple', parts: ['Portrait of ', PEOPLE, ', ', LENS, PHOTO_TAIL] },
-  { size: 'simple', parts: [CREATURES, ', ', LENS, PHOTO_TAIL] },
-  { size: 'simple', parts: [FOOD, ', ', LIGHTING, PHOTO_TAIL] },
-  { size: 'simple', parts: [INTERIORS, ' at ', HOUR, PHOTO_TAIL] },
+  /* -- photographic -------------------------------------------------- */
+  { size: 'simple', parts: [PHOTO_SUBJECTS, PHOTO_MOOD] },
+  { size: 'simple', parts: [PHOTO_SUBJECTS, ' ', PHOTO_PLACES] },
+  { size: 'rich', parts: [PHOTO_SUBJECTS, ' ', PHOTO_PLACES, PHOTO_MOOD] },
+  { size: 'simple', parts: ['A street scene ', PHOTO_PLACES, PHOTO_MOOD] },
+  { size: 'rich', parts: ['A photo of ', DISHES, ', ', FOOD_TREATMENT] },
+  { size: 'simple', parts: [DISHES, ', ', FOOD_TREATMENT] },
 
-  { size: 'simple', parts: [PEOPLE, ' at ', PLACES, PHOTO_TAIL] },
-  { size: 'simple', parts: [OBJECTS, ', ', FILM, PHOTO_TAIL] },
-  { size: 'simple', parts: [LANDSCAPES, ' at ', HOUR, PHOTO_TAIL] },
-  { size: 'simple', parts: [INTERIORS, ', ', LIGHTING, PHOTO_TAIL] },
-  { size: 'simple', parts: [CREATURES, ' ', WEATHER, PHOTO_TAIL] },
-  { size: 'simple', parts: [IMAGINED, ', ', MEDIUM, DRAWN_TAIL] },
-  { size: 'simple', parts: [PLACES, ' ', WEATHER, ', ', FILM] },
-  { size: 'simple', parts: [MACHINES, ', ', ILLUS_STYLE, DRAWN_TAIL] },
+  /* -- drawn and illustrated ---------------------------------------- */
+  { size: 'simple', parts: [DRAWN_SUBJECTS] },
+  { size: 'rich', parts: ['Draw ', DRAWN_SUBJECTS, ', ', DRAWN_STYLE] },
+  { size: 'simple', parts: [DRAWN_SUBJECTS, ', ', DRAWN_STYLE] },
+  { size: 'rich', parts: [IMAGINED_PLACES, ', ', DRAWN_STYLE] },
 
-  /* -- photographic, rich ------------------------------------------ */
-  {
-    size: 'rich',
-    parts: [
-      PLACES, ' at ', HOUR, ', ', WEATHER, '. Shot on ', LENS,
-      ', ', FILM, '. ', LIGHTING, '. Nobody in frame except one figure walking away.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Environmental portrait of ', PEOPLE, ' in their own workspace, ',
-      LENS, ', ', LIGHTING, ', ', FILM,
-      '. They are looking just off camera, mid-task, hands busy and in focus.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      LANDSCAPES, ' at ', HOUR, ', ', WEATHER, '. ', LENS,
-      ', ', FILM, '. Include something small for scale — a fence post, a figure, a bird.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Still life: ', OBJECTS, ' on a scarred wooden table, ', LIGHTING,
-      ', ', LENS, '. Deep shadows, one bright highlight, everything else falling away.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Product shot: ', OBJECTS, ' on ',
-      ['polished concrete', 'raw oak', 'black slate', 'a linen cloth', 'brushed steel'],
-      ', ', LIGHTING, ', 100mm macro. Clean, commercial, plenty of negative space.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      INTERIORS, ' at ', HOUR, '. ', LIGHTING, ', ', LENS, ', ', FILM,
-      '. Empty of people but obviously just used — a chair pushed back, a cup still out.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Wildlife photograph of ', CREATURES, ' at ', HOUR, ', ', WEATHER,
-      '. ', LENS, '. Long lens, subject sharp, background dissolved to colour.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Food photograph: ', FOOD, ', ', LIGHTING, ', ',
-      ['shot from directly overhead', 'at a low three-quarter angle', 'straight on at table height'],
-      ', 100mm macro. Real crumbs, real steam, nothing styled to death.'
-    ]
-  },
+  /* -- cards and occasions ------------------------------------------ */
+  { size: 'simple', parts: ['Draw me ', CARD_OCCASIONS] },
+  { size: 'rich', parts: ['Draw me ', CARD_OCCASIONS, ', ', CARD_THEME] },
+  { size: 'rich', parts: ['Design ', CARD_OCCASIONS, ' ', CARD_THEME, ', ', DRAWN_STYLE] },
 
-  /* -- illustration ------------------------------------------------- */
-  { size: 'simple', parts: [PLACES, ', ', MEDIUM, DRAWN_TAIL] },
-  { size: 'simple', parts: [LANDSCAPES, ' in ', PALETTE, DRAWN_TAIL] },
-  { size: 'simple', parts: [CREATURES, ', ', MEDIUM, DRAWN_TAIL] },
-  {
-    size: 'rich',
-    parts: [
-      PLACES, ' rendered in ', MEDIUM, ', ', PALETTE, ', ', ILLUS_STYLE,
-      '. Flat perspective, confident line, no fussy detail.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      CREATURES, ' as ', MEDIUM, ', ', PALETTE,
-      '. Anatomically careful but stylised, with visible brush or tool marks.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      IMAGINED, ', painted in ', MEDIUM, ', ', PALETTE, ', ', ILLUS_STYLE, '.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'A plate from an imaginary field guide: ', CREATURES,
-      ', ', MEDIUM, ', ', PALETTE,
-      '. Labelled in a neat hand, with two smaller detail studies in the margin.'
-    ]
-  },
+  { size: 'simple', parts: ['Draw me ', CARD_OCCASIONS, ' ', CARD_THEME] },
 
-  /* -- graphic and vector ------------------------------------------ */
-  { size: 'simple', parts: ['A minimal logo mark for ', SUBJECTS_GRAPHIC, ', flat vector', DRAWN_TAIL] },
-  { size: 'simple', parts: ['A travel poster for ', PLACES, ', ', PALETTE, DRAWN_TAIL] },
-  {
-    size: 'rich',
-    parts: [
-      'A minimal logo mark for ', SUBJECTS_GRAPHIC,
-      ': single weight, flat vector, ', PALETTE,
-      '. Geometric, legible at 16 pixels, no gradients and no text.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'A screen-printed gig poster for a band playing at ', PLACES,
-      '. ', PALETTE, ', bold display type, heavy ink texture, ', ILLUS_STYLE, '.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'A mid-century travel poster for ', LANDSCAPES,
-      ', ', PALETTE, '. Simplified shapes, flat colour, one strong diagonal.'
-    ]
-  },
+  /* -- design jobs --------------------------------------------------- */
+  { size: 'simple', parts: ['Design ', DESIGN_JOBS, ' for ', BRANDS] },
+  { size: 'rich', parts: ['Design ', DESIGN_JOBS, ' for ', BRANDS, ', ', ABSTRACT_COLOUR] },
+  { size: 'simple', parts: ['A poster for ', POSTER_EVENTS] },
+  { size: 'rich', parts: ['A poster for ', POSTER_EVENTS, ', ', ABSTRACT_COLOUR] },
+  { size: 'rich', parts: ['A poster for ', POSTER_EVENTS, ', ', DRAWN_STYLE] },
 
-  /* -- 3D, isometric, technical ------------------------------------ */
-  { size: 'simple', parts: ['Isometric illustration of ', MACHINES, DRAWN_TAIL] },
-  { size: 'simple', parts: [MACHINES, ', ', RENDER_3D, DRAWN_TAIL] },
-  {
-    size: 'rich',
-    parts: [
-      'Isometric cutaway of ', MACHINES, ', ', RENDER_3D, ', ', PALETTE,
-      '. Every component readable, thin outlines, soft ambient occlusion.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'An exploded technical diagram of ', MACHINES,
-      ', ', ILLUS_STYLE, ', ', PALETTE,
-      '. Parts floating in order along one axis, thin leader lines, no labels.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'A tiny diorama of ', PLACES, ', ', RENDER_3D,
-      '. Tilt-shift so it reads as a model, shallow focus, seen from just above.'
-    ]
-  },
+  /* -- abstract and pattern ----------------------------------------- */
+  { size: 'simple', parts: ['Something abstract: ', ABSTRACT, ' ', ABSTRACT_COLOUR] },
+  { size: 'simple', parts: [ABSTRACT, ' ', ABSTRACT_COLOUR] },
+  { size: 'rich', parts: ['A repeating pattern of ', ABSTRACT, ' ', ABSTRACT_COLOUR,
+                          ', for ', PATTERN_USES] },
+  { size: 'rich', parts: ['A design for ', PATTERN_USES, ': ', ABSTRACT, ' ', ABSTRACT_COLOUR] },
 
-  /* -- imagined and cinematic -------------------------------------- */
-  { size: 'simple', parts: [IMAGINED, ' at ', HOUR, PHOTO_TAIL] },
-  {
-    size: 'rich',
-    parts: [
-      IMAGINED, ' at ', HOUR, ', ', WEATHER, '. ', LENS, ', ', FILM,
-      '. Treated as documentary rather than fantasy — as though someone simply went and photographed it.'
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'A film still: ', PEOPLE, ' at ', PLACES, ', ', HOUR, '. ',
-      LIGHTING, ', ', LENS, ', ', FILM,
-      '. Anamorphic framing, the story happening just outside the frame.'
-    ]
-  },
+  { size: 'simple', parts: ['A design for ', PATTERN_USES, ': ', ABSTRACT] },
 
-  /* -- macro and texture ------------------------------------------- */
-  {
-    size: 'simple',
-    parts: [
-      'Extreme macro of ',
-      ['frost on a window', 'a moth wing', 'rust blooming on steel',
-       'the cut face of a log', 'salt crystals forming', 'a peacock feather',
-       'cracked dry mud', 'honeycomb', 'a snail shell', 'lichen on granite'],
-      ', ', LIGHTING
-    ]
-  },
-  {
-    size: 'rich',
-    parts: [
-      'Extreme macro of ',
-      ['frost on a window', 'a moth wing', 'rust blooming on steel',
-       'the cut face of a log', 'salt crystals forming', 'a peacock feather',
-       'cracked dry mud', 'honeycomb', 'a snail shell', 'lichen on granite'],
-      ', ', LIGHTING, ', 100mm macro at f/8, focus stacked. ',
-      'Fills the frame, abstract at first glance, ', PALETTE, '.'
-    ]
-  }
+  /* -- places and rooms --------------------------------------------- */
+  { size: 'simple', parts: [IMAGINED_PLACES] },
+  { size: 'rich', parts: [IMAGINED_PLACES, PHOTO_MOOD] },
+  { size: 'simple', parts: [ROOMS, PHOTO_MOOD] },
+  { size: 'rich', parts: [ROOMS, ', ', DRAWN_STYLE] },
+
+  /* -- characters ---------------------------------------------------- */
+  { size: 'simple', parts: [CHARACTERS, CHARACTER_SETTING] },
+  { size: 'rich', parts: [CHARACTERS, CHARACTER_SETTING, ', ', CHARACTER_STYLE] },
+  { size: 'rich', parts: ['Design a character: ', CHARACTERS, CHARACTER_SETTING, ', ', CHARACTER_STYLE] },
+
+  { size: 'simple', parts: ['Design a character: ', CHARACTERS, CHARACTER_SETTING] },
+
+  /* -- isometric and 3D ---------------------------------------------- */
+  { size: 'simple', parts: [ISO_SUBJECTS, ' ', THREE_D_LOOK] },
+  { size: 'rich', parts: [ISO_SUBJECTS, ' ', THREE_D_LOOK, ', ', ABSTRACT_COLOUR] }
 ] as const
 
 /* ------------------------------------------------------------------ */
 /* Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
+/** How many distinct strings a template can produce. */
+function combosOf(t: Template): number {
+  return t.parts.reduce((n, p) => (typeof p === 'string' ? n : n * p.length), 1)
+}
+
+/**
+ * Choose a template, weighted so the tiny ones do not dominate the repeats.
+ *
+ * Picking uniformly looked right and was not: "A poster for a dog show" has 24
+ * possible fillings and the photographic template has over a thousand, yet both
+ * came up equally often, so nearly every repeat a user saw came from the small
+ * templates. Measured, that put a duplicate in 74% of forty-visit runs.
+ *
+ * Weighting by the SQUARE ROOT of the space rather than the space itself is the
+ * compromise that matters here. Straight proportional weighting fixes repeats
+ * and flattens the variety — the handful of large photographic templates would
+ * crowd out cards, logos and abstracts, which is the opposite of the point.
+ * Square root pulls the extremes together while keeping every kind visible.
+ */
+function pickTemplate(pool: readonly Template[], rand: () => number): Template {
+  let total = 0
+  const weights = pool.map((t) => {
+    const w = Math.sqrt(combosOf(t))
+    total += w
+    return w
+  })
+  let r = rand() * total
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i]
+    if (r <= 0) return pool[i]
+  }
+  return pool[pool.length - 1]
+}
+
 function renderTemplate(t: Template, pick: (n: number) => number): string {
   let out = ''
   for (const part of t.parts) {
     out += typeof part === 'string' ? part : part[pick(part.length)]
   }
-  // A leading subject arrives lower-case because it is reused mid-sentence
-  // elsewhere ("...a film still: a lighthouse keeper at..."). Only the first
-  // character is touched, so "a Nevada truck stop" keeps its proper noun.
   return out.charAt(0).toUpperCase() + out.slice(1)
 }
 
 /**
- * How many distinct prompts the grammar can produce. Exact, not an estimate.
+ * How many distinct ideas the grammar can produce. Exact, not an estimate.
  *
  * Pass a size to count just that pool. The `simple` figure is the one that
  * governs how often a repeat is actually seen, because every hand is dealt at
- * least one short line — a huge total made mostly of elaborate briefs would
- * still show the same fragments over and over.
+ * least one short line.
  */
 export function imagePromptSpaceSize(size?: Template['size']): number {
-  return TEMPLATES.filter((t) => size === undefined || t.size === size).reduce((total, t) => {
-    const combos = t.parts.reduce(
-      (n, p) => (typeof p === 'string' ? n : n * p.length),
-      1
-    )
-    return total + combos
-  }, 0)
+  return TEMPLATES.filter((t) => size === undefined || t.size === size)
+    .reduce((total, t) => total + combosOf(t), 0)
 }
 
-/** Every template rendered with its first choice — for tests and inspection. */
+/** Every template at its first choice — for tests and inspection. */
 export function imagePromptSamples(): string[] {
   return TEMPLATES.map((t) => renderTemplate(t, () => 0))
 }
@@ -523,10 +475,10 @@ export const STARTER_GENERATORS: Partial<Record<string, (n: number) => string[]>
 }
 
 /**
- * `n` starter prompts, deliberately mixed: at least one short enough to have
- * been typed by hand, at least one full brief. A page of three elaborate
- * paragraphs is as monotonous as a page of three fragments, and the contrast is
- * itself informative — it shows how much room there is between the two.
+ * `n` starter ideas, deliberately mixed: at least one bare idea and at least
+ * one with a line of direction on it. A hand of three that are all the same
+ * shape reads as one suggestion repeated, and the contrast is itself useful —
+ * it shows there is no required amount of detail.
  */
 export function randomImagePrompts(n: number, rand: () => number = Math.random): string[] {
   const pick = (len: number): number => Math.floor(rand() * len)
@@ -535,13 +487,12 @@ export function randomImagePrompts(n: number, rand: () => number = Math.random):
 
   const wanted: Template[] = []
   if (n >= 2) {
-    wanted.push(simple[pick(simple.length)], rich[pick(rich.length)])
+    wanted.push(pickTemplate(simple, rand), pickTemplate(rich, rand))
   }
   while (wanted.length < n) {
-    wanted.push(TEMPLATES[pick(TEMPLATES.length)])
+    wanted.push(pickTemplate(TEMPLATES, rand))
   }
 
-  // Shuffle so the short one is not always first.
   for (let i = wanted.length - 1; i > 0; i--) {
     const j = pick(i + 1)
     ;[wanted[i], wanted[j]] = [wanted[j], wanted[i]]
@@ -550,8 +501,6 @@ export function randomImagePrompts(n: number, rand: () => number = Math.random):
   const out: string[] = []
   const seen = new Set<string>()
   for (const t of wanted) {
-    // A repeated line in a trio of three is very visible; a few retries is
-    // cheaper than deduping across a space this size.
     for (let attempt = 0; attempt < 8; attempt++) {
       const s = renderTemplate(t, pick)
       if (!seen.has(s)) {
