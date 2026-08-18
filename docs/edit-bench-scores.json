@@ -1,0 +1,84 @@
+{
+  "taxi-pink": {
+    "sdedit-raw-d0.4": {
+      "changed": false,
+      "kept": false,
+      "note": "Taxis still yellow. And yet the jacket went brown to maroon, the cart changed, the skyline changed."
+    },
+    "sdedit-raw-d0.6": {
+      "changed": false,
+      "kept": false,
+      "note": "The shipped default. Taxis went red, not pink, and this is now a different city: new people, new signage, no cart."
+    },
+    "sdedit-raw-d0.8": {
+      "changed": true,
+      "kept": false,
+      "note": "Pink at last. The camera has moved into the road and the crowd is gone."
+    },
+    "klein-pilot": {
+      "changed": true,
+      "kept": true,
+      "note": "Klein base, 654s. Still the same photograph; the sky drifts a shade lavender."
+    },
+    "klein-refined": {
+      "changed": true,
+      "kept": false,
+      "note": "Klein base given a scene description instead. Pink taxis on a garish illustration."
+    },
+    "kd-raw": {
+      "changed": true,
+      "kept": true,
+      "note": "Distilled Klein, 110s. Lamp glow, leather jacket, pretzel cart and manhole covers all survive."
+    },
+    "kd-refined": {
+      "changed": true,
+      "kept": false,
+      "note": "Same model, given the description. My words said 'striped awning'; the real one is plain. It obeyed the words over the picture."
+    },
+    "sdedit-refined": {
+      "changed": false,
+      "kept": false,
+      "note": "The shipped default, given the best description I could write -- it says 'painted HOT PINK' in as many words. Taxis still yellow, and the crowd, cart and buildings changed anyway."
+    }
+  },
+  "cart-remove": {
+    "kd-suite": {
+      "changed": true,
+      "kept": true,
+      "note": "The cart is gone and the storefront behind it is plausible. The taxis stayed yellow, because this request never mentioned them."
+    }
+  },
+  "dog-to-cat": {
+    "kd-suite": {
+      "changed": true,
+      "kept": true,
+      "note": "Same pose, tongue out, same green bowl and kibble, same window light and blurred kitchen. Only the animal changed."
+    }
+  },
+  "bowl-blue": {
+    "kd-suite": {
+      "changed": true,
+      "kept": true,
+      "note": "The bowl is blue and it is the same dog -- same pose, ears, fur, eyes, white paws, same kibble, same window light."
+    },
+    "sdedit-refined": {
+      "changed": false,
+      "kept": false,
+      "note": "img2img at the shipped default, told in as many words that the bowl is BLUE. Still green -- on a simple photo with one obvious object. The dog's face and the kitchen behind it shifted anyway."
+    }
+  },
+  "night": {
+    "kd-suite": {
+      "changed": true,
+      "kept": true,
+      "note": "Stars and Milky Way, all three penguins in the same poses on the same snow, correctly re-lit. One defect: the adult's eye patch has become a glowing orange dot."
+    }
+  },
+  "add-scarf": {
+    "kd-suite": {
+      "changed": false,
+      "kept": true,
+      "note": "The scarf went on the ADULT, not the chick I asked for. Everything else is untouched -- so this is a grounding failure, not a preservation one. 'The baby penguin' did not resolve; the model dressed the most salient bird."
+    }
+  }
+}

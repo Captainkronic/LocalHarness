@@ -16,8 +16,8 @@ Verdicts come from a scores file, not from the bench. Nothing here can tell
 whether an edit worked; a person (or a vision model) has to look. Runs with no
 score render without chips rather than with invented ones.
 
-  python3 scripts/edit-report.py --intro notes.md --scores scores.json \
-      --out ~/Desktop/edit-review.html
+  python3 scripts/edit-report.py --intro notes.md \
+      --scores docs/edit-bench-scores.json --out ~/Desktop/edit-review.html
 """
 
 import argparse
