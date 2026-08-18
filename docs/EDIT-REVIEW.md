@@ -93,9 +93,15 @@ Same photo, same seed, same Klein reference-latent graph. Only the text differs.
 | a full description of the finished scene | yes | **no** — pink taxis, but the photograph has become a garish oversaturated illustration: cartoon buildings, invented "HOT" signage, stock-image sunset |
 
 The people and the cart stay roughly in place in both, so this is not the img2img
-collapse. It is subtler and just as fatal: the description is a *second account
-of the picture*, competing with the picture itself, and the renderer splits the
-difference — landing on a generic vivid city street rather than **this** one.
+collapse. It is subtler: the description is a *second account of the picture*,
+competing with the picture itself, and the renderer splits the difference.
+
+The distilled model shows the mechanism in one detail. My description called the
+food cart's awning "striped"; the actual awning in the photo is plain. The render
+**obeyed the words over the picture** and repainted it blue-and-white striped —
+and washed the sunset out to a flat warm haze at the same time. Wherever the
+description and the photograph disagree, the description wins. That is exactly
+what you do not want from something whose job is to leave the photograph alone.
 
 That is why the two briefs are not interchangeable, and why the method has to
 decide which one stage 1 is given.
@@ -157,6 +163,39 @@ checkpoint on this machine.
 - distilled Klein bf16: quality against base, and the real speed
 - whether the instruction-style stage 1 beats the description style for Klein
 - the full six-case suite on the winner
+
+### The six-case suite, on the distilled model
+
+Same seed, raw instruction, defaults (4 steps, cfg 1, ~1 MP).
+
+| case | time | change | rest survived |
+|---|---|---|---|
+| taxi-pink — recolour many objects | 110s | yes | yes |
+| cart-remove — delete an object | 107s | yes | yes, and the storefront behind it is plausible |
+| dog-to-cat — swap a subject | 88s | yes | yes — same bowl, floor, window light, depth of field |
+| bowl-blue — recolour, keep identity | 117s | yes | yes — visibly the *same dog* |
+| night — global relight | 90s | yes | yes; one defect, the adult's eye patch became a glowing dot |
+| add-scarf — add an object to one of three similar subjects | ~120s | **no** | yes |
+
+Five of six. Note what `cart-remove` did *not* do: the taxis are still yellow,
+because that request never mentioned them. On the img2img path the taxis would
+have been repainted along with everything else.
+
+**The failure is worth more than the successes.** `add-scarf` asked for a scarf
+on the *baby* penguin and put a beautifully knitted one on the adult. Nothing
+else moved — so this is not a preservation failure, it is a **grounding**
+failure: the renderer could not tie "the baby penguin" to the right bird and
+drifted to the largest, most central one.
+
+That is the real remaining limit, and it is not fixed by any of the above. I
+tried to fix it at stage 1 by telling the brief to anchor the subject visually.
+Measured on gemma-4-26b: it *does* add attribute anchors where there is genuine
+ambiguity — "make the woman's jacket green" became "the woman's **brown**
+jacket", which finds the right woman among several — but it would not add
+spatial ones for the penguin, restating "the baby penguin" across three
+rewordings of the rule. The rule is kept because it demonstrably helps the
+ambiguous case and costs nothing; it is **not** a fix for grounding, and I am
+not claiming it as one.
 
 ## What changed in the app
 

@@ -74,8 +74,12 @@ itself and pulls the result away from it.
 Write one or two sentences, imperative:
 - Name the change concretely — which thing, and exactly what is different about
   it. "The three taxis in the right lane" beats "the cars".
-- Use what you can see to point at the right thing: where it is, what colour it
-  is, what it is next to. That is what the photo is for.
+- Anchor the subject with something you can SEE — its colour, its size, where it
+  sits, what it is next to. Do this even when his words already read as
+  unambiguous, because the renderer matches words to pixels far less reliably
+  than you do and drifts toward whatever is largest and most central. "The
+  woman's brown jacket" finds the right woman where "the woman's jacket" may
+  not; "the baby penguin" has exactly one referent and still lands on an adult.
 - Only where the change could plausibly bleed into something beside it, say that
   thing stays. Listing everything in the frame is the failure this avoids.
 

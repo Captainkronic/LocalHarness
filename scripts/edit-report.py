@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """
-Turn bench runs into one page you can actually judge.
+Turn bench runs into a contact sheet you can actually judge.
 
-Scoring image edits means holding the source and the result side by side and
-asking two separate questions -- did the thing I asked for happen, and did
-everything else survive. A directory of PNGs cannot be judged that way, so this
-lays every run out as source-next-to-result rows, grouped by case, with the
-prompt that produced each one underneath.
+Scoring an image edit means holding the source and the result side by side and
+asking two SEPARATE questions -- did the thing I asked for happen, and did
+everything else survive. A folder of PNGs cannot be judged that way, and a
+single "is it good" score hides the interesting failure, which is when one
+answer is yes and the other is no.
 
-Thumbnails are downscaled with sips and inlined, because the page has to be
-readable somewhere other than this machine.
+So: one strip per request, source plate first, and two verdict chips under every
+attempt. The chips are the point -- they let the whole page be scanned for the
+pattern without reading a word of it.
 
-  python3 scripts/edit-report.py --out ~/Desktop/edit-review.html
+Verdicts come from a scores file, not from the bench. Nothing here can tell
+whether an edit worked; a person (or a vision model) has to look. Runs with no
+score render without chips rather than with invented ones.
+
+  python3 scripts/edit-report.py --intro notes.md --scores scores.json \
+      --out ~/Desktop/edit-review.html
 """
 
 import argparse
@@ -25,7 +31,7 @@ import subprocess
 import tempfile
 
 RUNS = os.path.expanduser("~/LocalHarness/.edit-bench")
-THUMB_PX = 420
+THUMB_PX = 560
 
 
 def thumb(path, px=THUMB_PX):
@@ -35,7 +41,7 @@ def thumb(path, px=THUMB_PX):
     with tempfile.TemporaryDirectory() as td:
         out = os.path.join(td, "t.jpg")
         r = subprocess.run(
-            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "72",
+            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "68",
              "-Z", str(px), path, "--out", out],
             capture_output=True)
         if r.returncode != 0 or not os.path.isfile(out):
@@ -47,9 +53,8 @@ def thumb(path, px=THUMB_PX):
 def mini_markdown(text):
     """Just enough markdown for a findings note: headings, bold, code, bullets.
 
-    Not a parser. A real one would be a dependency, and this renders exactly one
-    file that is written alongside it -- if something here does not survive the
-    round trip, the fix is to write plainer markdown.
+    Not a parser. It renders exactly one file, written alongside it -- if
+    something does not survive the round trip, the fix is plainer markdown.
     """
     out, in_list = [], False
     for raw in text.split("\n"):
@@ -57,33 +62,71 @@ def mini_markdown(text):
         line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
         line = re.sub(r"`(.+?)`", r"<code>\1</code>", line)
         if line.startswith("## "):
-            if in_list: out.append("</ul>"); in_list = False
+            if in_list:
+                out.append("</ul>")
+                in_list = False
             out.append("<h2>%s</h2>" % line[3:])
         elif line.startswith("# "):
-            continue          # the page has its own title
+            continue
         elif line.startswith("- "):
-            if not in_list: out.append("<ul>"); in_list = True
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
             out.append("<li>%s</li>" % line[2:])
         elif line.strip() == "":
-            if in_list: out.append("</ul>"); in_list = False
+            if in_list:
+                out.append("</ul>")
+                in_list = False
         else:
-            if in_list: out.append("</ul>"); in_list = False
+            if in_list:
+                out.append("</ul>")
+                in_list = False
             out.append("<p>%s</p>" % line)
-    if in_list: out.append("</ul>")
+    if in_list:
+        out.append("</ul>")
     return "\n".join(out)
+
+
+def chip(kind, ok, label):
+    """A verdict as shape AND colour, never colour alone."""
+    mark = "yes" if ok else "no"
+    return ('<span class="chip chip-%s"><span class="chip-k">%s</span>'
+            '<span class="chip-v">%s</span></span>' % (kind if ok else "no", label, mark))
+
+
+def plate(src, title, sub, verdict=None, note=None, is_source=False, failed=None):
+    cls = "plate plate-source" if is_source else "plate"
+    if failed:
+        img = '<div class="failbox">did not render</div>'
+    else:
+        img = '<img src="%s" alt="%s" loading="lazy">' % (src, html.escape(title))
+    chips = ""
+    if verdict:
+        chips = '<div class="chips">%s%s</div>' % (
+            chip("held", verdict.get("changed"), "change"),
+            chip("held", verdict.get("kept"), "kept the rest"))
+    note_html = '<p class="note">%s</p>' % html.escape(note) if note else ""
+    return ('<figure class="%s">%s<figcaption>'
+            '<p class="plate-title">%s</p><p class="plate-sub">%s</p>%s%s'
+            '</figcaption></figure>' % (cls, img, html.escape(title), sub, chips, note_html))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.expanduser("~/Desktop/edit-review.html"))
     ap.add_argument("--runs", default=RUNS)
-    # A findings file rendered above the grid, so the page can be read by
-    # someone who was not here when the runs happened. Deliberately a path
-    # rather than a string: the narrative belongs in a file under review, not
-    # inlined in a command line.
-    ap.add_argument("--intro", default=None,
-                    help="path to a small markdown file to render above the grid")
+    ap.add_argument("--intro", default=None)
+    ap.add_argument("--scores", default=None,
+                    help='JSON: {"<case>": {"<run>": {"changed":bool,"kept":bool,'
+                         '"note":str}}}')
+    ap.add_argument("--order", default=None,
+                    help="comma-separated run labels, to fix the reading order")
     args = ap.parse_args()
+
+    scores = {}
+    if args.scores and os.path.isfile(args.scores):
+        with open(args.scores) as f:
+            scores = json.load(f)
 
     runs = []
     for mf in sorted(glob.glob(os.path.join(args.runs, "*", "manifest.json"))):
@@ -92,8 +135,13 @@ def main():
         m["label"] = os.path.basename(os.path.dirname(mf))
         runs.append(m)
 
-    # Group by case so the same edit across paths sits together -- that
-    # adjacency is the whole point; a per-run layout hides the comparison.
+    order = args.order.split(",") if args.order else None
+
+    def rank(label):
+        if order and label in order:
+            return order.index(label)
+        return 999
+
     by_case = {}
     for run in runs:
         for name, c in run.get("cases", {}).items():
@@ -101,91 +149,156 @@ def main():
 
     srcs = {}
     parts = []
-    for case in sorted(by_case):
-        entries = by_case[case]
+    case_order = sorted(by_case, key=lambda c: (0 if c == "taxi-pink" else 1, c))
+    for case in case_order:
+        entries = sorted(by_case[case], key=lambda rc: rank(rc[0]["label"]))
         ask = next((c["ask"] for _r, c in entries if "ask" in c), case)
-        check = next((c.get("check", "") for _r, c in entries if c.get("check")), "")
         src_path = next((c["source"] for _r, c in entries if c.get("source")), None)
         if src_path and src_path not in srcs:
             srcs[src_path] = thumb(src_path)
 
-        parts.append(f'<section><h2>{html.escape(case)}</h2>')
-        parts.append(f'<p class="ask">&ldquo;{html.escape(ask)}&rdquo;</p>')
-        if check:
-            parts.append(f'<p class="check"><b>Pass means:</b> {html.escape(check)}</p>')
-        parts.append('<div class="grid">')
+        parts.append('<section class="case">')
+        parts.append('<h2 class="eyebrow">%s</h2>' % html.escape(case))
+        parts.append('<p class="ask">&ldquo;%s&rdquo;</p>' % html.escape(ask))
+        parts.append('<div class="strip"><div class="strip-inner">')
         if src_path and srcs.get(src_path):
-            parts.append(
-                f'<figure class="src"><img src="{srcs[src_path]}" alt="source">'
-                f'<figcaption><b>source</b><br>{html.escape(os.path.basename(src_path))}'
-                f'</figcaption></figure>')
+            parts.append(plate(srcs[src_path], "source",
+                               '<span class="mono">%s</span>'
+                               % html.escape(os.path.basename(src_path)),
+                               is_source=True))
         for run, c in entries:
-            if c.get("error"):
-                parts.append(
-                    f'<figure class="err"><div class="failbox">FAILED</div>'
-                    f'<figcaption><b>{html.escape(run["label"])}</b><br>'
-                    f'{html.escape(c["error"][:300])}</figcaption></figure>')
-                continue
-            t = thumb(c["output"])
-            if not t:
-                continue
-            kw = ", ".join(f"{k}={v}" for k, v in sorted(run.get("kwargs", {}).items()))
+            label = run["label"]
+            v = scores.get(case, {}).get(label)
+            kw = ", ".join("%s=%s" % (k, val)
+                           for k, val in sorted(run.get("kwargs", {}).items()))
             secs = c.get("seconds")
-            parts.append(
-                f'<figure><img src="{t}" alt="{html.escape(run["label"])}">'
-                f'<figcaption><b>{html.escape(run["label"])}</b><br>'
-                f'<span class="meta">{html.escape(run.get("path", ""))} &middot; '
-                f'{html.escape(kw)}<br>prompt: {html.escape(run.get("prompt", "?"))}'
-                f'{f" &middot; {secs:.0f}s" if secs else ""}</span></figcaption></figure>')
-        parts.append('</div></section>')
+            sub = ('<span class="mono">%s</span>%s%s' % (
+                html.escape(run.get("path", "")),
+                ' &middot; <span class="mono">%s</span>' % html.escape(kw) if kw else "",
+                ' &middot; <span class="mono">%ds</span>' % secs if secs else ""))
+            parts.append(plate(thumb(c["output"]) if c.get("output") else None,
+                               label, sub, verdict=v,
+                               note=(v or {}).get("note"),
+                               failed=c.get("error")))
+        parts.append('</div></div></section>')
 
     intro_html = ""
     if args.intro and os.path.isfile(args.intro):
-        intro_html = '<div class="intro">%s</div>' % mini_markdown(open(args.intro).read())
+        with open(args.intro) as f:
+            intro_html = '<div class="intro">%s</div>' % mini_markdown(f.read())
 
     body = "\n".join(parts) or "<p>No runs found.</p>"
-    doc = f"""<title>Image edit bench</title>
+    doc = """<title>The Edit That Wasn't</title>
 <style>
-  :root {{ --bg:#faf9f7; --fg:#1c1b19; --dim:#6b6862; --line:#e2ded8; --card:#fff; --accent:#b07ad4; }}
-  :root:not([data-theme="light"]) {{ }}
-  @media (prefers-color-scheme: dark) {{
-    :root:not([data-theme="light"]) {{ --bg:#16151a; --fg:#eceaf0; --dim:#9a95a5; --line:#2e2b36; --card:#1e1d24; }}
-  }}
-  :root[data-theme="dark"] {{ --bg:#16151a; --fg:#eceaf0; --dim:#9a95a5; --line:#2e2b36; --card:#1e1d24; }}
-  body {{ background:var(--bg); color:var(--fg); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-         margin:0; padding:32px; }}
-  h1 {{ font-size:26px; margin:0 0 4px; }}
-  .sub {{ color:var(--dim); margin:0 0 32px; }}
-  section {{ margin:0 0 44px; padding:0 0 32px; border-bottom:1px solid var(--line); }}
-  h2 {{ font-size:19px; margin:0 0 6px; }}
-  .ask {{ font-size:17px; margin:0 0 6px; color:var(--accent); }}
-  .check {{ color:var(--dim); margin:0 0 18px; font-size:13.5px; max-width:70ch; }}
-  .grid {{ display:flex; flex-wrap:wrap; gap:18px; }}
-  figure {{ margin:0; width:{THUMB_PX//2 + 40}px; background:var(--card);
-            border:1px solid var(--line); border-radius:10px; overflow:hidden; }}
-  figure.src {{ outline:2px solid var(--accent); }}
-  img {{ width:100%; display:block; }}
-  figcaption {{ padding:9px 11px; font-size:12.5px; }}
-  .meta {{ color:var(--dim); }}
-  .failbox {{ aspect-ratio:1; display:grid; place-items:center; color:#c0392b; font-weight:600; }}
-  .intro {{ max-width:74ch; margin:0 0 40px; }}
-  .intro h2 {{ font-size:17px; margin:26px 0 8px; }}
-  .intro p {{ margin:0 0 12px; }}
-  .intro li {{ margin:0 0 6px; }}
-  .intro code {{ background:var(--card); border:1px solid var(--line); border-radius:4px;
-                 padding:1px 5px; font-size:13px; }}
-  .intro strong {{ color:var(--fg); }}
+  /* Light is the base set; the two blocks below only redefine tokens, so a
+     colour is never defined solely behind a media query or a [data-theme]. */
+  :root {
+    --ground:#f5f4f7; --plate:#ffffff; --ink:#1a1821; --ink-dim:#6b6579;
+    --rule:#e2dfe8; --accent:#8b5cb8; --held:#2c7a58; --lost:#b03f3a;
+    --shadow:0 1px 2px rgba(26,24,33,.06), 0 8px 24px rgba(26,24,33,.05);
+    --serif:"Iowan Old Style","Charter","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#141317; --plate:#1c1a21; --ink:#ecebf0; --ink-dim:#9a94a6;
+      --rule:#2b2833; --accent:#c08ee0; --held:#5cbd92; --lost:#e07670;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#141317; --plate:#1c1a21; --ink:#ecebf0; --ink-dim:#9a94a6;
+    --rule:#2b2833; --accent:#c08ee0; --held:#5cbd92; --lost:#e07670;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  body { background:var(--ground); color:var(--ink); font-family:var(--sans);
+         font-size:16px; line-height:1.6; margin:0; padding:48px 32px 96px; }
+  .wrap { max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }
+
+  header { display:flex; flex-direction:column; gap:10px; margin-bottom:8px; }
+  h1 { font-family:var(--serif); font-size:40px; line-height:1.12; font-weight:600;
+       margin:0; letter-spacing:-.015em; text-wrap:balance; }
+  .standfirst { font-family:var(--serif); font-size:19px; color:var(--ink-dim);
+                margin:0; max-width:62ch; text-wrap:balance; }
+
+  .intro { max-width:66ch; font-family:var(--serif); font-size:17px;
+           display:flex; flex-direction:column; gap:2px; margin:24px 0 8px; }
+  .intro h2 { font-family:var(--sans); font-size:12px; font-weight:600;
+              letter-spacing:.09em; text-transform:uppercase; color:var(--accent);
+              margin:30px 0 4px; }
+  .intro p { margin:0 0 12px; }
+  .intro ul { margin:0 0 12px; padding-left:20px; }
+  .intro li { margin:0 0 5px; }
+  .intro code, code { font-family:var(--mono); font-size:.86em;
+        background:var(--plate); border:1px solid var(--rule);
+        border-radius:4px; padding:1px 5px; }
+
+  .case { border-top:1px solid var(--rule); padding-top:26px; margin-top:34px;
+          display:flex; flex-direction:column; gap:4px; }
+  .eyebrow { font-size:11.5px; font-weight:600; letter-spacing:.1em;
+             text-transform:uppercase; color:var(--ink-dim); margin:0;
+             font-family:var(--mono); }
+  .ask { font-family:var(--serif); font-size:24px; line-height:1.3; margin:0 0 20px;
+         color:var(--ink); max-width:34ch; text-wrap:balance; }
+
+  /* Wide by nature: the strip scrolls inside itself so the page never does. */
+  .strip { overflow-x:auto; margin:0 -32px; padding:4px 32px 10px; }
+  .strip-inner { display:flex; gap:20px; align-items:flex-start; width:max-content; }
+
+  .plate { margin:0; width:272px; background:var(--plate); border:1px solid var(--rule);
+           border-radius:3px; overflow:hidden; box-shadow:var(--shadow);
+           display:flex; flex-direction:column; }
+  /* The source is the thing everything else is measured against, so it is the
+     one plate that gets the accent. */
+  .plate-source { border-color:var(--accent); box-shadow:none; }
+  .plate-source .plate-title { color:var(--accent); }
+  .plate img { width:100%; display:block; aspect-ratio:1; object-fit:cover; }
+  figcaption { padding:11px 13px 13px; display:flex; flex-direction:column; gap:5px; }
+  .plate-title { margin:0; font-size:13.5px; font-weight:600; font-family:var(--mono); }
+  .plate-sub { margin:0; font-size:11.5px; color:var(--ink-dim); line-height:1.45; }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .note { margin:2px 0 0; font-size:12px; color:var(--ink-dim); line-height:1.45;
+          font-family:var(--serif); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; }
+  .chip { display:inline-flex; align-items:baseline; gap:5px; font-size:11px;
+          border-radius:3px; padding:2px 7px; border:1px solid; line-height:1.5; }
+  .chip-k { color:var(--ink-dim); }
+  .chip-held { border-color:color-mix(in srgb, var(--held) 42%, transparent);
+               background:color-mix(in srgb, var(--held) 11%, transparent); }
+  .chip-held .chip-v { color:var(--held); font-weight:600; }
+  .chip-no { border-color:color-mix(in srgb, var(--lost) 42%, transparent);
+             background:color-mix(in srgb, var(--lost) 11%, transparent); }
+  .chip-no .chip-v { color:var(--lost); font-weight:600; }
+
+  .failbox { aspect-ratio:1; display:grid; place-items:center; color:var(--lost);
+             font-size:13px; font-family:var(--mono);
+             background:color-mix(in srgb, var(--lost) 7%, transparent); }
+
+  @media (max-width:700px) {
+    body { padding:32px 20px 72px; }
+    h1 { font-size:31px; }
+    .strip { margin:0 -20px; padding-left:20px; padding-right:20px; }
+  }
 </style>
-<h1>Image edit bench</h1>
-<p class="sub">Source is outlined. Two questions per row: did the asked-for change happen,
-and did everything else survive.</p>
-{intro_html}
-{body}
+<div class="wrap">
+<header>
+  <h1>The edit that wasn't</h1>
+  <p class="standfirst">Same photograph, same instruction, same seed &mdash; through
+  every renderer the Edit workflow has had. Two questions per frame: did the change
+  happen, and did everything else survive.</p>
+</header>
+__INTRO__
+__BODY__
+</div>
 """
+    doc = doc.replace("__INTRO__", intro_html).replace("__BODY__", body)
     with open(args.out, "w") as f:
         f.write(doc)
-    kb = os.path.getsize(args.out) // 1024
-    print(f"{args.out}  ({kb}KB, {len(runs)} runs, {len(by_case)} cases)")
+    print("%s  (%dKB, %d runs, %d cases)"
+          % (args.out, os.path.getsize(args.out) // 1024, len(runs), len(by_case)))
 
 
 if __name__ == "__main__":
