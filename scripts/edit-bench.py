@@ -272,6 +272,26 @@ def stage(path):
     return name
 
 
+def free_models():
+    """Ask ComfyUI to drop cached models before a run.
+
+    Benchmarking switches checkpoints constantly, and ComfyUI keeps the last one
+    resident. On a 24GB Mac, z-image (12.3GB) plus a Klein (7.75GB) plus a text
+    encoder (7.6GB) does not fit, so without this the machine ends up 13GB into
+    swap and every render slows to a crawl -- which corrupts the timings this
+    bench exists to produce.
+
+    Best-effort: an older ComfyUI without /free is not a reason to abort.
+    """
+    body = json.dumps({"unload_models": True, "free_memory": True}).encode()
+    req = urllib.request.Request(f"{COMFY}/free", data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+    except Exception as e:
+        print(f"  \033[2m(could not free models: {e})\033[0m")
+
+
 def post(workflow, client_id):
     body = json.dumps({"prompt": workflow, "client_id": client_id}).encode()
     req = urllib.request.Request(f"{COMFY}/prompt", data=body,
@@ -368,6 +388,8 @@ def main():
     print(f"\n\033[1m{args.path}\033[0m -> {out_dir}")
     print(f"  {', '.join(f'{k}={v}' for k, v in sorted(kwargs.items())) or 'defaults'}"
           f", seed={args.seed}, prompt={args.prompt}\n")
+
+    free_models()
 
     manifest = {"path": args.path, "seed": args.seed, "prompt": args.prompt, "kwargs": kwargs,
                 "started": time.strftime("%Y-%m-%d %H:%M:%S"), "cases": {}}

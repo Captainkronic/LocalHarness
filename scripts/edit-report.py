@@ -20,6 +20,7 @@ import glob
 import html
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -43,10 +44,45 @@ def thumb(path, px=THUMB_PX):
             return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
 
 
+def mini_markdown(text):
+    """Just enough markdown for a findings note: headings, bold, code, bullets.
+
+    Not a parser. A real one would be a dependency, and this renders exactly one
+    file that is written alongside it -- if something here does not survive the
+    round trip, the fix is to write plainer markdown.
+    """
+    out, in_list = [], False
+    for raw in text.split("\n"):
+        line = html.escape(raw.rstrip())
+        line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
+        line = re.sub(r"`(.+?)`", r"<code>\1</code>", line)
+        if line.startswith("## "):
+            if in_list: out.append("</ul>"); in_list = False
+            out.append("<h2>%s</h2>" % line[3:])
+        elif line.startswith("# "):
+            continue          # the page has its own title
+        elif line.startswith("- "):
+            if not in_list: out.append("<ul>"); in_list = True
+            out.append("<li>%s</li>" % line[2:])
+        elif line.strip() == "":
+            if in_list: out.append("</ul>"); in_list = False
+        else:
+            if in_list: out.append("</ul>"); in_list = False
+            out.append("<p>%s</p>" % line)
+    if in_list: out.append("</ul>")
+    return "\n".join(out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.expanduser("~/Desktop/edit-review.html"))
     ap.add_argument("--runs", default=RUNS)
+    # A findings file rendered above the grid, so the page can be read by
+    # someone who was not here when the runs happened. Deliberately a path
+    # rather than a string: the narrative belongs in a file under review, not
+    # inlined in a command line.
+    ap.add_argument("--intro", default=None,
+                    help="path to a small markdown file to render above the grid")
     args = ap.parse_args()
 
     runs = []
@@ -103,6 +139,10 @@ def main():
                 f'{f" &middot; {secs:.0f}s" if secs else ""}</span></figcaption></figure>')
         parts.append('</div></section>')
 
+    intro_html = ""
+    if args.intro and os.path.isfile(args.intro):
+        intro_html = '<div class="intro">%s</div>' % mini_markdown(open(args.intro).read())
+
     body = "\n".join(parts) or "<p>No runs found.</p>"
     doc = f"""<title>Image edit bench</title>
 <style>
@@ -128,10 +168,18 @@ def main():
   figcaption {{ padding:9px 11px; font-size:12.5px; }}
   .meta {{ color:var(--dim); }}
   .failbox {{ aspect-ratio:1; display:grid; place-items:center; color:#c0392b; font-weight:600; }}
+  .intro {{ max-width:74ch; margin:0 0 40px; }}
+  .intro h2 {{ font-size:17px; margin:26px 0 8px; }}
+  .intro p {{ margin:0 0 12px; }}
+  .intro li {{ margin:0 0 6px; }}
+  .intro code {{ background:var(--card); border:1px solid var(--line); border-radius:4px;
+                 padding:1px 5px; font-size:13px; }}
+  .intro strong {{ color:var(--fg); }}
 </style>
 <h1>Image edit bench</h1>
 <p class="sub">Source is outlined. Two questions per row: did the asked-for change happen,
 and did everything else survive.</p>
+{intro_html}
 {body}
 """
     with open(args.out, "w") as f:

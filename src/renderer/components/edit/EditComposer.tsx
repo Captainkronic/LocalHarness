@@ -47,7 +47,9 @@ const METHOD_COPY: Record<EditMethod, { label: string; hint: string; note: strin
   }
 }
 
-/** Plain English for the one knob that decides how much of the photo survives. */
+/** Plain English for denoise, which on the restyle method is the only thing
+ *  deciding how much of the photo survives. The instruction method has no
+ *  equivalent, which is the point of it. */
 const DENOISE_SCALE: Array<{ upTo: number; label: string }> = [
   { upTo: 0.25, label: 'barely touches the photo' },
   { upTo: 0.4, label: 'keeps almost all of it' },

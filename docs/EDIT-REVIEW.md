@@ -31,7 +31,8 @@ everything else the same"*. Same seed throughout.
 | sdedit, denoise 0.4 | 431s | **no** — taxis still yellow | no — jacket brown→maroon, cart changed, buildings and sky changed |
 | sdedit, denoise 0.6 *(shipped default)* | 346s | **no** — taxis went red | **no** — a different city: different people, different signage, cart gone |
 | sdedit, denoise 0.8 | 399s | yes — taxis pink | **no** — different city, camera moved into the road, crowd erased |
-| klein reference-latent | 654s | yes — every taxi pink | yes — crowd, cart, lamps, skyline, manhole covers all held |
+| klein base, reference-latent | 654s | yes — every taxi pink | yes — crowd, cart, lamps, skyline, manhole covers held; sky drifts a little lavender |
+| **klein distilled, reference-latent** | **110s** | yes — every taxi pink | yes — and better: the sunset gradient, the lamp glow, the woman's jacket and coffee cup, the pretzel cart and the manhole covers all survive |
 
 Read the sdedit rows as a curve, because that is the whole argument. Turn
 denoise down and the edit does not happen but the photo drifts anyway; turn it
@@ -132,8 +133,16 @@ passes — 654s measured. The distilled build needs 4 steps at cfg 1, and at cfg
 that is 4 passes, not 8. A tenth of the sampling work, and half of what the
 img2img path it replaces does at 8 steps.
 
-For reference, the sdedit runs on the same machine took 346-431s, so the
-img2img path was never the fast one either — it was slow *and* wrong.
+Measured, same photo and seed: base **654s**, distilled **110s**. And the sdedit
+runs it replaces took **346-431s**, so the img2img path was never even the fast
+one — it was slow *and* wrong. The distilled model is three times quicker than
+the thing it replaces and six times quicker than Klein base, while giving the
+best preservation of the three.
+
+That is the rare case where the right answer is also the cheap one, and it is
+worth being suspicious of. The reason it holds up: distillation removes the
+guidance pass, not the reference conditioning — the mechanism that does the
+preserving is untouched.
 
 **The fp8 distilled build does not run on this Mac.** `flux-2-klein-4b-fp8`
 loads happily and then dies in the sampler with `Trying to convert
