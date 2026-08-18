@@ -713,13 +713,21 @@ function Timings({ job }: { job: EditJob }): JSX.Element | null {
 }
 
 function Params({ job }: { job: EditJob }): JSX.Element {
-  const { denoise, steps, seed } = job.params
+  const { method, denoise, steps, seed } = job.params
   return (
     <p className="ed-params tnum">
       <span className="ed-params-k">{job.status === 'done' ? 'Rendered with' : 'Will render with'}</span>
       <span>
-        denoise <b>{denoise.toFixed(2)}</b>
+        <b>{method === 'instruction' ? 'instruction edit' : 'restyle'}</b>
       </span>
+      {/* denoise belongs to img2img only. The instruction path carries the
+          original as conditioning rather than as a noised canvas, so printing a
+          denoise there would be quoting a number the render never used. */}
+      {method === 'restyle' ? (
+        <span>
+          denoise <b>{denoise.toFixed(2)}</b>
+        </span>
+      ) : null}
       <span>
         steps <b>{steps}</b>
       </span>

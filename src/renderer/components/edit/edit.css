@@ -259,6 +259,73 @@
   min-width: 0;
 }
 
+/* Without the denoise slider there are only two knobs, and leaving them in a
+   three-column grid strands an empty third of the row. */
+.ed-knobs-2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+}
+
+/* ------------------------------------------------------------------ */
+/* Method                                                              */
+/* ------------------------------------------------------------------ */
+
+/* Two buttons rather than a select: the choice changes what the other controls
+   even are, so it should read as a mode, not a setting buried in a menu. */
+.ed-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+}
+
+.ed-method {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s2) var(--s3);
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--bg-input);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.ed-method:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.ed-method.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.ed-method-label {
+  font-size: var(--fs-base);
+  font-weight: 500;
+}
+
+.ed-method-hint {
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.ed-method.is-on .ed-method-hint {
+  color: var(--fg-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-method {
+    transition: none;
+  }
+}
+
+
 .ed-knob-head {
   display: flex;
   align-items: baseline;

@@ -657,16 +657,41 @@ export type EditJobStatus =
   | 'done'
   | 'error'
 
+/**
+ * The two genuinely different things the word "edit" can mean here.
+ *
+ * `instruction` hands the renderer the photo as latent conditioning and your
+ * words as the change to make, so everything you did not mention is held by the
+ * conditioning rather than by luck. `restyle` is img2img: the photo becomes a
+ * partially-noised canvas and is re-rendered against a description, which is
+ * the right tool for "make this a watercolour" and the wrong one for "change
+ * the bowl and leave my dog alone".
+ *
+ * They are exposed as a choice rather than hidden because they need different
+ * things from you -- a short instruction versus a full description -- and
+ * seeing that is most of the lesson.
+ */
+export type EditMethod = 'instruction' | 'restyle'
+
 export interface EditParams {
+  /** Which kind of edit. Decides the renderer, and the brief stage 1 is given. */
+  method: EditMethod
   /**
-   * img2img strength, 0.1..1.0. The only control over how much of the original
-   * survives; comfy-image defaults to 0.6.
+   * img2img strength, 0.1..1.0. `restyle` only: it is how much of the original
+   * survives, and the instruction path has no equivalent knob because nothing
+   * of the original is used as a canvas in the first place.
    */
   denoise: number
-  /** Sampling steps; comfy-image defaults to 8. */
+  /** Sampling steps. 4 suits the distilled edit model, 8 suits z-image. */
   steps: number
   /** Omit for a random seed. Kept when the user wants a reproducible re-run. */
   seed?: number
+}
+
+/** Per-method defaults, so switching method does not leave the other's numbers behind. */
+export const EDIT_METHOD_DEFAULTS: Record<EditMethod, { steps: number; denoise: number }> = {
+  instruction: { steps: 4, denoise: 0.6 },
+  restyle: { steps: 8, denoise: 0.6 }
 }
 
 export interface EditJob {

@@ -10,8 +10,8 @@
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
 
-import type { EditJob } from '@shared/types'
-import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
+import type { EditJob, EditMethod } from '@shared/types'
+import { EDIT_IMAGE_EXTENSIONS, EDIT_METHOD_DEFAULTS } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename } from '@renderer/lib/format'
 import { EditImage, useEditImage, useSyncedValue } from './EditCard'
@@ -24,6 +24,28 @@ import './edit.css'
  * did nothing at all.
  */
 const IMAGE_RE = new RegExp(`\\.(${EDIT_IMAGE_EXTENSIONS.join('|')})$`, 'i')
+
+/**
+ * The two methods, in the words that matter to someone deciding between them.
+ *
+ * Deliberately phrased by what they DO to the photograph rather than by their
+ * mechanism: "reference latent" and "img2img" are the right names but the wrong
+ * question. The mechanism is in the note underneath, for when he wants it.
+ */
+const METHOD_COPY: Record<EditMethod, { label: string; hint: string; note: string }> = {
+  instruction: {
+    label: 'Instruction edit',
+    hint: 'changes one thing, keeps the rest',
+    note:
+      'The renderer is handed your photo as well as your words, so it can change what you named and hold everything else. Ask for one thing at a time and it will stay a photograph of the same place.'
+  },
+  restyle: {
+    label: 'Restyle',
+    hint: 'reworks the whole frame',
+    note:
+      'The renderer re-paints a blurred copy of the photo against a description of the finished scene. It has no idea which part you meant, so everything is in play — right for “make this a watercolour”, wrong for “change the bowl and leave my dog alone”. Denoise is how much of the original survives.'
+  }
+}
 
 /** Plain English for the one knob that decides how much of the photo survives. */
 const DENOISE_SCALE: Array<{ upTo: number; label: string }> = [
@@ -393,24 +415,43 @@ function DraftFields({
           onBlur={instruction.flush}
         />
 
-        <div className="ed-knobs">
-          <label className="ed-knob">
-            <span className="ed-knob-head">
-              <span className="ed-knob-label">Denoise</span>
-              <span className="ed-knob-value tnum">{denoise.value.toFixed(2)}</span>
-            </span>
-            <input
-              className="ed-range"
-              type="range"
-              min={0.1}
-              max={1}
-              step={0.05}
-              value={denoise.value}
-              onChange={(e) => denoise.change(Number(e.target.value))}
-              onBlur={denoise.flush}
-            />
-            <span className="ed-knob-scale">{denoiseLabel(denoise.value)}</span>
-          </label>
+        <div className="ed-methods" role="group" aria-label="Edit method">
+          {(Object.keys(METHOD_COPY) as EditMethod[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`ed-method${job.params.method === m ? ' is-on' : ''}`}
+              aria-pressed={job.params.method === m}
+              onClick={() => void setEditParams(job.id, { method: m })}
+            >
+              <span className="ed-method-label">{METHOD_COPY[m].label}</span>
+              <span className="ed-method-hint">{METHOD_COPY[m].hint}</span>
+            </button>
+          ))}
+        </div>
+
+        <div
+          className={`ed-knobs${job.params.method === 'restyle' ? '' : ' ed-knobs-2'}`}
+        >
+          {job.params.method === 'restyle' ? (
+            <label className="ed-knob">
+              <span className="ed-knob-head">
+                <span className="ed-knob-label">Denoise</span>
+                <span className="ed-knob-value tnum">{denoise.value.toFixed(2)}</span>
+              </span>
+              <input
+                className="ed-range"
+                type="range"
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={denoise.value}
+                onChange={(e) => denoise.change(Number(e.target.value))}
+                onBlur={denoise.flush}
+              />
+              <span className="ed-knob-scale">{denoiseLabel(denoise.value)}</span>
+            </label>
+          ) : null}
 
           <label className="ed-knob">
             <span className="ed-knob-head">
@@ -430,7 +471,9 @@ function DraftFields({
                 Number.isFinite(Number.parseInt(steps.value, 10)) ? steps.flush() : steps.reset()
               }
             />
-            <span className="ed-knob-scale">1–60, 8 is the default</span>
+            <span className="ed-knob-scale">
+              1–60, {EDIT_METHOD_DEFAULTS[job.params.method].steps} is the default
+            </span>
           </label>
 
           <label className="ed-knob">
@@ -456,11 +499,7 @@ function DraftFields({
           </label>
         </div>
 
-        <p className="ed-knob-note">
-          Denoise is the only control over how much of the original survives: the renderer
-          sees your prompt and the source pixels and nothing else — it has no notion of
-          “keep this part”. Low keeps the photo, high reinvents it.
-        </p>
+        <p className="ed-knob-note">{METHOD_COPY[job.params.method].note}</p>
 
         {textOnly ? (
           <p className="ed-warn">

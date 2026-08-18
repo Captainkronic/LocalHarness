@@ -28,10 +28,10 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 
-import type { EditJob, EditParams, ModelInfo, Settings } from '@shared/types'
-import { EDIT_IMAGE_MIME } from '@shared/types'
+import type { EditJob, EditMethod, EditParams, ModelInfo, Settings } from '@shared/types'
+import { EDIT_IMAGE_MIME, EDIT_METHOD_DEFAULTS } from '@shared/types'
 import { hostLabel } from '@shared/hosts'
-import { WORKFLOW_BY_ID } from '@shared/workflows'
+import { EDIT_BRIEFS, WORKFLOW_BY_ID } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
 import type { ModelRegistry } from '../llm/models'
@@ -68,6 +68,17 @@ const STEPS_MAX = 60
 const SEED_MAX = 0xffff_ffff
 const DEFAULT_DENOISE = 0.6
 const DEFAULT_STEPS = 8
+/**
+ * The model comfy-image should use for each method.
+ *
+ * Named explicitly rather than left to the server's default, because the whole
+ * point of the choice is that the user picked one; silently getting the other
+ * because a default moved would be worse than an error.
+ */
+const METHOD_MODEL: Record<EditMethod, string> = {
+  instruction: 'klein-edit',
+  restyle: 'z-image'
+}
 
 const BLIND_NOTE =
   'No vision-capable model is loaded on the server, so this prompt was written from your words alone — the model never saw the photo. Read it before rendering.'
@@ -171,9 +182,13 @@ export class EditPipeline {
       refinedPrompt: null,
       promptEdited: false,
       status: 'draft',
-      // comfy-image's own defaults, so an untouched job renders exactly as the
-      // server would have rendered it on its own.
-      params: { denoise: DEFAULT_DENOISE, steps: DEFAULT_STEPS },
+      // A real instruction edit by default: it is the one that does what the
+      // word "edit" implies. Restyle stays a deliberate choice.
+      params: {
+        method: 'instruction',
+        denoise: DEFAULT_DENOISE,
+        steps: EDIT_METHOD_DEFAULTS.instruction.steps
+      },
       createdAt: now,
       updatedAt: now
     }
@@ -281,6 +296,10 @@ export class EditPipeline {
     job.refineHost = hostLabel(settings.baseUrl) ?? undefined
     this.commit(job)
 
+    // The brief depends on the renderer this job is bound for: one wants an
+    // instruction, the other a description of the finished scene. Sending the
+    // wrong one is not a style difference, it is a wrong answer.
+    const brief = EDIT_BRIEFS[job.params.method]
     const wf = WORKFLOW_BY_ID.edit
     const controller = new AbortController()
     this.refines.set(jobId, controller)
@@ -299,7 +318,7 @@ export class EditPipeline {
           baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
           model: model.id,
-          messages: buildRefineMessages(wf.systemPrompt, instruction, sourceDataUrl),
+          messages: buildRefineMessages(brief, instruction, sourceDataUrl),
           temperature: wf.sampling.temperature,
           topP: wf.sampling.topP,
           maxTokens: wf.sampling.maxTokens,
@@ -399,16 +418,6 @@ export class EditPipeline {
     this.commit(job)
     this.renders.add(jobId)
 
-    const args: Record<string, unknown> = {
-      // confirm:true makes the server use this text exactly as given. Without it
-      // comfy-image reruns its own local VLM over the instruction and rewrites
-      // it, throwing away the refinement the Studio's model just did.
-      instruction: prompt,
-      source: job.sourcePath,
-      denoise: job.params.denoise,
-      steps: job.params.steps,
-      confirm: true
-    }
     // Always send a seed, choosing one ourselves when the user has not.
     //
     // Leaving it out let ComfyUI pick, and it never told us what it picked — so
@@ -417,11 +426,12 @@ export class EditPipeline {
     // parameter readout on an image you liked is being able to make that image
     // again, or vary one thing about it. Choosing here means every render is
     // reproducible and the number on the card is the number that was used.
+    //
+    // Chosen BEFORE the arguments are built, because that is where it is read.
     if (typeof job.params.seed !== 'number') {
       job.params.seed = Math.floor(Math.random() * (SEED_MAX + 1))
     }
-    args.seed = job.params.seed
-    // `model` is deliberately unset: z-image is the only one installed here.
+    const args = renderArgs(job, prompt)
 
     const startedAt = Date.now()
     let result: McpCallResult | null = null
@@ -654,6 +664,35 @@ export class EditPipeline {
 }
 
 /* ------------------------------------------------------------------ */
+/* Render arguments                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The arguments for one comfy-image `edit_image` call.
+ *
+ * Pulled out of `apply()` and exported so the one rule that is easy to get
+ * quietly wrong can be tested: `denoise` is meaningful only to img2img. The
+ * instruction path carries the original as conditioning rather than as a
+ * partially-noised canvas, so sending a denoise there would put a number on the
+ * finished card that had no bearing on the render.
+ */
+export function renderArgs(job: EditJob, prompt: string): Record<string, unknown> {
+  const args: Record<string, unknown> = {
+    // confirm:true makes the server use this text exactly as given. Without it
+    // comfy-image reruns its own local VLM over the instruction and rewrites
+    // it, throwing away the refinement the Studio's model just did.
+    instruction: prompt,
+    source: job.sourcePath,
+    model: METHOD_MODEL[job.params.method],
+    steps: job.params.steps,
+    confirm: true
+  }
+  if (job.params.method === 'restyle') args.denoise = job.params.denoise
+  if (typeof job.params.seed === 'number') args.seed = job.params.seed
+  return args
+}
+
+/* ------------------------------------------------------------------ */
 /* Message building                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -765,6 +804,16 @@ async function pickOutputPath(result: McpCallResult, sourcePath: string): Promis
 
 function mergeParams(base: EditParams, patch: Partial<EditParams>): EditParams {
   const next: EditParams = { ...base }
+  // Switching method carries that method's own defaults with it, so a job does
+  // not arrive at the renderer with the other one's step count. An explicit
+  // steps/denoise in the same patch still wins, below.
+  if (patch.method === 'instruction' || patch.method === 'restyle') {
+    if (patch.method !== base.method) {
+      next.method = patch.method
+      next.steps = EDIT_METHOD_DEFAULTS[patch.method].steps
+      next.denoise = EDIT_METHOD_DEFAULTS[patch.method].denoise
+    }
+  }
   if (typeof patch.denoise === 'number' && Number.isFinite(patch.denoise)) {
     next.denoise = clamp(patch.denoise, DENOISE_MIN, DENOISE_MAX)
   }

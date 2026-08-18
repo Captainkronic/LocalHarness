@@ -20,7 +20,8 @@
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
-import type { EditJob, EditJobStatus, EditParams } from '@shared/types'
+import type { EditJob, EditJobStatus, EditMethod, EditParams } from '@shared/types'
+import { EDIT_METHOD_DEFAULTS } from '@shared/types'
 
 import { atomicWriteSync, expandTilde } from '../store/paths'
 
@@ -188,9 +189,15 @@ function settle(status: EditJobStatus, refinedPrompt: string | null): EditJobSta
 
 function normalizeParams(raw: unknown): EditParams {
   const rec = isRecord(raw) ? raw : {}
+  // Jobs written before the instruction path existed have no method. They were
+  // all img2img, so that is what they are read back as -- reopening an old edit
+  // must not relabel it as something it never was.
+  const method: EditMethod = rec.method === 'instruction' ? 'instruction' : 'restyle'
+  const fallback = EDIT_METHOD_DEFAULTS[method]
   const params: EditParams = {
-    denoise: clamp(finiteOr(rec.denoise, 0.6), DENOISE_MIN, DENOISE_MAX),
-    steps: Math.round(clamp(finiteOr(rec.steps, 8), STEPS_MIN, STEPS_MAX))
+    method,
+    denoise: clamp(finiteOr(rec.denoise, fallback.denoise), DENOISE_MIN, DENOISE_MAX),
+    steps: Math.round(clamp(finiteOr(rec.steps, fallback.steps), STEPS_MIN, STEPS_MAX))
   }
   if (typeof rec.seed === 'number' && Number.isFinite(rec.seed)) {
     params.seed = Math.round(clamp(rec.seed, 0, SEED_MAX))
