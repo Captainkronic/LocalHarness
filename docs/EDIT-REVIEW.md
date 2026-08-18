@@ -82,6 +82,31 @@ handoff format has to match what the receiving model consumes. Sending a
 *description* is right for a renderer that has only text. It is wrong for one
 that can be handed the picture itself.
 
+### The brief has to match the renderer — shown, not argued
+
+Same photo, same seed, same Klein reference-latent graph. Only the text differs.
+
+| text sent | did the change happen | did the rest survive |
+|---|---|---|
+| the raw instruction, *"turn all the taxi cabs pink…"* | yes | yes — still the same photograph, sky a shade more lavender |
+| a full description of the finished scene | yes | **no** — pink taxis, but the photograph has become a garish oversaturated illustration: cartoon buildings, invented "HOT" signage, stock-image sunset |
+
+The people and the cart stay roughly in place in both, so this is not the img2img
+collapse. It is subtler and just as fatal: the description is a *second account
+of the picture*, competing with the picture itself, and the renderer splits the
+difference — landing on a generic vivid city street rather than **this** one.
+
+That is why the two briefs are not interchangeable, and why the method has to
+decide which one stage 1 is given.
+
+> One caveat on method, stated because it cuts against my own conclusion: the
+> "refined" descriptions in the bench were written by me, not by the Studio's
+> gemma. They are better than what stage 1 actually produces. That makes the
+> img2img rows *generous* — if a good description cannot rescue img2img, the
+> real one certainly cannot — but it also means the row above shows a
+> description harming Klein at its strongest, which is the fair direction to
+> test.
+
 ## The fix
 
 Give stage 2 the photo as latent conditioning and let stage 1 carry only the

@@ -262,7 +262,9 @@
 /* Without the denoise slider there are only two knobs, and leaving them in a
    three-column grid strands an empty third of the row. */
 .ed-knobs-2 {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+  /* Seed needs the wider of the two: "blank re-rolls each render" wraps to
+     three lines in a 1fr column and drags the row taller than the controls. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1.4fr);
 }
 
 /* ------------------------------------------------------------------ */
