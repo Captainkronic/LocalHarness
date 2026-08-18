@@ -279,7 +279,6 @@ app.whenReady().then(async () => {
   })
 
   const avatarBuilder = new AvatarBuilder({
-    mcp,
     store: avatars,
     onProgress: (p) => emit('event:avatarBuild', p),
     onLog: log

@@ -18,10 +18,12 @@
  * what already landed. Said plainly rather than pretending otherwise.
  */
 
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 
 import type {
   Avatar,
@@ -31,21 +33,41 @@ import type {
 } from '@shared/types'
 import { AVATAR_BASE_PROMPT_HINT, AVATAR_FRAME_SPECS } from '@shared/avatar'
 
-import type { McpManager } from '../mcp/manager'
 import type { LogFn } from '../mcp/manager'
 import type { AvatarStore } from '../store/avatars'
 
-const COMFY_SERVER_ID = 'comfy-image'
+const execFileAsync = promisify(execFile)
+
+/**
+ * The comfy-image command line, not its MCP tools.
+ *
+ * The MCP route looked obvious and is wrong here. MCP servers are started per
+ * WORKFLOW, and Live runs fastfacts and gmail — not comfy-image — so a build
+ * started from Live would have found no tool at all. Adding comfy-image to
+ * Live's set would fix that by putting its 3,007 tokens of schema on every
+ * message of every call, to serve a button pressed once.
+ *
+ * The CLI has none of that coupling: it imports the same server module and
+ * calls the same functions, starts ComfyUI itself if nothing is listening, and
+ * does not care which workflow is on screen. This is the app doing a job, not a
+ * model calling a tool, so it belongs on the side MCP is not on.
+ */
+const COMFY_CLI = join(homedir(), '.config', 'comfy-mcp', 'comfy-image')
+
+/** Long enough for a cold start plus a render; the CLI's own timeout is 900s. */
+const RENDER_TIMEOUT_MS = 960_000
 
 /** Frames worth waiting for before the extras. Order is the build order, and
  *  it is deliberate: the mouth is what makes the avatar work at all. */
 const ESSENTIAL: readonly AvatarFrame[] = ['mouthSlight', 'mouthMid', 'mouthWide', 'blink']
 
 export interface AvatarBuilderOptions {
-  mcp: McpManager
   store: AvatarStore
   onProgress: (p: AvatarBuildProgress) => void
   onLog: LogFn
+  /** Runs the comfy-image CLI and returns its stdout. Injectable so the build
+   *  ORDER can be tested without a quarter of an hour of GPU per run. */
+  run?: (args: string[]) => Promise<string>
 }
 
 export class AvatarBuilder {
@@ -100,14 +122,11 @@ export class AvatarBuilder {
       /* ---- the base portrait ---- */
       report(0, 'Painting the portrait', 'working')
       const prompt = `${spec.description.trim()}. ${AVATAR_BASE_PROMPT_HINT}`
-      const base = await this.callImage('generate_image', {
+      const base = await this.callImage('generate', [
         prompt,
-        quality: 'balanced',
-        width: 1024,
-        height: 1024,
-        output_dir: dir,
-        confirm: true
-      })
+        '--quality', 'balanced',
+        '--out', dir
+      ])
       if (base === null) {
         report(0, 'Painting the portrait', 'error', 'The portrait did not render.')
         return null
@@ -135,12 +154,11 @@ export class AvatarBuilder {
         const frameSpec = wanted[i]
         report(i + 1, frameSpec.label, 'working')
 
-        const path = await this.callImage('edit_image', {
-          instruction: frameSpec.instruction,
-          source: base,
-          confirm: true,
-          output_dir: dir
-        })
+        const path = await this.callImage('edit', [
+          base,
+          frameSpec.instruction,
+          '--out', dir
+        ])
         if (path === null) {
           // One bad frame is not a failed avatar. AvatarStage steps down the
           // mouth ladder, so the set stays usable without it.
@@ -170,32 +188,28 @@ export class AvatarBuilder {
 
   /* ---------------------------------------------------------------- */
 
-  /** Calls a comfy-image tool and returns the path it wrote, or null. */
+  /** Runs the CLI and returns the path it wrote, or null. */
   private async callImage(
-    tool: string,
-    args: Record<string, unknown>
+    tool: 'generate' | 'edit',
+    args: string[]
   ): Promise<string | null> {
-    const state = this.o.mcp.states().find((s) => s.id === COMFY_SERVER_ID)
-    if (state === undefined || state.status !== 'ready') {
-      throw new Error(
-        `The ${COMFY_SERVER_ID} server is ${state?.status ?? 'not in the registry'}. ` +
-          'Start it from the MCP panel and try again.'
-      )
-    }
-    const entry = state.tools.find((t) => t.name === tool)
-    if (entry === undefined) {
-      throw new Error(`${COMFY_SERVER_ID} exposes no ${tool} tool.`)
-    }
-    // The manager rewrites names the OpenAI grammar rejects, so resolve from
-    // what it reports rather than assuming the wire name.
-    const wire =
-      this.o.mcp.wireTools().find((t) => t.function.name.endsWith(`__${tool}`))?.function.name ??
-      entry.qualifiedName
+    const run =
+      this.o.run ??
+      (async (argv: string[]): Promise<string> => {
+        const { stdout } = await execFileAsync(COMFY_CLI, argv, {
+          timeout: RENDER_TIMEOUT_MS,
+          maxBuffer: 4 * 1024 * 1024,
+          // Elicitation cannot reach a non-interactive process, so the CLI must
+          // not try to ask. The user already approved by pressing Build.
+          env: { ...process.env, COMFY_ASK_MODEL: '0' }
+        })
+        return stdout
+      })
 
-    const result = await this.o.mcp.callTool(wire, args)
-    if (result.isError) throw new Error(result.text.trim() || `${tool} reported an error.`)
-
-    const image = result.artifacts.find((a) => a.kind === 'image' && typeof a.path === 'string')
-    return (image?.path as string | undefined) ?? null
+    const stdout = await run([tool, ...args])
+    // The CLI prints the destination it actually used, which is the only
+    // reliable source — it may differ from --out when a name collides.
+    const match = /^Full path:\s*(.+)$/m.exec(stdout)
+    return match?.[1]?.trim() ?? null
   }
 }

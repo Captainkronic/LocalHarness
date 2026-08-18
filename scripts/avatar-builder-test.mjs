@@ -5,8 +5,8 @@
  * A build is ten to twelve minutes of GPU, so the behaviour that matters is
  * what happens when it does NOT go cleanly — and that is exactly what nobody
  * exercises by hand, because reproducing it costs a quarter of an hour each
- * time. The MCP calls are faked here; the real ones were verified separately by
- * building a face through the comfy-image CLI.
+ * time. The CLI is faked here; the real invocations were verified separately by
+ * building a face through comfy-image by hand.
  *
  * The three rules worth guarding:
  *   - it saves after every step, so a failure at frame six still leaves five
@@ -42,29 +42,18 @@ const check = (name, ok, note = '') => {
     (note ? `  \x1b[2m${note}\x1b[0m` : ''))
 }
 
-/** A comfy-image that writes real files, so the store's existsSync check passes. */
-function fakeMcp(box, { failOn = null, onCall = () => {} } = {}) {
+/** A fake comfy-image CLI that writes real files, so the store's existsSync
+ *  check passes and the path-parsing is exercised for real. */
+function fakeCli(box, { failOn = null, onCall = () => {} } = {}) {
   let n = 0
-  return {
-    states: () => [{
-      id: 'comfy-image', status: 'ready',
-      tools: [{ name: 'generate_image', qualifiedName: 'comfy-image__generate_image' },
-              { name: 'edit_image', qualifiedName: 'comfy-image__edit_image' }]
-    }],
-    wireTools: () => [
-      { function: { name: 'comfy-image__generate_image' } },
-      { function: { name: 'comfy-image__edit_image' } }
-    ],
-    callTool: async (wire) => {
-      n++
-      onCall(n)
-      if (failOn !== null && n === failOn) {
-        return { isError: false, text: 'no image', artifacts: [] }
-      }
-      const path = join(box, `f${n}.png`)
-      await writeFile(path, 'x')
-      return { isError: false, text: 'ok', artifacts: [{ kind: 'image', path }] }
-    }
+  return async (argv) => {
+    n++
+    onCall(n)
+    if (failOn !== null && n === failOn) return 'Nothing was rendered.\n'
+    const path = join(box, `f${n}.png`)
+    await writeFile(path, 'x')
+    // Exactly the shape the real CLI prints, including the surrounding noise.
+    return `Generated in 91s\nFile name: f${n}.png\nFull path: ${path}\n`
   }
 }
 
@@ -73,7 +62,7 @@ const mk = async (opts = {}) => {
   const store = new AvatarStore(box)
   const steps = []
   const builder = new AvatarBuilder({
-    mcp: fakeMcp(box, opts),
+    run: fakeCli(box, opts),
     store,
     onProgress: (p) => steps.push(p),
     onLog: () => {}
@@ -154,17 +143,19 @@ console.log('\n\x1b[1mAvatar builder\x1b[0m\n')
   await first
 }
 
-/* ---- comfy not running ---- */
+/* ---- the CLI itself failing ---- */
 {
   const box = await mkdtemp(join(tmpdir(), 'lh-avbox-'))
   const builder = new AvatarBuilder({
-    mcp: { states: () => [], wireTools: () => [], callTool: async () => ({}) },
+    run: async () => {
+      throw new Error('spawn comfy-image ENOENT')
+    },
     store: new AvatarStore(box),
     onProgress: () => {},
     onLog: () => {}
   })
   const avatar = await builder.build({ name: 'X', description: 'x', includeExtras: false })
-  check('a missing comfy-image fails cleanly rather than throwing', avatar === null)
+  check('a missing or broken CLI fails cleanly rather than throwing', avatar === null)
   await rm(box, { recursive: true, force: true })
 }
 
