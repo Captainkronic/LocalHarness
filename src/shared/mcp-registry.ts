@@ -172,6 +172,30 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     autoStart: false
   },
   {
+    id: 'flights',
+    label: 'Flights',
+    blurb: 'Search real flight options and prices.',
+    command: PY,
+    args: [`${HOME}/.config/flights-mcp/server.py`],
+    env: {
+      // Amadeus Self-Service. Fares are the one thing in this stack with no
+      // keyless source — every route into airline inventory needs an account —
+      // so the server starts either way and says so rather than failing in a
+      // way that looks like a bug. Free tier: developers.amadeus.com
+      AMADEUS_CLIENT_ID: '',
+      AMADEUS_CLIENT_SECRET: '',
+      // 'test' serves a cached partial snapshot: plausible routes, indicative
+      // prices, many routes missing. Every reply says which environment it came
+      // from, because a price with no provenance is worse than no price.
+      AMADEUS_ENV: 'test',
+      FLIGHTS_CURRENCY: 'USD'
+    },
+    callTimeoutMs: 60_000,
+    // Measured from the two tool schemas, not guessed.
+    estimatedTokens: 381,
+    autoStart: false
+  },
+  {
     id: 'webassets',
     label: 'Web assets',
     blurb: 'Real SVG icons and responsive WebP/AVIF image sets.',
