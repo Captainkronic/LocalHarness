@@ -126,10 +126,14 @@ more reliable and a better lesson.
 ## Speed, and a dead end worth recording
 
 Klein base is a real edit but a slow one: 20 steps at cfg 5 is 40 forward
-passes, ~11 minutes here. The distilled build needs 4 steps at cfg 1 — and
-because ComfyUI skips the unconditional pass entirely at cfg 1.0, that is 4
-passes, not 8. About a tenth of the work, and less than the img2img path it
-replaces.
+passes — 654s measured. The distilled build needs 4 steps at cfg 1, and at cfg
+1.0 ComfyUI skips the unconditional pass altogether (`comfy/samplers.py`,
+`sampling_function`: `if math.isclose(cond_scale, 1.0) ... uncond_ = None`), so
+that is 4 passes, not 8. A tenth of the sampling work, and half of what the
+img2img path it replaces does at 8 steps.
+
+For reference, the sdedit runs on the same machine took 346-431s, so the
+img2img path was never the fast one either — it was slow *and* wrong.
 
 **The fp8 distilled build does not run on this Mac.** `flux-2-klein-4b-fp8`
 loads happily and then dies in the sampler with `Trying to convert
@@ -145,11 +149,44 @@ checkpoint on this machine.
 - whether the instruction-style stage 1 beats the description style for Klein
 - the full six-case suite on the winner
 
-## Incidental bugs found on the way
+## What changed in the app
 
-- `EDIT_PHASES` in comfy-mcp still names *"Applying reference latent"* and
-  *"Preparing canvas"* — nodes of the deleted Klein graph. Progress labels have
-  been describing a workflow that is not running.
-- `build_edit_workflow` takes `width`/`height` and never uses them. There is no
-  scale node, so a source is encoded and sampled at whatever size it happens to
-  be — off-distribution for the model, and slow.
+The two methods are a **choice in the composer**, not a hidden default, because
+they need different things from you and seeing that is most of the lesson:
+
+- **Instruction edit** — *changes one thing, keeps the rest*. Default.
+- **Restyle** — *reworks the whole frame*. Right for "make this a watercolour".
+
+Each carries its own renderer (`klein-edit` / `z-image`), its own step default
+(4 / 8), and its own stage-1 brief. `denoise` is sent, and printed on the
+finished card, only on restyle — the instruction path never sees a
+partially-noised canvas, so quoting a denoise there would be quoting a number
+the render never used. Jobs saved before this change have no method and come
+back as `restyle`, which is what they always were.
+
+`renderArgs` was pulled out of `apply()` so that rule is testable rather than
+buried; `scripts/edit-method-test.mjs` covers it and asserts the shape of both
+briefs. `scripts/edit-graph-check.py` validates the comfy-mcp graphs against the
+live ComfyUI and asserts every progress label names a node that exists.
+
+## Incidental bugs found on the way — all fixed
+
+- **`EDIT_PHASES` narrated a workflow that was not running.** It still named
+  *"Applying reference latent"* and *"Preparing canvas"*, nodes of the deleted
+  Klein graph, so the progress bar had been describing the wrong thing since the
+  removal. Now one map per graph, and `scripts/edit-graph-check.py` fails if any
+  phase names a node its graph does not contain — the joint is node ids in two
+  unrelated dicts, and nothing else was holding them together.
+- **No resolution clamp on the source.** `build_edit_workflow` took
+  `width`/`height` and never used them; there was no scale node, so a photo was
+  encoded and sampled at whatever size it happened to arrive at. A phone photo
+  is several times these models' training resolution — slow, and prone to
+  duplicated detail. Both graphs now normalise to ~1 MP on the latent grid.
+- **A missing model would have been silently substituted.** With the Klein
+  weights absent, `edit_image` fell back to z-image while the card still said
+  "instruction edit" — an image rendered by one method under a caption
+  describing the other. A named-but-uninstalled model is now an error. (Found by
+  the graph checker on its first run, against my own change.)
+- **The bench discarded failed cases.** The error branch set the manifest entry
+  and then `continue`d past the write, so a run whose every case failed left
+  nothing behind — which is how the fp8 dead end nearly went unrecorded.
