@@ -1022,6 +1022,13 @@ export class LiveSession {
       if (call.arguments.trim().length > 0) args = dropEmptyArgs(JSON.parse(call.arguments))
       const result = await this.o.mcp.callTool(call.name, args)
       text = result.text
+      // The panel's whole supply. Without this line a spoken workflow could
+      // never draw anything: the Orchestrator records it for typed turns, this
+      // path did not, and the Flights panel — built for a SPOKEN workflow —
+      // sat on its empty state no matter how many searches came back. Note it
+      // does not enter the model's context and so costs no prefill; only
+      // `text` does, and that is what MAX_TOOL_RESULT_CHARS clips.
+      call.structured = result.structured
       call.status = result.isError ? 'error' : 'ok'
       if (result.isError) call.error = result.text
     } catch (err) {

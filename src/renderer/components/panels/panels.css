@@ -930,7 +930,7 @@
 /* Flights                                                             */
 /* ------------------------------------------------------------------ */
 
-.fl-list {
+.fl {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
@@ -938,14 +938,27 @@
 
 .fl-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
+  flex-direction: column;
+  gap: 2px;
 }
 
 .fl-route {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
   font-size: var(--fs-base);
   font-weight: 600;
+}
+
+/* Airport codes are the one place in this panel where the mono face earns its
+   keep: three letters that must not be misread as a word. */
+.fl-code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.fl-arrow {
+  color: var(--fg-faint);
 }
 
 .fl-when {
@@ -954,11 +967,78 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The honest denominator. A list of eight reads as "that is what there is"
+   unless it says what it was drawn from. */
+.fl-counts {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
 .fl-caveat {
   margin: 0;
   font-size: var(--fs-small);
   color: var(--warn);
 }
+
+.fl-h {
+  margin: 0 0 var(--s1);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.fl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* ---- filters and memory ---- */
+
+.fl-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.fl-chip {
+  font-size: var(--fs-micro);
+  padding: 2px var(--s2);
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* What a filter REMOVED, shown beside what it kept. A filter that silently
+   hides the flight someone asked about is worse than no filter, because the
+   answer still looks complete. */
+.fl-chip.is-dropped {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--fg-faint);
+}
+
+.fl-notes ul,
+.fl-history ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.fl-notes li::before {
+  content: '·';
+  margin-right: var(--s1);
+  color: var(--fg-faint);
+}
+
+/* ---- a flight ---- */
 
 .fl-card {
   display: flex;
@@ -970,17 +1050,30 @@
   background: var(--bg-input);
 }
 
-/* The cheapest option is what most people are looking for, so it is findable
-   without reading every card. */
-.fl-card.is-cheapest {
+.fl-card.is-saved {
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
 
-.fl-price-row {
+.fl-card-head {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fl-n {
+  flex: none;
+  min-width: 18px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--fg-faint);
 }
 
 .fl-price {
@@ -994,52 +1087,223 @@
   color: var(--fg-dim);
 }
 
-.fl-tag {
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.fl-seats {
+.fl-chevron {
   margin-left: auto;
-  font-size: var(--fs-small);
-  color: var(--warn);
-}
-
-.fl-leg {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2);
-  font-size: var(--fs-small);
-}
-
-.fl-times {
   font-size: var(--fs-base);
-}
-
-.fl-arrow {
   color: var(--fg-faint);
 }
 
+.fl-card-head:hover .fl-chevron,
+.fl-card-head:focus-visible .fl-chevron {
+  color: var(--accent);
+}
+
+/* ---- the journey, drawn ---- */
+
+.fl-leg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fl-time-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.fl-time {
+  font-size: var(--fs-base);
+  font-weight: 500;
+}
+
+.fl-track {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  height: 10px;
+}
+
+.fl-track-line {
+  position: absolute;
+  inset: auto 0;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* A connection is a dot on the line rather than a word. Two dots reads as two
+   stops before the sentence underneath has been started. */
+.fl-stop {
+  position: relative;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+
 .fl-next-day {
+  font-size: var(--fs-micro);
   color: var(--warn);
-  font-size: 10px;
 }
 
-.fl-airports {
-  color: var(--fg-dim);
-  font-family: var(--font-mono);
-}
-
-.fl-meta {
+.fl-leg-meta {
+  display: flex;
+  gap: var(--s2);
+  font-size: var(--fs-small);
   color: var(--fg-dim);
 }
 
 .fl-airline {
-  margin-left: auto;
+  font-size: var(--fs-small);
   color: var(--fg-muted);
+}
+
+.fl-also {
+  color: var(--fg-faint);
+}
+
+.fl-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.fl-badge {
+  font-size: var(--fs-micro);
+  padding: 1px var(--s2);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+}
+
+.fl-badge.is-good {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+/* The two that cost people flights. Amber rather than red: a tight connection
+   is a risk to weigh, not an error. */
+.fl-badge.is-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* ---- the fare ladder ---- */
+
+.fl-fares {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--fs-small);
+}
+
+.fl-fare {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: 2px 0;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.fl-fare-price {
+  min-width: 44px;
+  font-weight: 500;
+}
+
+.fl-fare-brand {
+  color: var(--fg-dim);
+}
+
+.fl-fare-inc {
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
   text-align: right;
 }
+
+.fl-fare.is-more {
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+}
+
+/* ---- expanded detail ---- */
+
+.fl-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+.fl-segs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.fl-seg {
+  display: flex;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+}
+
+.fl-flight {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.fl-seg-times {
+  color: var(--fg-dim);
+}
+
+.fl-seg-route {
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+}
+
+.fl-seg-sub {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* Indented under the segment it follows, because a layover belongs to the gap
+   between two flights and not to either one of them. */
+.fl-layover {
+  margin: var(--s1) 0 0 var(--s3);
+  padding-left: var(--s2);
+  border-left: 2px solid var(--line-strong);
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+}
+
+.fl-layover.is-warn {
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+.fl-carbon,
+.fl-more {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.fl-history li {
+  display: flex;
+  gap: var(--s2);
+}
+
+.fl-hist-date {
+  color: var(--fg-faint);
+}
+
+.fl-hist-price {
+  margin-left: auto;
+}
+/* ------------------------------------------------------------------ */
