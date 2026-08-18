@@ -309,8 +309,22 @@ export class Orchestrator {
     const tools = this.buildTools(conv.workflowId)
     // Resolved once so the request and the recorded metric cannot disagree
     // about what was actually sent.
-    const effort =
+    // `let`, because the circuit breaker below retries with thinking off — and
+    // it does that WITHOUT touching the saved setting. Silently rewriting the
+    // user's own choice because one turn misbehaved would be the app deciding
+    // something it was not asked to decide.
+    let effort =
       this.d.settings.get().workflowReasoning[conv.workflowId] ?? wf.sampling.reasoningEffort
+
+    /**
+     * Half the output budget is generous for thinking and still leaves room to
+     * answer. Reasoning is billed from the same ceiling, so anything past this
+     * cannot produce a complete answer even if it stops immediately.
+     */
+    const reasoningCap = Math.floor(wf.sampling.maxTokens * 0.5)
+    let reasoningSoFar = 0
+    let reasoningTripped = false
+    let reasoningRetried = false
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -385,6 +399,28 @@ export class Orchestrator {
             // Counts toward decode rate and the completion total, but tracked
             // separately so TurnMetrics.reasoningTokens is actually populated.
             meter.countReasoningToken()
+            reasoningSoFar += 1
+            // The circuit breaker. Past this much thinking with nothing written
+            // and no tool reached for, the turn is not deliberating, it is
+            // spiralling — observed at sixteen minutes and 12.4k tokens,
+            // re-deriving decisions it had already made. Aborting here costs
+            // seconds; letting it run costs the whole budget and returns
+            // nothing.
+            if (
+              !reasoningTripped &&
+              reasoningSoFar > reasoningCap &&
+              assistant.content === '' &&
+              pendingCalls.size === 0
+            ) {
+              reasoningTripped = true
+              this.log(
+                'warn',
+                'llm',
+                `stopped a runaway: ${reasoningSoFar} reasoning tokens with no answer and no tool call ` +
+                  `(cap ${reasoningCap}). Retrying once with thinking off.`
+              )
+              controller.abort()
+            }
             this.persist(conv, false)
           },
           onToolCallDelta: (index, id, name, argsDelta) => {
@@ -420,6 +456,32 @@ export class Orchestrator {
           }
         }
       )
+
+      // The other half of the circuit breaker. Aborting a runaway only helps if
+
+      // something comes back — otherwise the user has waited and still has
+
+      // nothing. One retry with thinking off, which is measured to answer this
+
+      // model's questions completely, and only ever once per turn so a
+
+      // genuinely hard request cannot ping-pong.
+
+      if (reasoningTripped && !reasoningRetried) {
+
+        reasoningRetried = true
+
+        assistant.reasoning = undefined
+
+        assistant.content = ''
+          effort = 'none'
+
+        this.log('info', 'llm', 'retrying the turn with reasoning off')
+
+        continue
+
+      }
+
 
       assistant.streaming = false
       meter.setToolSchemaTokens(this.toolTokens(tools))
