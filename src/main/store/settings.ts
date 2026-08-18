@@ -19,7 +19,18 @@ import { atomicWriteSync, expandTilde } from './paths'
 const HOME = homedir()
 
 export const DEFAULT_SETTINGS: Settings = {
-  baseUrl: 'http://127.0.0.1:1235/v1',
+  /**
+   * LM Studio directly, not the local schema-sanitising proxy on :1235.
+   *
+   * That proxy exists to solve a VS Code Copilot problem — Gemma chat templates
+   * abort on `enum` and `anyOf` in tool schemas, which Copilot ships and cannot
+   * disable, so it rewrites them on the way through. This app has never needed
+   * that: mcp/tokens.ts sanitises every schema before it reaches the wire, and
+   * context windows come from the control websocket rather than being inferred
+   * from traffic. Pointing here was inherited configuration, and it bought
+   * nothing but an extra hop on every streamed token.
+   */
+  baseUrl: 'http://adams-mac-studio.tailc7bb1e.ts.net:1235/v1',
   nativeApiUrl: 'http://adams-mac-studio.tailc7bb1e.ts.net:1234',
   labUrl: 'http://adams-mac-studio.tailc7bb1e.ts.net:1234',
   apiKey: 'lm-studio',

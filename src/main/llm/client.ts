@@ -304,7 +304,21 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     }
     if (req.signal.aborted) aborted = true
   } catch (err) {
-    if (!isAbort(err, req.signal)) throw err
+    if (!isAbort(err, req.signal)) {
+      // undici throws a bare `TypeError: terminated` when a streaming body ends
+      // before the server said it was done. Surfaced raw it reads as a verdict
+      // from the model — "terminated" appeared in the transcript for twenty
+      // minutes of work and explained nothing. It is a dropped connection, and
+      // the useful facts are which endpoint dropped it and how far it got.
+      if (/^terminated$/i.test(messageOf(err))) {
+        throw new Error(
+          `The connection to ${url} dropped part-way through the response. ` +
+            `Nothing was wrong with the request — the stream ended early. ` +
+            `Check the inference server is still up, then send again.`
+        )
+      }
+      throw err
+    }
     aborted = true
   } finally {
     // Releases the socket whether we drained the stream or bailed out of it.
