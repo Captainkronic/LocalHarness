@@ -43,7 +43,9 @@ import type {
   Settings,
   WorkflowDefinition,
   WorkflowId,
-  Avatar
+  Avatar,
+  AvatarBuildSpec,
+  AvatarBuildProgress
 } from './types'
 
 export interface IpcApi {
@@ -56,6 +58,8 @@ export interface IpcApi {
   'avatars:list': () => Promise<Avatar[]>
   'avatars:save': (avatar: Avatar) => Promise<Avatar>
   'avatars:delete': (id: string) => Promise<void>
+  'avatars:build': (spec: AvatarBuildSpec) => Promise<Avatar | null>
+  'avatars:cancelBuild': () => Promise<void>
   'settings:pickDirectory': () => Promise<string | null>
 
   /* ---- models ---- */
@@ -208,6 +212,7 @@ export interface IpcEvents {
   'event:approvalResolved': { requestId: string; decision: ApprovalDecision }
   'event:artifact': Artifact
   'event:log': { level: 'info' | 'warn' | 'error'; scope: string; message: string }
+  'event:avatarBuild': AvatarBuildProgress
   /**
    * Main asking the renderer to do something the user invoked from the native
    * menu or the tray.
@@ -255,6 +260,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'avatars:list',
   'avatars:save',
   'avatars:delete',
+  'avatars:build',
+  'avatars:cancelBuild',
   'settings:pickDirectory',
   'models:list',
   'models:refresh',
@@ -335,6 +342,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:approvalResolved',
   'event:artifact',
   'event:log',
+  'event:avatarBuild',
   'event:menuCommand',
   'event:controlState',
   'event:loadProgress',

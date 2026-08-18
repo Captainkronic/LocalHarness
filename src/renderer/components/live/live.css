@@ -1033,3 +1033,132 @@
     box-shadow: none;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Avatar builder                                                      */
+/* ------------------------------------------------------------------ */
+
+.av-build {
+  width: min(560px, 92vw);
+}
+
+.av-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+.av-field-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.av-input,
+.av-textarea {
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-input);
+  color: var(--fg);
+  resize: vertical;
+}
+
+.av-input:focus,
+.av-textarea:focus {
+  border-color: var(--accent-line);
+}
+
+.av-hint {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+  line-height: 1.45;
+}
+
+.av-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+.av-example {
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+}
+
+.av-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.av-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-input);
+}
+
+.av-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.av-progress-label {
+  font-size: var(--fs-base);
+}
+
+.av-progress-count {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.av-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+/* Transitioned, unlike the avatar frames: this one is a real measured
+   fraction that moves a few times over ten minutes, so easing it reads as
+   progress rather than as lag. */
+.av-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+
+.av-error {
+  font-size: var(--fs-small);
+  color: var(--danger);
+  margin: 0;
+}
+
+.av-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-bar-fill {
+    transition: none;
+  }
+}

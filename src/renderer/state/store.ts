@@ -51,7 +51,8 @@ import type {
   Settings,
   Skill,
   WorkflowDefinition,
-  WorkflowId
+  WorkflowId,
+  AvatarBuildProgress
 } from '@shared/types'
 
 /* ------------------------------------------------------------------ */
@@ -98,6 +99,8 @@ export interface AppState {
   labHistory: LabRecord[]
   approvals: ApprovalRequest[]
   artifacts: Artifact[]
+  /** Latest step of an avatar build, or null when none has run this session. */
+  avatarBuild: AvatarBuildProgress | null
   logs: LogEntry[]
   // actions
   bootstrap(): Promise<void>
@@ -350,6 +353,12 @@ export const useStore = create<AppState>()((set, get) => {
   /* ---- event handlers ------------------------------------------- */
 
   const handlers: EventHandlerMap = {
+    /* The build is long and runs in main, so its progress is the only way the
+       dialog knows anything is happening. Held here rather than in the dialog
+       so closing the dialog does not lose a build that is still running. */
+    'event:avatarBuild': (progress) => {
+      set({ avatarBuild: progress })
+    },
     'event:conversationUpdated': (conv) => {
       const active = get().activeConversationId
       // Adopt when nothing is selected yet; otherwise only the active thread
@@ -519,6 +528,7 @@ export const useStore = create<AppState>()((set, get) => {
     labHistory: [],
     approvals: [],
     artifacts: [],
+    avatarBuild: null,
     logs: [],
 
     bootstrap: () => {

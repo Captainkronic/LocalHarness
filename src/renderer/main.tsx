@@ -23,6 +23,12 @@ if (forcedLiveState !== null && forcedLiveState !== '') {
   document.documentElement.dataset.liveState = forcedLiveState
 }
 
+// And the avatar builder, which is a dialog and so cannot be reached at all by
+// a screenshot that has no way to click.
+if (new URLSearchParams(window.location.search).get('avatarBuilder') === '1') {
+  document.documentElement.dataset.avatarBuilder = '1'
+}
+
 const container = document.getElementById('root')
 if (!container) throw new Error('LocalHarness: #root is missing from index.html')
 

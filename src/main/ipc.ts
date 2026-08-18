@@ -42,6 +42,7 @@ import { MAX_IMAGE_BYTES } from './edit/pipeline'
 import type { ActivityTracker } from './agent/activity'
 import type { SkillRegistry } from './skills/registry'
 import type { AvatarStore } from './store/avatars'
+import type { AvatarBuilder } from './live/avatar-builder'
 import type { LiveSession } from './live/session'
 import { isInsideAny } from './store/paths'
 import type { Orchestrator } from './orchestrator'
@@ -62,6 +63,7 @@ export interface IpcDeps {
   live: LiveSession
   skills: SkillRegistry
   avatars: AvatarStore
+  avatarBuilder: AvatarBuilder
   orchestrator: Orchestrator
   getWindow: () => BrowserWindow | null
   emit: <K extends IpcEventChannel>(channel: K, payload: IpcEvents[K]) => void
@@ -404,6 +406,10 @@ export function registerIpc(d: IpcDeps): void {
     'avatars:save': async (avatar) => d.avatars.save(avatar),
     'avatars:delete': async (id) => {
       d.avatars.delete(id)
+    },
+    'avatars:build': (spec) => d.avatarBuilder.build(spec),
+    'avatars:cancelBuild': async () => {
+      d.avatarBuilder.cancel()
     },
 
     'skills:list': () => d.skills.list(),

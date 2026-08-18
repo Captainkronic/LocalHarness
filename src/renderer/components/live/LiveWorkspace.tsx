@@ -44,6 +44,7 @@ import { basename, formatMs } from '@renderer/lib/format'
 import { VOICE_PRESETS } from '@shared/workflows'
 import { useAudioCapture } from './useAudioCapture'
 import AvatarStage from './AvatarStage'
+import AvatarBuilderDialog from './AvatarBuilderDialog'
 import VoiceOrb from './VoiceOrb'
 import './live.css'
 
@@ -98,6 +99,12 @@ export function LiveWorkspace(): JSX.Element {
   const [micOn, setMicOn] = useState(true)
   const [level, setLevel] = useState(0)
   const [avatars, setAvatars] = useState<Avatar[]>([])
+  /* Same escape hatch as LH_LIVE_STATE, and for the same reason: a dialog you
+     cannot photograph is a dialog whose layout bugs ship. Ignored unless the
+     variable is set, so it cannot affect a real session. */
+  const [builderOpen, setBuilderOpen] = useState(
+    document.documentElement.dataset.avatarBuilder === '1'
+  )
   /** How far into the reply the speaker has actually got. */
   const [spokenTo, setSpokenTo] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
@@ -470,6 +477,7 @@ export function LiveWorkspace(): JSX.Element {
           onPatch={updateLiveSettings}
           onSpeed={patchSpeed}
           onAvatar={(id) => void updateSettings({ liveAvatarId: id })}
+          onNewFace={() => setBuilderOpen(true)}
         />
 
         <div className="lv-call-wrap">
@@ -498,6 +506,16 @@ export function LiveWorkspace(): JSX.Element {
 
       {/* Frame grabs draw here. Never displayed; sized per capture. */}
       <canvas ref={camera.canvasRef} className="lv-canvas" aria-hidden="true" />
+      <AvatarBuilderDialog
+        open={builderOpen}
+        onClose={() => setBuilderOpen(false)}
+        onBuilt={(a) => {
+          // Adopt it straight away: having just described a face,
+          // being returned to the orb would read as a failure.
+          setAvatars((list) => [a, ...list.filter((x) => x.id !== a.id)])
+          void updateSettings({ liveAvatarId: a.id })
+        }}
+      />
     </div>
   )
 }
@@ -831,6 +849,10 @@ function describeCameraError(err: unknown): string {
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Sentinel option value for "New face…". Not a valid avatar id, so it can
+ *  never collide with one. */
+const NEW_FACE = '__new_face__'
+
 interface ControlsProps {
   settings: LiveSettings
   /** The slider's live position, which leads `settings.speed` while dragging. */
@@ -844,6 +866,7 @@ interface ControlsProps {
   onPatch: (patch: Partial<LiveSettings>) => void
   onSpeed: (speed: number) => void
   onAvatar: (id: string | null) => void
+  onNewFace: () => void
 }
 
 function Controls({
@@ -856,7 +879,8 @@ function Controls({
   onMic,
   onPatch,
   onSpeed,
-  onAvatar
+  onAvatar,
+  onNewFace
 }: ControlsProps): JSX.Element {
   // A voice main is using that the server did not list still has to be
   // selectable, or opening the menu would silently change it.
@@ -921,25 +945,34 @@ function Controls({
         {settings.speak ? <SpeakerIcon /> : <SpeakerOffIcon />}
       </Toggle>
 
-      {/* Only offered once there is something to choose. A picker whose only
-          option is the thing already on screen is a control that does nothing. */}
-      {avatars.length > 0 ? (
-        <label className="lv-field">
-          <span className="lv-field-label">Face</span>
-          <select
-            className="lv-select"
-            value={avatarId ?? ''}
-            onChange={(e) => onAvatar(e.target.value === '' ? null : e.target.value)}
-          >
-            <option value="">Orb</option>
-            {avatars.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
+      {/* Always shown, even with nothing to choose between. Gating it on
+          `avatars.length > 0` meant the one control that can make the FIRST
+          avatar only appeared once you already had one. */}
+      <label className="lv-field">
+        <span className="lv-field-label">Face</span>
+        <select
+          className="lv-select"
+          value={avatarId ?? ''}
+          onChange={(e) => {
+            // A sentinel rather than a value: picking it opens the builder and
+            // leaves the current face selected, because nothing has been built
+            // yet to select.
+            if (e.target.value === NEW_FACE) {
+              onNewFace()
+              return
+            }
+            onAvatar(e.target.value === '' ? null : e.target.value)
+          }}
+        >
+          <option value="">Orb</option>
+          {avatars.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+          <option value={NEW_FACE}>New face…</option>
+        </select>
+      </label>
 
       <label className="lv-field">
         <span className="lv-field-label">Voice</span>

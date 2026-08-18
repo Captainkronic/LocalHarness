@@ -54,6 +54,9 @@ const child = spawn('npm', ['run', 'dev'], {
     // Pass through so a caller can pin a Live call state:
     //   LH_LIVE_STATE=tool node scripts/shoot.mjs live shots/live-tool.png
     ...(process.env.LH_LIVE_STATE ? { LH_LIVE_STATE: process.env.LH_LIVE_STATE } : {}),
+    ...(process.env.LH_AVATAR_BUILDER
+      ? { LH_AVATAR_BUILDER: process.env.LH_AVATAR_BUILDER }
+      : {}),
     ...(process.env.LH_CODE_MODE ? { LH_CODE_MODE: process.env.LH_CODE_MODE } : {}),
     // A snippet run in the renderer before the frame is taken, so states that
     // must be REACHED — a rejected send, an open dialog — can be photographed.

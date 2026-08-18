@@ -27,6 +27,7 @@ import { SettingsStore } from './store/settings'
 import { ConversationStore } from './store/conversations'
 import { ArtifactStore } from './store/artifacts'
 import { AvatarStore } from './store/avatars'
+import { AvatarBuilder } from './live/avatar-builder'
 import { McpManager } from './mcp/manager'
 import { ModelRegistry } from './llm/models'
 import { LabFeed } from './telemetry/lab'
@@ -130,8 +131,10 @@ function createWindow(): BrowserWindow {
   const query: Record<string, string> = {}
   const codeMode = process.env['LH_CODE_MODE']
   const liveState = process.env['LH_LIVE_STATE']
+  const avatarBuilder = process.env['LH_AVATAR_BUILDER']
   if (codeMode) query['codeMode'] = codeMode
   if (liveState) query['liveState'] = liveState
+  if (avatarBuilder) query['avatarBuilder'] = avatarBuilder
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL'])
@@ -275,6 +278,13 @@ app.whenReady().then(async () => {
     emit
   })
 
+  const avatarBuilder = new AvatarBuilder({
+    mcp,
+    store: avatars,
+    onProgress: (p) => emit('event:avatarBuild', p),
+    onLog: log
+  })
+
   registerIpc({
     settings,
     conversations,
@@ -288,6 +298,7 @@ app.whenReady().then(async () => {
     live,
     skills,
     avatars,
+    avatarBuilder,
     orchestrator,
     getWindow: () => mainWindow,
     emit

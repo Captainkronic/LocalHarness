@@ -1064,6 +1064,26 @@ export interface AvatarFrameSpec {
   label: string
 }
 
+/** One step of a build, as it happens. */
+export interface AvatarBuildProgress {
+  avatarId: string
+  /** 0-based; `total` counts the base render too. */
+  step: number
+  total: number
+  label: string
+  status: 'working' | 'saved' | 'done' | 'error' | 'cancelled'
+  error?: string
+}
+
+/** What the builder is asked for. */
+export interface AvatarBuildSpec {
+  name: string
+  /** The look, in the user's own words. Style direction is added for them. */
+  description: string
+  /** Include smile and listening as well as the mouth set and a blink. */
+  includeExtras: boolean
+}
+
 export interface Avatar {
   id: string
   name: string
