@@ -52,6 +52,19 @@ export default function ChatView() {
     return { from: residentModelId, to: want }
   }, [workflow, residentModelId])
 
+  /* Each workflow now carries a pool of seven starters rather than the three
+     that fit on screen. Re-rolling per empty state keeps a workflow you open
+     ten times a day from reading like the same three-line poster every time —
+     and quietly advertises the range of what the workflow is for. Keyed on the
+     conversation so a fresh chat deals a fresh hand, but stable across
+     re-renders of the same one (a bare Math.random in render would reshuffle
+     the chips on every keystroke in the composer). */
+  const suggestions = useMemo(
+    () => pickSome(workflow.suggestions, 3),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workflow.id, workflow.suggestions, conversation?.id]
+  )
+
   const applySuggestion = useCallback((s: string) => {
     setDraft(s)
     setFocusSignal((n) => n + 1)
@@ -105,11 +118,11 @@ export default function ChatView() {
               </>
             )}
           </p>
-          {workflow.suggestions.length > 0 ? (
+          {suggestions.length > 0 ? (
             <>
               <span className="section-label chat-empty-label">Start with</span>
               <div className="chat-suggestions">
-                {workflow.suggestions.map((s) => (
+                {suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -130,6 +143,17 @@ export default function ChatView() {
 }
 
 /** Model ids are namespaced and long; the family name is what identifies it. */
+/** Fisher-Yates over a copy, take the first n. Unbiased, and never repeats an
+ *  entry the way n independent picks would. */
+function pickSome(pool: string[], n: number): string[] {
+  const copy = pool.slice()
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy.slice(0, n)
+}
+
 function shortModel(id: string): string {
   const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id
   return tail.split('@')[0]

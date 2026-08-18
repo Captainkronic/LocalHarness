@@ -51,7 +51,14 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     env: {
       COMFY_HOST: 'http://127.0.0.1:8188',
       COMFY_AUTOSTART: '1',
-      COMFY_GEN_TIMEOUT: '900'
+      COMFY_GEN_TIMEOUT: '900',
+      // Don't hand finished images to another app. The server defaults to
+      // opening each one as a VS Code tab, which is right when the host IS VS
+      // Code and wrong here: a render started in this window would raise a
+      // different application over the top of it. The Gallery panel and the
+      // Edit card both show the result inline with a lightbox, so there is
+      // nowhere else it needs to go.
+      COMFY_OPEN_WITH: 'none'
     },
     // A cold render can take the full COMFY_GEN_TIMEOUT plus model load.
     callTimeoutMs: 960_000,

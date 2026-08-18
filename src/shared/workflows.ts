@@ -157,7 +157,11 @@ You have no tools here, and that is the point: this is the cheapest, fastest tur
     suggestions: [
       'Explain the tradeoff between MLX and GGUF on Apple silicon',
       'Draft a short project update from these notes',
-      'What questions should I ask before choosing a vector database?'
+      'What questions should I ask before choosing a vector database?',
+      'Explain this error message like I\'ve never seen it before',
+      'Give me the strongest argument against what I just said',
+      'Summarise this in three bullets a busy person would read',
+      'Help me name this thing — ten options, no filler'
     ]
   },
   {
@@ -293,7 +297,11 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     suggestions: [
       'What am I holding?',
       'Talk me through what you can see',
-      'Give me the short version'
+      'Give me the short version',
+      'Read out any text you can see',
+      'Is this plugged in the right way round?',
+      'Compare these two and tell me which looks better',
+      'Count what is on the table'
     ]
   },
   {
@@ -366,7 +374,11 @@ You have real filesystem and shell access to his workspace. Use it rather than a
     suggestions: [
       'Find every place this config value is read',
       'Add a test for the failing edge case and make it pass',
-      'Typecheck the project and fix what breaks'
+      'Typecheck the project and fix what breaks',
+      'Explain what this file does before I change it',
+      'Review this diff for bugs, not style',
+      'Refactor this function without changing behaviour',
+      'Why is this test flaky?'
     ]
   },
   {
@@ -418,7 +430,11 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     suggestions: [
       'A rain-soaked Tokyo alley at night, neon reflections, 35mm',
       'Product shot: ceramic mug on oak, soft window light',
-      'Edit the last image to warm the colour grade'
+      'Edit the last image to warm the colour grade',
+      'A minimal logo mark for a coffee roaster, flat vector',
+      'Portrait, 85mm, shallow depth of field, overcast light',
+      'Isometric illustration of a home lab rack',
+      'Same subject, but try a colder palette'
     ]
   },
   {
@@ -440,7 +456,11 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     suggestions: [
       'Make it golden hour',
       'Remove the car from the background',
-      'Turn this into a watercolour painting'
+      'Turn this into a watercolour painting',
+      'Swap the background for a plain studio backdrop',
+      'Clean up the skin without making it plastic',
+      'Crop this to a 16:9 hero image',
+      'Make the product pop without touching the background'
     ]
   },
   {
@@ -528,7 +548,11 @@ You generate audio locally: music and sound effects through ComfyUI, speech and 
     suggestions: [
       'A 60-second song about missing the last train home',
       'Instrumental, around 90bpm, something to work to',
-      'Same brief as the last one but swap the pads for a Rhodes'
+      'Same brief as the last one but swap the pads for a Rhodes',
+      'A short lo-fi loop for a focus timer',
+      'Sound effect: a heavy door closing in a stairwell',
+      'Cinematic riser into a soft piano landing',
+      'Read this paragraph aloud in a calm voice'
     ]
   },
   {
@@ -561,7 +585,11 @@ Ask that once if it is genuinely unclear, then write it — do not interview him
     suggestions: [
       'Turn these notes into a 6-page PDF report',
       'Build a 10-slide deck on the Q3 results',
-      'Make an xlsx budget model from this table'
+      'Make an xlsx budget model from this table',
+      'Write a one-page brief I can hand to a stakeholder',
+      'Rewrite this so it survives being skim-read',
+      'Draft a changelog from these commits',
+      'Turn this outline into speaker notes'
     ]
   },
   {
@@ -593,7 +621,11 @@ Every answer arrives with what it was built from. You have live web access.
     suggestions: [
       'What changed in Apple silicon inference performance this year?',
       'Compare the top three options and cite sources',
-      'Open this page and pull out the pricing table'
+      'Open this page and pull out the pricing table',
+      'Find primary sources for this claim',
+      'What is the current price of this, and where did you check?',
+      'Summarise the arguments on both sides of this debate',
+      'Who else has written about this, and what did they conclude?'
     ]
   },
   {
@@ -624,7 +656,11 @@ Say what you checked, not only what you found. You analyse local files with real
     suggestions: [
       'What is in this CSV and how clean is it?',
       'Aggregate revenue by month and chart the trend',
-      'Join these two files on customer id and find mismatches'
+      'Join these two files on customer id and find mismatches',
+      'Find the outliers and tell me if they are real',
+      'Which columns are mostly empty?',
+      'Rank these by revenue and show me the top ten',
+      'Turn this question into SQL and run it'
     ]
   }
 ]
