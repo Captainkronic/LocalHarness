@@ -101,6 +101,15 @@ export interface WorkflowDefinition {
    * into Live's chair.
    */
   voice?: boolean
+  /**
+   * A tool the app calls on this workflow's own MCP server when a session
+   * opens, with `{ id: conversationId }`.
+   *
+   * Declared here rather than special-cased in the session, because "this
+   * workflow keeps per-conversation state on its server" is a property of the
+   * workflow. The tool is deliberately one the model is never offered.
+   */
+  sessionHook?: { server: string; tool: string }
   /** Which contextual panel to render alongside the conversation. */
   panel: PanelKind
   /** Workflow-specific system prompt appended to the base prompt. */
@@ -468,6 +477,14 @@ export interface LiveSessionStatus {
   lastUserText: string
   /** The assistant's text for the current or last turn. */
   assistantText: string
+  /**
+   * The model's reasoning for the current turn, as it arrives.
+   *
+   * Shown, never spoken. During a spoken turn the only signal that anything is
+   * happening is silence, and silence reads as a crash — this is what turns a
+   * dead pause into a visible one.
+   */
+  reasoningText: string
   /** Turns completed this session. */
   turns: number
   /** Names of the tools running right now; empty unless `state` is 'tool'. */
@@ -511,6 +528,19 @@ export interface LiveSettings {
   vadThreshold: number
   /** Silence, in ms, that ends a turn. */
   silenceMs: number
+  /**
+   * Extra silence tolerated AFTER `silenceMs` before the turn is sent.
+   *
+   * Separate from silenceMs rather than folded into it, because the two are
+   * different decisions with different costs. silenceMs is "has he stopped
+   * making sound"; this is "has he finished the sentence". Mid-sentence pauses
+   * while someone thinks of a word run to about half a second, and cutting in
+   * there sends half a question and answers it confidently.
+   *
+   * The grace is VISIBLE — the orb holds a distinct state through it — so a
+   * long setting reads as the app waiting rather than as the app being slow.
+   */
+  pauseGraceMs: number
   /** Ignore bursts shorter than this — a cough is not a turn. */
   minUtteranceMs: number
   /** Send a camera frame with each turn. */

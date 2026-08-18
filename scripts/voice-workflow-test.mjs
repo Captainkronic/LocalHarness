@@ -80,6 +80,7 @@ const conversations = new Map(
   WORKFLOWS.map((w) => [`conv-${w.id}`, { id: `conv-${w.id}`, workflowId: w.id, modelId: null, messages: [] }])
 )
 const logs = []
+const hookCalls = []
 const deps = {
   speech: {
     start: async () => {},
@@ -88,7 +89,10 @@ const deps = {
     prewarm: async () => {}
   },
   models: { list: () => [], residentModelId: () => null, load: async () => ({ ok: true }), contextWindow: () => null },
-  mcp: { wireTools: () => [] },
+  mcp: { wireTools: () => [], callDirect: async (server, tool, args) => {
+    hookCalls.push({ server, tool, args })
+    return { text: 'ok', isError: false }
+  } },
   conversations: { get: (id) => conversations.get(id) ?? null, save: () => {} },
   getSettings: () => ({ defaultModelId: null, baseUrl: '', apiKey: '' }),
   onStatus: () => {},
@@ -117,7 +121,34 @@ check('refuses a typed workflow outright', typed.ok === false, JSON.stringify(ty
 check('and says which one', String(typed.error).includes('code'), typed.error)
 check('and a stopped session holds no workflow at all', session.wf === null)
 
-/* ---- 3. nobody hardcodes it again ------------------------------------ */
+/* ---- 3. per-conversation server state -------------------------------- */
+console.log('\n\x1b[1mthe session hook\x1b[0m')
+
+hookCalls.length = 0
+await session.stop()
+await session.start('conv-clinic')
+check('a workflow that declares a hook fires it', hookCalls.length === 1, JSON.stringify(hookCalls))
+check('on the server it names', hookCalls[0]?.server === 'health')
+check('with the CONVERSATION id, not the session', hookCalls[0]?.args?.id === 'conv-clinic')
+
+// The bug this ordering test exists for: stop() clears the workflow, so setting
+// it before the stop left a RESTARTED session with no workflow and no hook.
+hookCalls.length = 0
+await session.start('conv-clinic')
+check('and again after a restart', hookCalls.length === 1, 'hook did not fire on restart')
+
+hookCalls.length = 0
+await session.stop()
+await session.start('conv-live')
+check('a workflow with no hook fires nothing', hookCalls.length === 0)
+
+check(
+  'the hook tool is NOT advertised to the model',
+  !WORKFLOW_BY_ID.clinic.mcpTools ||
+    !Object.values(WORKFLOW_BY_ID.clinic.mcpTools).flat().includes('open_case')
+)
+
+/* ---- 4. nobody hardcodes it again ------------------------------------ */
 console.log('\n\x1b[1mno second source of truth\x1b[0m')
 
 const sources = {

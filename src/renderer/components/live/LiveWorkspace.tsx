@@ -111,6 +111,10 @@ export function LiveWorkspace(): JSX.Element {
 
   const statusRef = useRef(status)
   const micLevelRef = useRef(0)
+  /** True while the microphone has gone quiet but the turn is being held open
+   *  in case he is only pausing. Drives the orb, nothing else. */
+  const pausingRef = useRef(false)
+  const [pausing, setPausing] = useState(false)
   const speechRunRef = useRef(0)
   const noticeTimer = useRef(0)
   const speedTimer = useRef(0)
@@ -249,10 +253,16 @@ export function LiveWorkspace(): JSX.Element {
   const capture = useAudioCapture({
     vadThreshold: live.vadThreshold,
     silenceMs: live.silenceMs,
+    pauseGraceMs: live.pauseGraceMs,
     minUtteranceMs: live.minUtteranceMs,
     enabled: inCall && micOn,
     onUtterance: handleUtterance,
-    onLevel: handleLevel
+    onLevel: handleLevel,
+    // Written to a ref, not to state: this flips on and off around every
+    // hesitation and a re-render per hesitation is a re-render per word.
+    onPausing: (p) => {
+      pausingRef.current = p
+    }
   })
 
   /* ---- one publish loop for the orb -------------------------------- */
@@ -264,6 +274,9 @@ export function LiveWorkspace(): JSX.Element {
       const source =
         statusRef.current.state === 'speaking' ? readLevel() : micLevelRef.current
       setLevel((prev) => (Math.abs(prev - source) >= LEVEL_STEP ? source : prev))
+      // Rides the same loop as the level, and only commits on a CHANGE, so
+      // holding through a two-second pause costs one render rather than 120.
+      setPausing((prev) => (prev === pausingRef.current ? prev : pausingRef.current))
       raf = window.requestAnimationFrame(tick)
     }
     raf = window.requestAnimationFrame(tick)
@@ -357,7 +370,7 @@ export function LiveWorkspace(): JSX.Element {
             state={state}
           />
         ) : (
-          <VoiceOrb state={state} level={level} />
+          <VoiceOrb state={state} level={level} pausing={pausing} />
         )}
 
         {/* Only during a call. The setting persists, so a preview tied to the
@@ -379,6 +392,24 @@ export function LiveWorkspace(): JSX.Element {
         ) : null}
 
         <div className="lv-caption">
+          {/* The thinking, while it is happening.
+              A spoken turn between the question and the first word is pure
+              silence, and silence is indistinguishable from a crash. This is
+              the only window into it — shown, never spoken, and gone the moment
+              the answer starts, because by then the answer is the better thing
+              to be reading. */}
+          {status.reasoningText.trim() !== '' && reply.trim() === '' ? (
+            <details className="lv-thinking" open>
+              <summary>
+                thinking
+                <span className="lv-think-count tnum">
+                  {status.reasoningText.trim().split(/\s+/).length} words
+                </span>
+              </summary>
+              <p className="lv-think-body">{status.reasoningText}</p>
+            </details>
+          ) : null}
+
           {status.lastUserText.trim() !== '' ? (
             <p className="lv-heard">
               <span className="lv-heard-label">heard</span>
@@ -1030,9 +1061,33 @@ function Controls({
         />
         <span className="lv-range-value tnum">{speed.toFixed(2)}×</span>
       </label>
+
+      {/* The one microphone setting worth a control out here rather than buried
+          in a dialog: it is the difference between being able to think mid
+          sentence and being cut off, and the right value is personal. */}
+      <label className="lv-field lv-field-speed" title={PAUSE_TIP}>
+        <span className="lv-field-label">Pause</span>
+        <input
+          className="lv-range"
+          type="range"
+          min={0}
+          max={2000}
+          step={100}
+          value={settings.pauseGraceMs}
+          onChange={(e) => onPatch({ pauseGraceMs: Number(e.target.value) })}
+        />
+        <span className="lv-range-value tnum">
+          {((settings.silenceMs + settings.pauseGraceMs) / 1000).toFixed(1)}s
+        </span>
+      </label>
     </div>
   )
 }
+
+const PAUSE_TIP =
+  'How long to keep listening after you go quiet, in case you are only pausing. ' +
+  'The number is the total wait before your turn is sent. Longer means you can ' +
+  'think mid-sentence without being cut off; shorter means he answers sooner.'
 
 function Toggle({
   on,

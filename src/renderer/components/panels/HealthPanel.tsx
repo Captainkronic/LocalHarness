@@ -63,6 +63,7 @@ interface LastLookup {
 }
 
 interface Case {
+  caseId?: string | null
   profile: Entry[]
   symptoms: Entry[]
   medications: Entry[]
@@ -119,8 +120,25 @@ export function HealthPanel(): JSX.Element {
 
   const populated = LISTS.filter((l) => (file[l.key] as Entry[]).length > 0)
 
+  const started = file.startedAt ? new Date(file.startedAt) : null
+
   return (
     <div className="hl">
+      {/* Which case this is, and since when. Small, but it is the difference
+          between "he has forgotten what I told him" and "this is a new
+          conversation, so it is a new case" — and one of those is alarming. */}
+      {started && !Number.isNaN(started.getTime()) ? (
+        <p className="hl-started">
+          Case opened{' '}
+          {started.toLocaleString(undefined, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+        </p>
+      ) : null}
       {/* Never collapsed, never below the fold, never styled like a chip. If
           the screen says one thing louder than everything else, it is this. */}
       {file.redFlags.length > 0 ? (

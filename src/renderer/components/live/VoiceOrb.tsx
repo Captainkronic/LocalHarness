@@ -21,6 +21,16 @@ export interface VoiceOrbProps {
   state: LiveSessionState
   /** Microphone level while listening, playback level while speaking. 0..1. */
   level: number
+  /**
+   * True while the microphone has gone quiet but the turn is deliberately being
+   * held open in case the pause is only a pause.
+   *
+   * Worth its own state on screen. Without it the wait is indistinguishable
+   * from the app having missed the question, and someone who thinks they were
+   * missed repeats themselves — straight into the window that was being held
+   * for them, which produces the exact interruption the hold exists to prevent.
+   */
+  pausing?: boolean
 }
 
 /** Bar positions relative to the orb centre, and a fixed per-bar weight so the
@@ -147,7 +157,7 @@ function useReducedMotion(): boolean {
   return reduced
 }
 
-export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
+export function VoiceOrb({ state, level, pausing = false }: VoiceOrbProps): JSX.Element {
   const reduced = useReducedMotion()
   // NOT reduced. The arc meter is this component's honest reading of the
   // microphone, and it survives reduced motion precisely because it is static
@@ -164,9 +174,14 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
     <div
       className="orb"
       data-state={state}
+      data-pausing={pausing && (state === 'listening' || state === 'capturing') ? 'yes' : undefined}
       style={{ '--orb-level': lvl.toFixed(3) } as CSSProperties}
       role="img"
-      aria-label={LABELS[state]}
+      aria-label={
+        pausing && (state === 'listening' || state === 'capturing')
+          ? 'Still listening, waiting in case you are only pausing'
+          : LABELS[state]
+      }
     >
       <svg className="orb-svg" viewBox="0 0 200 200" aria-hidden="true">
         <defs>
@@ -303,7 +318,11 @@ export function VoiceOrb({ state, level }: VoiceOrbProps): JSX.Element {
         <StateGlyph state={state} level={lvl} reduced={reduced} />
       </svg>
 
-      <span className="orb-label">{LABELS[state]}</span>
+      <span className="orb-label">
+        {pausing && (state === 'listening' || state === 'capturing')
+          ? 'Still listening — take your time'
+          : LABELS[state]}
+      </span>
     </div>
   )
 }

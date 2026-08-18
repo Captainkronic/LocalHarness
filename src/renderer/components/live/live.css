@@ -1379,3 +1379,72 @@
   gap: var(--s3);
   font-size: var(--fs-base);
 }
+
+/* ---- the thinking ---- */
+
+/* Deliberately quiet: this is scaffolding, not the answer. It scrolls rather
+   than growing, because a reasoning trace can run to hundreds of words and
+   must not push the reply off the screen when it arrives. */
+.lv-thinking {
+  align-self: stretch;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  border: 1px dashed var(--line);
+  background: var(--bg-void);
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+.lv-thinking summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  cursor: pointer;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.lv-think-count {
+  color: var(--fg-faint);
+}
+
+.lv-think-body {
+  margin: var(--s2) 0 0;
+  max-height: 148px;
+  overflow-y: auto;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--fg-dim);
+}
+
+/* ---- holding the turn open ---- */
+
+/* The microphone has gone quiet and the turn is being held in case the pause is
+   only a pause. Deliberately NOT another colour: the state is still listening,
+   so the family does not change — the meter ring simply holds and breathes,
+   which reads as attention rather than as a new mode. */
+.orb[data-pausing='yes'] .orb-arc {
+  animation: orb-hold 1.4s ease-in-out infinite;
+}
+
+.orb[data-pausing='yes'] .orb-label {
+  color: var(--fg-dim);
+}
+
+@keyframes orb-hold {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The label still says it, so nothing is lost by holding the ring still. */
+  .orb[data-pausing='yes'] .orb-arc {
+    animation: none;
+  }
+}

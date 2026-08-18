@@ -1555,3 +1555,9 @@
   font-size: var(--fs-micro);
   color: var(--fg-faint);
 }
+
+.hl-started {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}

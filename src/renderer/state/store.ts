@@ -219,6 +219,7 @@ const IDLE_LIVE_SESSION: LiveSessionStatus = {
   videoEnabled: false,
   lastUserText: '',
   assistantText: '',
+  reasoningText: '',
   turns: 0,
   toolLabel: '',
   timings: null
@@ -229,6 +230,7 @@ const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   speed: 0.95,
   vadThreshold: 0.02,
   silenceMs: 700,
+  pauseGraceMs: 700,
   minUtteranceMs: 350,
   video: false,
   bargeIn: false,

@@ -262,6 +262,9 @@ app.whenReady().then(async () => {
     onStatus: (s: LiveSessionStatus) => emit('event:liveStatus', s),
     onAudio: (c: LiveAudioChunk) => emit('event:liveAudio', c),
     onExchange: (e: LiveExchange) => emit('event:liveExchange', e),
+    // The same channel the Orchestrator uses, so the instrument strip does not
+    // care which kind of turn is running — it just stops being idle.
+    onMetrics: (m) => emit('event:liveMetrics', m),
     onLog: (level, scope, message) => log(level, scope, message)
   })
 

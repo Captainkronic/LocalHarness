@@ -423,6 +423,11 @@ the shortlist so he can book it himself.`,
     voice: true,
     mcpServers: ['health'],
     nativeTools: [],
+    // One case file per conversation. Starting a new conversation starts a new
+    // case; re-opening an old one resumes its case rather than pooling
+    // everything into a single ever-growing file, which is how a knee injury
+    // ends up filed beside a chest infection and quietly informing it.
+    sessionHook: { server: 'health', tool: 'open_case' },
     panel: 'health',
     systemPrompt: `${BASE_PROMPT}
 

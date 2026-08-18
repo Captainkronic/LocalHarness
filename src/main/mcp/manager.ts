@@ -299,6 +299,29 @@ export class McpManager {
     return client.callTool(route.toolName, args, onProgress)
   }
 
+  /**
+   * Calls a tool the MODEL was never offered.
+   *
+   * `callTool` routes through the map built from tools/list, which is correct
+   * for anything the model asks for — a name that was never advertised must not
+   * be reachable by guessing it. This is the other case: the APP calling its own
+   * server for housekeeping the model has no business deciding. The health
+   * server's `open_case` is the example. Binding a conversation to a case file
+   * is a fact about which window is open, not a judgement, and advertising it
+   * would both cost prefill on every spoken turn and invite the model to start a
+   * fresh case mid-consultation.
+   *
+   * Resolves to nothing and returns null when the server is not running, rather
+   * than throwing: it is called on a path where failing is not worth breaking
+   * the session over.
+   */
+  async callDirect(serverId: string, toolName: string, args: unknown): Promise<McpCallResult | null> {
+    const client = this.clients.get(serverId)
+    const state = this.stateById.get(serverId)
+    if (!client || state?.status !== 'ready') return null
+    return client.callTool(toolName, args)
+  }
+
   /* ---------------------------------------------------------------- */
   /* Internals                                                        */
   /* ---------------------------------------------------------------- */

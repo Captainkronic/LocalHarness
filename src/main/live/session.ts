@@ -42,6 +42,7 @@ import type {
   LiveSessionStatus,
   LiveSettings,
   LiveTurnTimings,
+  LiveMetrics,
   ModelInfo,
   Settings,
   ToolCall,
@@ -55,6 +56,7 @@ import type { ModelRegistry } from '../llm/models'
 import { buildMessages } from '../llm/prompt'
 import type { LogFn, McpManager } from '../mcp/manager'
 import { estimateTokens } from '../mcp/tokens'
+import { RateCalibrator, TurnMeter } from '../telemetry/meter'
 import type { ConversationStore } from '../store/conversations'
 
 import type { SpeechServices } from './speech'
@@ -68,6 +70,12 @@ export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   speed: 0.95,
   vadThreshold: 0.02,
   silenceMs: 700,
+  // 700 + 700. Measured against the failure it exists to stop: a pause to think
+  // of a word, which runs to roughly half a second, was landing inside the old
+  // 700ms window and sending half a sentence. Together they cost about 1.4s of
+  // wall clock before the reply starts, which is the honest price of not being
+  // interrupted, and both halves are adjustable.
+  pauseGraceMs: 700,
   minUtteranceMs: 350,
   video: false,
   // OFF by default. With speakers, barge-in is an audio feedback loop: the
@@ -80,6 +88,10 @@ export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
 
 /** Live captions would otherwise push a status object per token. */
 const STATUS_PUSH_MS = 120
+
+/** Telemetry cadence. Fast enough that the elapsed clock does not visibly
+ *  stutter, slow enough that it is not a render per token. */
+const METRIC_EMIT_MS = 250
 
 /** Exchanges kept for the transcript rail. */
 const MAX_EXCHANGES = 100
@@ -149,6 +161,15 @@ export interface LiveSessionOptions {
   onStatus: (s: LiveSessionStatus) => void
   onAudio: (c: LiveAudioChunk) => void
   onExchange: (e: LiveExchange) => void
+  /**
+   * Per-request telemetry, at ~4Hz.
+   *
+   * The instrument strip at the top of the window has always been able to draw
+   * this — phase, prefill bar, both speed gauges — and during a spoken turn it
+   * sat at idle, because only the Orchestrator fed it. So the one mode where
+   * you cannot see the text arriving was also the one mode with no telemetry.
+   */
+  onMetrics: (m: LiveMetrics) => void
   onLog: LogFn
 }
 
@@ -220,6 +241,17 @@ export class LiveSession {
   /** So a text-only model is complained about once per session, not per turn. */
   private warnedNoVision = false
 
+  /** What the model is thinking, this turn, as it arrives. Never spoken and
+   *  never recorded as the answer — see onReasoning. */
+  private reasoningText = ''
+
+  /** Its own, rather than the Orchestrator's: this one learns from spoken turns
+   *  on whatever model the voice workflows use, which is usually not the model
+   *  the typed ones run on. */
+  private readonly calibrator = new RateCalibrator()
+  private meter: TurnMeter | null = null
+  private metricTimer: ReturnType<typeof setInterval> | null = null
+
   constructor(opts: LiveSessionOptions) {
     this.o = opts
   }
@@ -242,14 +274,17 @@ export class LiveSession {
     if (!isVoiceWorkflow(conv.workflowId)) {
       return { ok: false, error: `${conv.workflowId} is not a spoken workflow` }
     }
-    this.wf = WORKFLOW_BY_ID[conv.workflowId]
-
+    // AFTER the stop below, not before: stop() clears the workflow, so setting
+    // it here would leave a restarted session with no workflow — and the
+    // sessionHook that depends on it would silently never fire.
     if (this.state !== 'off') await this.stop()
+    this.wf = WORKFLOW_BY_ID[conv.workflowId]
 
     this.conversationId = conversationId
     this.errorText = undefined
     this.lastUserText = ''
     this.assistantText = ''
+    this.reasoningText = ''
     this.turnCount = 0
     this.lastTimings = null
     this.exchangeLog.length = 0
@@ -269,6 +304,24 @@ export class LiveSession {
     } else {
       this.knownVoices = []
       this.errorText = SPEECH_UNAVAILABLE
+    }
+
+    // Before the first turn, so the case file the panel draws and the case the
+    // model is told about are the same one from the very first word. Failure is
+    // logged and swallowed: a session that cannot bind a case is still a usable
+    // conversation, and dying here would take the call down over bookkeeping.
+    const hook = this.wf?.sessionHook
+    if (hook) {
+      try {
+        const result = await this.o.mcp.callDirect(hook.server, hook.tool, {
+          id: conversationId
+        })
+        if (result === null) {
+          this.o.onLog('warn', SCOPE, `${hook.server} is not running; no case was opened`)
+        }
+      } catch (err) {
+        this.o.onLog('warn', SCOPE, `${hook.server}.${hook.tool} failed: ${messageOf(err)}`)
+      }
     }
 
     this.warmModel()
@@ -309,6 +362,7 @@ export class LiveSession {
       videoEnabled: this.state !== 'off' && this.live.video,
       lastUserText: this.lastUserText,
       assistantText: this.assistantText,
+      reasoningText: this.reasoningText,
       turns: this.turnCount,
       toolLabel: this.toolLabel,
       error: this.errorText,
@@ -337,6 +391,12 @@ export class LiveSession {
     if (isNumber(patch.speed)) next.speed = clamp(patch.speed, 0.5, 2)
     if (isNumber(patch.vadThreshold)) next.vadThreshold = clamp(patch.vadThreshold, 0, 1)
     if (isNumber(patch.silenceMs)) next.silenceMs = clamp(Math.round(patch.silenceMs), 100, 5_000)
+    // 0 is a legitimate value here — it means "send as soon as the silence
+    // threshold is met", which is the behaviour this setting was added to make
+    // optional rather than mandatory.
+    if (isNumber(patch.pauseGraceMs)) {
+      next.pauseGraceMs = clamp(Math.round(patch.pauseGraceMs), 0, 5_000)
+    }
     if (isNumber(patch.minUtteranceMs)) {
       next.minUtteranceMs = clamp(Math.round(patch.minUtteranceMs), 0, 5_000)
     }
@@ -467,6 +527,7 @@ export class LiveSession {
     /* ---- 2. think ---- */
     this.lastUserText = userText
     this.assistantText = ''
+    this.reasoningText = ''
     this.setState('thinking')
 
     const conversationId = this.conversationId
@@ -540,6 +601,17 @@ export class LiveSession {
       const pendingCalls = new Map<number, ToolCall>()
       roundRequestAt = Date.now()
 
+      // Per ROUND, not per turn. A tool round is a second full prefill of a
+      // conversation that has grown by the tool's output, and showing the
+      // first round's numbers through it would hide the part of the wait that
+      // is actually the expensive one.
+      const meter = this.beginMeter(
+        model.id,
+        estimateTokens(JSON.stringify(messages)) + toolSchemaCost
+      )
+      meter.setToolSchemaTokens(toolSchemaCost)
+      meter.setReasoningEffort(this.workflow.sampling.reasoningEffort)
+
       await streamChat(
         {
           // The model's OWN endpoint. Ids collide across servers — the same
@@ -565,18 +637,27 @@ export class LiveSession {
         {
           onFirstToken: () => {
             firstTokenAt = Date.now()
+            meter.markFirstToken()
+            this.o.onMetrics(meter.snapshot())
           },
           onContent: (delta) => {
             content += delta
             this.assistantText = content
+            meter.countCompletionToken()
             this.pushStatusThrottled()
             /* ---- 3. speak each sentence as it completes ---- */
             for (const sentence of splitter.push(delta)) this.enqueueSpeech(turn, sentence)
           },
           // Reasoning is not part of the answer and must never be spoken or
-          // recorded as one; it is kept only so the turn's cost is honest.
+          // recorded as one. It IS shown on screen as it arrives, which is a
+          // different thing: during a spoken turn the only signal that anything
+          // is happening is silence, and silence reads as a crash. Seeing the
+          // thinking is the difference between waiting and wondering.
           onReasoning: (delta) => {
             reasoning += delta
+            this.reasoningText = reasoning
+            meter.countReasoningToken()
+            this.pushStatusThrottled()
           },
           onToolCallDelta: (index, id, name, argsDelta) => {
             let call = pendingCalls.get(index)
@@ -638,6 +719,8 @@ export class LiveSession {
       this.setState('tool')
       this.toolLabel = calls.map((c) => c.name).join(', ')
       this.pushStatus()
+      meter.markToolPhase()
+      this.o.onMetrics(meter.snapshot())
 
       for (const call of calls) {
         if (this.isStale(generation)) break
@@ -665,6 +748,20 @@ export class LiveSession {
     // waiting the user really did is in `timings.firstAudioMs` below, which is
     // measured end to end and includes every round.
     const ttftMs = firstTokenAt === 0 ? 0 : firstTokenAt - roundRequestAt
+
+    // The strip goes idle here rather than at the end of the turn: everything
+    // after this point is speech, and holding a decode rate on screen while the
+    // GPU is done would be a rate nobody is measuring.
+    if (this.meter !== null && usage.completionTokens > 0 && ttftMs > 0) {
+      this.calibrator.observe(
+        model.id,
+        usage.promptTokens,
+        ttftMs,
+        usage.completionTokens,
+        Math.max(1, Date.now() - firstTokenAt)
+      )
+    }
+    this.endMeter()
     if (this.isStale(generation)) return { ok: true }
 
     // If the ENTIRE reply was a tool call typed as prose, every chunk of it was
@@ -808,6 +905,11 @@ export class LiveSession {
   /* ---------------------------------------------------------------- */
 
   private cancelTurn(): void {
+    // Barge-in and stop both land here. Without this the 4Hz push outlives the
+    // request and the HUD keeps counting elapsed time for a turn that was
+    // abandoned.
+    this.endMeter()
+    this.reasoningText = ''
     this.generation += 1
     this.turnActive = false
     // Otherwise an interrupt during a tool call leaves the tool's name in the
@@ -820,6 +922,42 @@ export class LiveSession {
 
   private isStale(generation: number): boolean {
     return generation !== this.generation
+  }
+
+  /** Starts the 4Hz push and returns the meter for the turn. */
+  private beginMeter(modelId: string, promptTokens: number): TurnMeter {
+    this.endMeter(false)
+    const meter = new TurnMeter()
+    meter.start(
+      modelId,
+      promptTokens,
+      this.calibrator.prefillTps(modelId),
+      this.calibrator.overheadMs(modelId)
+    )
+    this.meter = meter
+    this.metricTimer = setInterval(() => this.o.onMetrics(meter.snapshot()), METRIC_EMIT_MS)
+    this.o.onMetrics(meter.snapshot())
+    return meter
+  }
+
+  /**
+   * Stops the push and, unless the turn is continuing into another round,
+   * leaves the strip reading idle.
+   *
+   * The idle emit is not cosmetic: without it the HUD holds the last live
+   * numbers after the turn ends, and a rate that is not currently being
+   * measured is exactly the lie this app keeps having to design against.
+   */
+  private endMeter(goIdle = true): void {
+    if (this.metricTimer !== null) {
+      clearInterval(this.metricTimer)
+      this.metricTimer = null
+    }
+    if (goIdle && this.meter !== null) {
+      this.meter.reset()
+      this.o.onMetrics(this.meter.snapshot())
+    }
+    if (goIdle) this.meter = null
   }
 
   private setState(next: LiveSessionState): void {

@@ -28,13 +28,31 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import { TurnGate } from './turn-gate'
+
 export interface CaptureOptions {
   vadThreshold: number
   silenceMs: number
+  /** Extra silence tolerated after `silenceMs` before the turn is sent. */
+  pauseGraceMs: number
   minUtteranceMs: number
   enabled: boolean
   onUtterance: (pcm: ArrayBuffer, sampleRate: number) => void
   onLevel: (level: number, speaking: boolean) => void
+  /** True while inside the grace window: quiet, but not finished. */
+  onPausing?: (pausing: boolean) => void
+}
+
+function gateOpts(o: CaptureOptions): {
+  silenceMs: number
+  pauseGraceMs: number
+  maxUtteranceMs: number
+} {
+  return {
+    silenceMs: o.silenceMs,
+    pauseGraceMs: o.pauseGraceMs,
+    maxUtteranceMs: MAX_UTTERANCE_MS
+  }
 }
 
 /** Samples per analysis frame: 32ms at 16kHz. Long enough that RMS is stable,
@@ -136,7 +154,17 @@ export function useAudioCapture(opts: CaptureOptions): {
     let lead = 0
     /** Sample offset of the end of the last voiced frame. */
     let voicedEnd = 0
-    let silenceRun = 0
+    /** Owns the end-of-turn decision. See turn-gate.ts — the buffer bookkeeping
+     *  stays here, the judgement does not. */
+    const gate = new TurnGate()
+    /** True once the gate says we are holding through a pause. */
+    let pausing = false
+
+    const setPausing = (next: boolean): void => {
+      if (pausing === next) return
+      pausing = next
+      optsRef.current.onPausing?.(next)
+    }
 
     const resetTurn = (): void => {
       capturing = false
@@ -144,7 +172,8 @@ export function useAudioCapture(opts: CaptureOptions): {
       captured = 0
       lead = 0
       voicedEnd = 0
-      silenceRun = 0
+      gate.reset()
+      setPausing(false)
     }
 
     const finish = (): void => {
@@ -185,23 +214,22 @@ export function useAudioCapture(opts: CaptureOptions): {
         preroll = []
         prerollSamples = 0
         capturing = true
-        silenceRun = 0
+        gate.reset()
+        gate.frame(true, frameMs, gateOpts(o))
         voicedEnd = captured
         return
       }
 
       chunks.push(samples)
       captured += samples.length
-      if (speaking) {
-        silenceRun = 0
-        voicedEnd = captured
-      } else {
-        silenceRun += frameMs
-      }
+      if (speaking) voicedEnd = captured
 
-      if (silenceRun >= o.silenceMs || (captured / rate) * 1000 >= MAX_UTTERANCE_MS) {
-        finish()
-      }
+      // The audio through the grace is kept but not counted as speech: `finish`
+      // trims to voicedEnd + TAIL_MS, so a long grace never hands Whisper
+      // seconds of room tone to hallucinate over.
+      const verdict = gate.frame(speaking, frameMs, gateOpts(o))
+      setPausing(verdict === 'pausing')
+      if (verdict === 'end') finish()
     }
 
     /* ---- graph ------------------------------------------------------ */
