@@ -16,8 +16,50 @@
  *    why the finish reason is always surfaced, even on an empty completion.
  */
 
+import { Agent, fetch as undiciFetch } from 'undici'
+
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import type { WireTool } from '@shared/types'
+
+/**
+ * Our own connection pool, because the default one gives up during a normal
+ * tool call.
+ *
+ * LM Studio does not stream a tool call's arguments. It buffers the whole thing
+ * and sends it in ONE delta when the call is complete — measured: a counter sat
+ * frozen at 380 tokens for 217 seconds and then 11,161 characters arrived at
+ * once. So while the model composes a file-sized argument, NOTHING crosses the
+ * wire. Not a heartbeat, not an empty chunk. Minutes of legitimate silence.
+ *
+ * Node's global fetch is undici with a 300s `bodyTimeout`, and that timeout
+ * measures the gap BETWEEN chunks. A tool call that takes longer than five
+ * minutes to compose therefore kills its own connection every single time.
+ * Confirmed against a local server that sent one chunk and went quiet:
+ *
+ *     301.0s  TypeError: terminated
+ *             cause = BodyTimeoutError: Body Timeout Error
+ *
+ * That is the whole of the "terminated" failure. It was never the network: a
+ * 20-minute, 5.3MB stream of ordinary content across the same hops finished
+ * cleanly, because ordinary content never goes quiet.
+ *
+ * The value is derived, not picked. The reply is capped at 16,384 tokens
+ * (workflows.ts, Code), and this hardware has been measured as low as 8 tok/s
+ * when something else is sharing the GPU, so the longest legitimate silence is
+ * about 34 minutes. 45 gives that headroom without being infinite — a socket
+ * that is genuinely dead should still eventually say so rather than leaving the
+ * app waiting forever on a connection that is never going to speak again.
+ *
+ * `headersTimeout` stays short by comparison: headers come back immediately even
+ * when the request is queued behind another, so a long wait there is a real
+ * fault rather than a model thinking.
+ */
+const STREAM_AGENT_BODY_TIMEOUT_MS = 45 * 60_000
+
+const STREAM_AGENT = new Agent({
+  bodyTimeout: STREAM_AGENT_BODY_TIMEOUT_MS,
+  headersTimeout: 2 * 60_000
+})
 
 export interface WireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -177,12 +219,15 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
 
   let response: Response
   try {
-    response = await fetch(url, {
+    response = (await undiciFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: req.signal
-    })
+      signal: req.signal,
+      // Must be undici's own fetch, not the global one: a dispatcher only
+      // applies to the copy of undici it came from.
+      dispatcher: STREAM_AGENT
+    })) as unknown as Response
   } catch (err) {
     if (isAbort(err, req.signal)) {
       emitDone('aborted')
@@ -315,12 +360,33 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
       // undici throws a bare `TypeError: terminated` when a streaming body ends
       // before the server said it was done. Surfaced raw it reads as a verdict
       // from the model — "terminated" appeared in the transcript for twenty
-      // minutes of work and explained nothing. It is a dropped connection, and
-      // the useful facts are which endpoint dropped it and how far it got.
-      if (/^terminated$/i.test(messageOf(err))) {
+      // minutes of work and explained nothing.
+      //
+      // Test the ERROR, not a rendering of it. The previous version matched
+      // /^terminated$/i against messageOf(err), and messageOf appends the cause:
+      // the real error stringifies to "terminated (Body Timeout Error)", the
+      // anchored regex missed, and the raw word went to the transcript anyway.
+      // The guard had never once fired.
+      if (err instanceof TypeError && /^terminated$/i.test(err.message)) {
+        const cause = err.cause
+        const causeName = cause instanceof Error ? cause.name : ''
+        if (causeName === 'BodyTimeoutError') {
+          // Distinguish the two silences, because the remedies are opposite.
+          // This one means the server accepted the request and then said
+          // nothing for the whole timeout — with LM Studio that is usually a
+          // tool call being composed, which crosses the wire only when it is
+          // finished. See STREAM_AGENT.
+          throw new Error(
+            `${url} accepted the request and then sent nothing for ` +
+              `${Math.round(STREAM_AGENT_BODY_TIMEOUT_MS / 60_000)} minutes, so the connection was closed. ` +
+              `Nothing was wrong with the request. If the model was composing a large tool call, ` +
+              `it may simply have needed longer than that.`
+          )
+        }
         throw new Error(
-          `The connection to ${url} dropped part-way through the response. ` +
-            `Nothing was wrong with the request — the stream ended early. ` +
+          `The connection to ${url} dropped part-way through the response` +
+            (causeName ? ` (${causeName})` : '') +
+            `. Nothing was wrong with the request — the stream ended early. ` +
             `Check the inference server is still up, then send again.`
         )
       }

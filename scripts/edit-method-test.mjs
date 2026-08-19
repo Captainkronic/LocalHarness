@@ -36,7 +36,7 @@ export const globalShortcut={register(){},unregister(){}}
 export const protocol={registerSchemesAsPrivileged(){},handle(){}}
 export default {app,BrowserWindow,ipcMain,shell,dialog,globalShortcut,protocol}\n`)
 const out = join(dir, 'b.mjs')
-await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
+await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },  format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim } })
 const { renderArgs, EDIT_BRIEFS, EDIT_METHOD_DEFAULTS } = await import(pathToFileURL(out).href)

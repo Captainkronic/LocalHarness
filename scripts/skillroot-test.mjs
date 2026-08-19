@@ -35,7 +35,7 @@ await writeFile(join(dir, 'e.ts'),
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'\nexport const app={getPath:()=>tmpdir(),getVersion:()=>'0'}\nexport default{app}\n`)
 const out = join(dir, 'b.mjs')
-await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
+await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },  format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim } })
 const { ToolExecutor, DEFAULT_SETTINGS, WORKFLOWS } = await import(pathToFileURL(out).href)

@@ -34,7 +34,7 @@ const outfile = join(dir, 'b.mjs')
 await build({
   entryPoints: [join(dir, 'e.ts')],
   outfile,
-  bundle: true,
+  bundle: true, banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" }, 
   format: 'esm',
   platform: 'node',
   target: 'node22',

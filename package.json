@@ -1,7 +1,7 @@
 {
   "name": "localharness",
   "version": "0.1.0",
-  "description": "A local-first AI harness for the Mac Studio inference server \u2014 workflow profiles, MCP orchestration, and live inference telemetry.",
+  "description": "A local-first AI harness for the Mac Studio inference server — workflow profiles, MCP orchestration, and live inference telemetry.",
   "main": "./out/main/index.js",
   "author": "Adam",
   "license": "UNLICENSED",
@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "undici": "^7.29.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
