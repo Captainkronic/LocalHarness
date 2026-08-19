@@ -197,6 +197,9 @@ export interface IpcApi {
   'code:listDir': (path: string) => Promise<DirEntry[]>
 
   /* ---- skills ---- */
+  /** Start/stop the live mirror. Reference counted: it runs only while the
+   *  Browser tab is actually on screen. */
+  'browser:watch': (on: boolean) => Promise<void>
   'skills:list': () => Promise<Skill[]>
   'skills:refresh': () => Promise<Skill[]>
   'skills:setEnabled': (path: string, enabled: boolean) => Promise<Skill[]>
@@ -237,6 +240,9 @@ export interface IpcEvents {
   'event:liveAudio': LiveAudioChunk
   'event:liveExchange': LiveExchange
   'event:skills': Skill[]
+  /** A frame from the browser the model is driving, while someone is watching. */
+  'event:browserFrame': { dataUrl: string; width: number; height: number; at: number }
+  'event:browserMirror': { status: 'off' | 'connecting' | 'live' | 'unavailable' }
 }
 
 /** Everything the renderer needs on first paint, in one round trip. */
@@ -330,6 +336,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'live:exchanges',
   'live:voices',
   'code:listDir',
+  'browser:watch',
   'skills:list',
   'skills:refresh',
   'skills:setEnabled',
@@ -360,7 +367,9 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:liveStatus',
   'event:liveAudio',
   'event:liveExchange',
-  'event:skills'
+  'event:skills',
+  'event:browserFrame',
+  'event:browserMirror'
 ]
 
 /** The surface the preload script exposes as `window.harness`. */

@@ -40,6 +40,8 @@ import { ToolExecutor } from './agent/executor'
 import { ApprovalBroker } from './agent/approval'
 import { ActivityTracker } from './agent/activity'
 import { SkillRegistry } from './skills/registry'
+import { BrowserMirror } from './browser/mirror'
+import { MCP_BY_ID } from '@shared/mcp-registry'
 import { Orchestrator } from './orchestrator'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
@@ -219,6 +221,16 @@ app.whenReady().then(async () => {
     onLog: (level, scope, message) => log(level, scope, message)
   })
 
+  /* The live browser view. Nothing runs until the Browser tab is on screen —
+     see BrowserMirror: an idle mirror on a 60fps canvas is a lot of JPEG for
+     nobody. The port is the one the playwright server was given. */
+  const mirror = new BrowserMirror({
+    getPort: () => Number(MCP_BY_ID['playwright']?.env?.['PWMCP_PORT'] ?? 9333),
+    onFrame: (frame) => emit('event:browserFrame', frame),
+    onStatus: (status) => emit('event:browserMirror', { status }),
+    onLog: (level, scope, message) => log(level, scope, message)
+  })
+
   const activity = new ActivityTracker({
     onActivity: (a) => emit('event:fileActivity', a),
     getRoots: () => settings.get().workspaceRoots
@@ -288,6 +300,7 @@ app.whenReady().then(async () => {
   })
 
   registerIpc({
+    mirror,
     settings,
     conversations,
     mcp,

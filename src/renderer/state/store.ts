@@ -102,6 +102,11 @@ export interface AppState {
   artifacts: Artifact[]
   /** Latest step of an avatar build, or null when none has run this session. */
   avatarBuild: AvatarBuildProgress | null
+  /** Newest frame from the browser the model is driving, or null when the
+   *  mirror is off. */
+  browserFrame: { dataUrl: string; width: number; height: number; at: number } | null
+  browserMirror: 'off' | 'connecting' | 'live' | 'unavailable'
+  watchBrowser(on: boolean): Promise<void>
   logs: LogEntry[]
   // actions
   bootstrap(): Promise<void>
@@ -361,6 +366,16 @@ export const useStore = create<AppState>()((set, get) => {
     /* The build is long and runs in main, so its progress is the only way the
        dialog knows anything is happening. Held here rather than in the dialog
        so closing the dialog does not lose a build that is still running. */
+    /* The live browser. Held as ONE frame, replaced in place: a stream of
+       twelve a second must not accumulate, and nothing needs the previous
+       one. */
+    'event:browserFrame': (frame) => {
+      set({ browserFrame: frame })
+    },
+    'event:browserMirror': ({ status }) => {
+      set({ browserMirror: status })
+    },
+
     'event:avatarBuild': (progress) => {
       set({ avatarBuild: progress })
     },
@@ -534,6 +549,8 @@ export const useStore = create<AppState>()((set, get) => {
     approvals: [],
     artifacts: [],
     avatarBuild: null,
+    browserFrame: null,
+    browserMirror: 'off',
     logs: [],
 
     bootstrap: () => {
@@ -679,6 +696,14 @@ export const useStore = create<AppState>()((set, get) => {
     // Every mutation returns the updated job AND main pushes event:editJob, so
     // these deliberately do not set state themselves — the event handler is the
     // single writer, which keeps optimistic and pushed state from diverging.
+
+    watchBrowser: async (on) => {
+      // Clearing the frame on the way out stops a stale picture sitting there
+      // looking live the next time the tab is opened.
+      if (!on) set({ browserFrame: null, browserMirror: 'off' })
+      await call('browser', 'browser:watch', on)
+    },
+
     setWorkflowSampling: async (workflowId, patch) => {
       const settings = await call('settings', 'settings:setSampling', workflowId, patch)
       if (settings) set({ settings })

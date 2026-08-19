@@ -29,6 +29,7 @@ import type {
   Avatar
 } from '@shared/types'
 import { WORKFLOWS, WORKFLOW_BY_ID } from '@shared/workflows'
+import type { BrowserMirror } from './browser/mirror'
 
 import type { SettingsStore } from './store/settings'
 import type { ConversationStore } from './store/conversations'
@@ -62,6 +63,7 @@ export interface IpcDeps {
   activity: ActivityTracker
   live: LiveSession
   skills: SkillRegistry
+  mirror: BrowserMirror
   avatars: AvatarStore
   avatarBuilder: AvatarBuilder
   orchestrator: Orchestrator
@@ -426,6 +428,12 @@ export function registerIpc(d: IpcDeps): void {
     },
     'avatars:finish': (id) => d.avatarBuilder.finish(id),
 
+    /* Reference counted in the mirror: several viewers can watch, and the
+       stream stops when the last one looks away. */
+    'browser:watch': async (on: boolean) => {
+      if (on) d.mirror.watch()
+      else d.mirror.unwatch()
+    },
     'skills:list': () => d.skills.list(),
     'skills:refresh': () => d.skills.refresh(),
     'skills:setEnabled': (path: string, enabled: boolean) =>

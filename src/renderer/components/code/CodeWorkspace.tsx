@@ -69,6 +69,7 @@ export interface Tab {
 export function CodeWorkspace(): JSX.Element {
   const activityAll = useStore((s) => s.fileActivity)
   const conversation = useStore((s) => s.conversation)
+  const mirrorLive = useStore((s) => s.browserMirror) === 'live'
   const conversationId = useStore((s) => s.activeConversationId)
   const phase = useStore((s) => s.live.phase)
   const roots = useStore((s) => s.settings.workspaceRoots)
@@ -212,20 +213,50 @@ export function CodeWorkspace(): JSX.Element {
   }, [conversation])
 
   /**
-   * Flip to Browser the first time the model looks at a page, once.
+   * Is a browser tool running RIGHT NOW.
    *
-   * The same bargain the Watch tab makes: the moment something appears that you
-   * cannot see anywhere else is worth one interruption, and after that the
-   * choice is yours. Without it the frames sit behind a tab nobody knows to
-   * press, which is the same as not having built this.
+   * Phase plus the most recent tool, rather than a per-call `pending` status.
+   * Status was the obvious signal and proved unreliable to observe: a call that
+   * finishes quickly can be created and completed between two renders, so the
+   * tab never learned it had been busy. `phase` stays 'tool' for as long as the
+   * tool is actually running, which is the thing being asked about.
    */
-  const flipped = useRef(false)
-  useEffect(() => {
-    if (frameCount > 0 && !flipped.current) {
-      flipped.current = true
-      setMode('browser')
+  const lastToolName = useMemo(() => {
+    const messages = conversation?.messages ?? []
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const calls = messages[i].toolCalls ?? []
+      if (calls.length > 0) return calls[calls.length - 1].name
     }
-  }, [frameCount])
+    return ''
+  }, [conversation])
+
+  const browserBusy =
+    phase === 'tool' && /playwright__|browse_act|view_page|page_snapshot/.test(lastToolName)
+
+  /**
+   * NOTHING here switches the view.
+   *
+   * There was an auto-switch to Browser while a page was being driven and back
+   * to Chat afterwards. It worked, and it was wrong: it took the transcript
+   * away at the exact moment the model was explaining what it was about to do,
+   * so you could watch it click or read why it clicked, never both.
+   *
+   * The live view moved to the workspace sidebar instead, where it sits beside
+   * the conversation. See LiveBrowserStrip. The tab is still here and still
+   * holds every captured frame; it is now somewhere you go, not somewhere you
+   * are sent.
+   */
+
+  /**
+   * Deliberately NO auto-switch to Browser, for the same reason there is none
+   * to Watch: the composer lives in ChatView, so switching this column away
+   * from Chat leaves the workflow with no way to type. Doing it automatically
+   * mid-run takes the keyboard away from someone in the middle of a sentence.
+   *
+   * The floating window covers the case this would have served — something is
+   * happening in a page and you want to see it — without moving anything the
+   * user is using.
+   */
 
   if (mode === 'browser') {
     return (
@@ -235,6 +266,9 @@ export function CodeWorkspace(): JSX.Element {
           onMode={setMode}
           files={tabs.length}
           frames={frameCount}
+          mirrorLive={mirrorLive}
+          busy={browserBusy}
+          writing={liveRow !== null}
           added={totals.added}
           removed={totals.removed}
         />
@@ -253,6 +287,9 @@ export function CodeWorkspace(): JSX.Element {
           onMode={setMode}
           files={tabs.length}
           frames={frameCount}
+          mirrorLive={mirrorLive}
+          busy={browserBusy}
+          writing={liveRow !== null}
           added={totals.added}
           removed={totals.removed}
         />
@@ -270,6 +307,9 @@ export function CodeWorkspace(): JSX.Element {
         onMode={setMode}
         files={tabs.length}
         frames={frameCount}
+        mirrorLive={mirrorLive}
+        busy={browserBusy}
+        writing={liveRow !== null}
         added={totals.added}
         removed={totals.removed}
       />
@@ -344,10 +384,13 @@ function ModeBar(props: {
   onMode: (m: 'chat' | 'watch' | 'browser') => void
   files: number
   frames: number
+  mirrorLive: boolean
+  busy: boolean
+  writing: boolean
   added: number
   removed: number
 }): JSX.Element {
-  const { mode, onMode, files, frames, added, removed } = props
+  const { mode, onMode, files, frames, mirrorLive, busy, writing, added, removed } = props
   return (
     <div className="cw-modebar">
       <div className="cw-segmented" role="tablist" aria-label="Code view">
@@ -364,25 +407,38 @@ function ModeBar(props: {
           type="button"
           role="tab"
           aria-selected={mode === 'watch'}
-          className={mode === 'watch' ? 'cw-seg is-on' : 'cw-seg'}
+          className={
+            (mode === 'watch' ? 'cw-seg is-on' : 'cw-seg') + (writing ? ' is-busy' : '')
+          }
           onClick={() => onMode('watch')}
+          title={writing ? 'A file is being written right now' : undefined}
         >
           Watch
           {files > 0 ? <span className="cw-seg-badge tnum">{files}</span> : null}
         </button>
         {/* Only once there is something to see. An empty tab that never lights
             up is furniture. */}
-        {frames > 0 ? (
+        {/* Shown once there is anything to see — a capture, or a live browser.
+            Without the live case the tab stays hidden through exactly the part
+            worth watching: the model playing with a page it has not yet
+            screenshotted. */}
+        {frames > 0 || mirrorLive ? (
           <button
             type="button"
             role="tab"
             aria-selected={mode === 'browser'}
-            className={mode === 'browser' ? 'cw-seg is-on' : 'cw-seg'}
+            className={
+              (mode === 'browser' ? 'cw-seg is-on' : 'cw-seg') + (busy ? ' is-busy' : '')
+            }
             onClick={() => onMode('browser')}
-            title="The frames the model was shown by the browser tools"
+            title={
+              busy
+                ? 'The model is driving a page right now'
+                : 'The frames the model was shown by the browser tools'
+            }
           >
             Browser
-            <span className="cw-seg-badge tnum">{frames}</span>
+            {frames > 0 ? <span className="cw-seg-badge tnum">{frames}</span> : null}
           </button>
         ) : null}
       </div>

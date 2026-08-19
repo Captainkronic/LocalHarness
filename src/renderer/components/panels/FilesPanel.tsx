@@ -2,6 +2,7 @@ import { useMemo, useState, type JSX } from 'react'
 import type { ToolCall } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, relativeTime, shortenPath } from '@renderer/lib/format'
+import LiveBrowserStrip from './LiveBrowserStrip'
 import './panels.css'
 
 /**
@@ -87,6 +88,9 @@ export function FilesPanel(): JSX.Element {
 
   return (
     <div className="fil-wrap">
+      {/* Above the workspace, because while it is there it is the thing you
+          are watching — and it is only there while the model is driving. */}
+      <LiveBrowserStrip />
       <section className="fil-block">
         <div className="fil-block-head">
           <span className="section-label">Sandbox</span>

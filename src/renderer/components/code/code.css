@@ -1100,3 +1100,79 @@
 .bp-follow:hover {
   color: var(--accent);
 }
+
+/* Which of the two you are looking at. A live view and a still capture are
+   indistinguishable whenever the page happens to be static, and confusing one
+   for the other is the whole failure mode this pane could have. */
+.bp-live {
+  margin-left: auto;
+  flex: none;
+  padding: 1px var(--s2);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.bp-live.is-on {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.bp-live.is-on::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: middle;
+  animation: bp-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes bp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-live.is-on::before { animation: none; }
+}
+
+/**
+ * The Browser tab while the model is driving a page.
+ *
+ * A pulse rather than a hard blink, and on the tab's own outline rather than a
+ * separate dot: the tab IS the thing you are being asked to look at, and an
+ * extra indicator beside it would be a second thing to read.
+ *
+ * It stops when the browsing does. Something animating with nothing behind it
+ * is worse than no signal at all, because you learn to ignore it.
+ */
+.cw-seg.is-busy {
+  color: var(--accent);
+  animation: cw-seg-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes cw-seg-busy {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    background: var(--accent-soft);
+  }
+  50% {
+    box-shadow: inset 0 0 0 1px transparent;
+    background: transparent;
+  }
+}
+
+/* A tab that pulses is decoration under reduced motion; a tab that stays lit is
+   still the same information. */
+@media (prefers-reduced-motion: reduce) {
+  .cw-seg.is-busy {
+    animation: none;
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    background: var(--accent-soft);
+  }
+}

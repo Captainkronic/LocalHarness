@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 
 import { useStore } from '@renderer/state/store'
+import { useMirrorStream } from './useMirrorStream'
 import './code.css'
 
 interface Vision {
@@ -54,7 +55,13 @@ function asView(value: unknown): View | null {
 export function BrowserPane(): JSX.Element {
   const conversation = useStore((s) => s.conversation)
   const readImageDataUrl = useStore((s) => s.readImageDataUrl)
+  const browserFrame = useStore((s) => s.browserFrame)
+  const browserMirror = useStore((s) => s.browserMirror)
   const [selected, setSelected] = useState<number | null>(null)
+
+  /* The stream runs only while this pane is mounted. Watching a headless
+     browser nobody is looking at costs a JPEG every frame for nothing. */
+  useMirrorStream()
   const [dataUrl, setDataUrl] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
 
@@ -74,6 +81,11 @@ export function BrowserPane(): JSX.Element {
   /* Follow the newest frame unless a frame was picked deliberately. */
   const index = selected ?? views.length - 1
   const current = index >= 0 ? views[index] : undefined
+
+  /* Live only while following the newest frame. Picking an older capture is a
+     deliberate act of looking back, and having it replaced by the live view a
+     twelfth of a second later would make that impossible. */
+  const live = selected === null && browserMirror === 'live' && browserFrame !== null
 
   useEffect(() => {
     let cancelled = false
@@ -98,12 +110,15 @@ export function BrowserPane(): JSX.Element {
     }
   }, [current, readImageDataUrl])
 
-  if (views.length === 0) {
+  /* Only when there is NOTHING to show — no captures and no stream. The live
+     view matters most in exactly the gap this early return used to cover: the
+     model has a page open and is playing with it, and has not captured a frame
+     yet, which is precisely when you want to watch. */
+  if (views.length === 0 && !live) {
     return (
       <p className="pnl-empty">
         Nothing looked at yet. When the model opens a page or clicks something with the
-        browser tools, the frames it was given appear here — the same images, not a
-        re-render.
+        browser tools, you see the page live here, and every frame it was given.
       </p>
     )
   }
@@ -111,14 +126,29 @@ export function BrowserPane(): JSX.Element {
   return (
     <div className="bp">
       <header className="bp-head">
-        <span className="bp-title">{current?.title || 'Untitled page'}</span>
+        <span className="bp-title">{current?.title || (live ? 'Live page' : 'Untitled page')}</span>
         <span className="bp-url" title={current?.url}>
           {current?.url}
+        </span>
+        {/* Says which of the two things you are looking at. A live view and a
+            still capture look identical when the page happens to be static. */}
+        <span className={live ? 'bp-live is-on' : 'bp-live'}>
+          {live
+            ? 'live'
+            : browserMirror === 'connecting'
+              ? 'connecting'
+              : selected !== null
+                ? 'captured frame'
+                : browserMirror === 'unavailable'
+                  ? 'browser not open'
+                  : 'captured'}
         </span>
       </header>
 
       <div className="bp-stage">
-        {dataUrl ? (
+        {live ? (
+          <img className="bp-shot" src={browserFrame.dataUrl} alt="live browser view" />
+        ) : dataUrl ? (
           <img className="bp-shot" src={dataUrl} alt={current?.title || 'page screenshot'} />
         ) : missing ? (
           <p className="bp-gone">
@@ -130,7 +160,11 @@ export function BrowserPane(): JSX.Element {
         )}
       </div>
 
-      {current ? (
+      {live && browserFrame.width > 0 ? (
+        <p className="bp-facts tnum">
+          streaming · {browserFrame.width}×{browserFrame.height}
+        </p>
+      ) : current ? (
         <p className="bp-facts tnum">
           {current.tool} · {current.viewport.width}×{current.viewport.height} viewport ·{' '}
           {current.width}×{current.height} captured
