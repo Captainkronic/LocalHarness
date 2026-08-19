@@ -31,6 +31,21 @@ export function formatPercent(f: number | null | undefined, digits = 0): string 
   return `${(f * 100).toFixed(digits)}%`
 }
 
+/**
+ * A count of CHARACTERS, labelled as characters.
+ *
+ * Distinct from formatBytes on purpose. A model's tool-call arguments are a
+ * JavaScript string, so `.length` counts UTF-16 code units, and calling that
+ * "KB" is wrong for anything non-ASCII — it was being reported as KB, which
+ * overstates ASCII by 1024/1000 and understates multibyte text by half.
+ */
+export function formatChars(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—'
+  if (n < 1000) return `${Math.round(n)} chars`
+  if (n < 100_000) return `${(n / 1000).toFixed(1)}k chars`
+  return `${Math.round(n / 1000)}k chars`
+}
+
 export function formatBytes(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return '—'
   const units = ['B', 'KB', 'MB', 'GB']

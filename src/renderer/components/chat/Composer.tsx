@@ -16,6 +16,7 @@ import type { Attachment } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { formatPercent, formatTokens } from '@renderer/lib/format'
 import './chat.css'
+import { TurnStrip } from './TurnStrip'
 
 export interface ComposerProps {
   /** Optional controlled text, so a suggestion chip can prefill the box. */
@@ -258,20 +259,7 @@ export default function Composer({ value, onValueChange, focusSignal }: Composer
           )}
         </div>
 
-        <div className="composer-foot">
-          {activeModel === null ? (
-            <span className="composer-foot-nomodel">
-              No model loaded — pick one in Settings or load it on the Mac Studio.
-            </span>
-          ) : (
-            <span className="composer-foot-model" title={activeModel}>
-              {activeModel}
-            </span>
-          )}
-          <span className="composer-foot-hint">
-            <kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline
-          </span>
-        </div>
+        <TurnStrip activeModel={activeModel} userTyping={text.trim().length > 0} />
       </div>
     </div>
   )

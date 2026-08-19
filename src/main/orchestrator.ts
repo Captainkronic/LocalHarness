@@ -45,7 +45,6 @@ import { nativeWireTools, NATIVE_TOOLS } from './agent/tools'
 import { runSkillTool, skillTools } from './agent/skilltool'
 import { estimateTokens } from './mcp/tokens'
 
-/** Safety net against a model that calls tools forever. */
 /**
  * Slice of the window held back from the history.
  *
@@ -56,7 +55,37 @@ import { estimateTokens } from './mcp/tokens'
  */
 const CONTEXT_SAFETY_FRACTION = 0.05
 
-const MAX_ITERATIONS = 25
+/**
+ * How many model requests one turn may make before it stops and hands back.
+ *
+ * Was 25, which is far too few for the work this app is for, and it stopped
+ * SILENTLY — the loop simply fell out of the `for` with nothing after it. A
+ * measured example: "build a flight simulator and test it in the browser" ran
+ * three turns that each stopped dead at the cap, mid-debug, immediately after a
+ * tool result. Nothing in the transcript said so. The only reason that build
+ * made any progress at all is that the user happened to type "are you stuck?"
+ * twice, which started fresh turns that carried on from the history.
+ *
+ * A run that needs a hundred steps is not misbehaving — writing a file, opening
+ * it, reading a console error, fixing it, re-checking is five steps per bug, and
+ * a browser-tested build spends most of its steps looking rather than writing.
+ *
+ * This is not the only brake, which is why it can afford to be generous: the
+ * context budget trims history as it fills, the user has Stop, and reaching the
+ * cap now ends the turn with an explanation instead of a shrug.
+ *
+ * Raised again from 100 because continuing is not free. Every continuation
+ * re-sends the entire conversation — measured at 52k prompt tokens on the run
+ * that prompted this — so a cap that fires often converts into repeated
+ * prefills that buy nothing. The step budget is a runaway guard, and a runaway
+ * guard set below the length of ordinary work is just a tax on ordinary work.
+ *
+ * What 500 actually implies, since it is well past one context window: the
+ * history trimmer will be doing real work long before the count is reached, so
+ * a turn this long is one where the model has lost sight of its own opening
+ * moves. That is a property of any long turn, not a new risk introduced here.
+ */
+const MAX_ITERATIONS = 500
 
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
@@ -254,6 +283,37 @@ export class Orchestrator {
     }
     this.persist(conv, true)
 
+    return this.runAndReport(conv, model)
+  }
+
+  /**
+   * Carry on where a turn left off, with no new user message.
+   *
+   * The step cap ends a turn mid-task, and the obvious workaround — sending the
+   * word "continue" — puts a message in the transcript that the user did not
+   * write and the model then has to interpret. The history is already complete,
+   * so the loop can simply run again against it.
+   */
+  async continueTurn(
+    conversationId: string
+  ): Promise<{ ok: boolean; accepted: boolean; error?: string }> {
+    if (this.active) {
+      return { ok: false, accepted: false, error: 'A turn is already running in this window.' }
+    }
+    const conv = this.d.conversations.get(conversationId)
+    if (!conv) return { ok: false, accepted: false, error: 'Conversation not found.' }
+    const model = this.resolveModel(conv)
+    if (!model) {
+      return { ok: false, accepted: false, error: 'No model is loaded on the server.' }
+    }
+    this.log('info', 'turn', 'continuing past the step limit')
+    return this.runAndReport(conv, model)
+  }
+
+  private async runAndReport(
+    conv: Conversation,
+    model: ModelInfo
+  ): Promise<{ ok: boolean; accepted: boolean; error?: string }> {
     try {
       await this.runTurn(conv, model)
       return { ok: true, accepted: true }
@@ -264,6 +324,17 @@ export class Orchestrator {
       if (last?.role === 'assistant' && last.streaming) {
         last.streaming = false
         last.error = message
+        // Demote the calls that will now never run. Clearing `streaming` left a
+        // pending call rendering a pulsing "composing…" dot underneath an error
+        // saying the turn had stopped — the card and the message contradicting
+        // each other, with the animation the more believable of the two.
+        for (const call of last.toolCalls ?? []) {
+          if (call.status === 'pending' || call.status === 'running') {
+            call.status = 'error'
+            call.error = message
+            call.finishedAt = Date.now()
+          }
+        }
       } else {
         conv.messages.push({
           id: randomUUID(),
@@ -385,8 +456,16 @@ export class Orchestrator {
       tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
     )
 
+    /* Set when the loop ends because the model stopped calling tools, or was
+       cancelled. If it is still false after the loop, the turn was cut off by
+       MAX_ITERATIONS and the user has to be told — see below. */
+    let finishedOnItsOwn = false
+
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-      if (controller.signal.aborted) break
+      if (controller.signal.aborted) {
+        finishedOnItsOwn = true
+        break
+      }
 
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
         budget,
@@ -488,7 +567,11 @@ export class Orchestrator {
                 name: name ?? '',
                 arguments: '',
                 origin: 'native',
-                status: 'pending'
+                status: 'pending',
+                // Stamped here, not at execution: this backend names a call and
+                // then goes silent for as long as the arguments take to compose.
+                // This is the only honest clock for that stretch.
+                openedAt: Date.now()
               }
               pendingCalls.set(index, call)
             }
@@ -526,6 +609,16 @@ export class Orchestrator {
 
       if (reasoningTripped && !reasoningRetried) {
         reasoningRetried = true
+        // Take the abandoned message OUT, rather than blanking it and moving on.
+        //
+        // The retry pushes its own assistant message on the next iteration, so
+        // this one is superseded entirely — but it was left in the transcript
+        // with streaming:true, no body, no tool calls and no error. `streaming`
+        // is only stripped when a conversation is LOADED, so it survived every
+        // switch away and back, and rendered as an indicator that animated for
+        // the rest of the session above everything the retry produced.
+        const ghost = conv.messages.indexOf(assistant)
+        if (ghost !== -1) conv.messages.splice(ghost, 1)
         assistant.reasoning = undefined
         assistant.content = ''
         effort = 'none'
@@ -591,6 +684,7 @@ export class Orchestrator {
             'The model hit its output cap while still reasoning and produced no answer. Raise max tokens for this workflow, or ask something narrower.'
           this.persist(conv, true)
         }
+        finishedOnItsOwn = true
         break
       }
 
@@ -606,6 +700,42 @@ export class Orchestrator {
         await this.runToolCall(conv, call)
         this.persist(conv, true)
       }
+    }
+
+    /*
+     * Running out of steps is a thing that HAPPENED, not a thing to hide.
+     *
+     * The loop used to end here with nothing at all: no message, no log, no
+     * marker. A turn cut off mid-debug looked exactly like a turn that had
+     * finished, and the transcript's last entry was a tool result with no reply
+     * after it. Observed three times in one build, each time leaving the user to
+     * guess whether the app had hung.
+     *
+     * Said in the transcript rather than only in the log, because the log is not
+     * where anyone is looking, and phrased as what to do next: the history is
+     * intact, so anything at all will carry on from here.
+     *
+     * Lower-case and verb-first because the turn strip prefixes it — it renders
+     * as "The last turn stopped early — ran out of steps after 100 of them".
+     */
+    if (!finishedOnItsOwn) {
+      const steps = MAX_ITERATIONS
+      conv.messages.push({
+        id: randomUUID(),
+        role: 'assistant',
+        content: '',
+        // A typed marker, not a phrase to match on: the renderer offers to carry
+        // on from this and must not start doing so because some other error
+        // happened to contain the same words.
+        stoppedAtCap: true,
+        error:
+          `ran out of steps after ${steps} of them. This is the harness's limit for a single ` +
+          `turn, not the model giving up — everything it did is above and the work is saved. ` +
+          `Send anything to carry on from here.`,
+        createdAt: Date.now()
+      })
+      this.log('warn', 'turn', `hit the ${steps}-step limit without finishing`)
+      this.persist(conv, true)
     }
   }
 
@@ -911,8 +1041,22 @@ export class Orchestrator {
     clearInterval(this.active.metricTimer)
     this.active.meter.reset()
     this.d.emit('event:liveMetrics', this.active.meter.snapshot())
+    const conversationId = this.active.conversationId
     this.active = null
     this.d.models.setActive(false)
+    // Context usage is otherwise only recomputed at the TOP of a turn, so the
+    // moment a turn finished the figure still excluded the reply that had just
+    // landed — thousands of tokens short after a step that writes a file. That
+    // number is read most carefully in the pause before sending the next
+    // message, which was exactly when it was wrong.
+    try {
+      this.d.emit('event:contextUsage', {
+        conversationId,
+        usage: this.contextUsage(conversationId)
+      })
+    } catch {
+      /* A conversation deleted mid-turn has no usage to report. */
+    }
   }
 
   private log(level: 'info' | 'warn' | 'error', scope: string, message: string): void {

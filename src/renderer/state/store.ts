@@ -119,6 +119,8 @@ export interface AppState {
    */
   send(text: string, attachments?: Attachment[]): Promise<SendOutcome>
   cancel(): void
+  /** Run another turn against the existing history, with no new user message. */
+  continueTurn(): Promise<void>
   selectWorkflow(id: WorkflowId): Promise<void>
   selectConversation(id: string): Promise<void>
   newConversation(): Promise<void>
@@ -590,6 +592,13 @@ export const useStore = create<AppState>()((set, get) => {
       const id = get().activeConversationId
       if (!id) return
       void call('chat', 'chat:cancel', id)
+    },
+
+    continueTurn: async () => {
+      const id = get().activeConversationId
+      if (!id) return
+      const res = await call('chat', 'chat:continue', id)
+      if (res && !res.ok && res.error) pushLog('error', 'chat', res.error)
     },
 
     selectWorkflow: async (id) => {

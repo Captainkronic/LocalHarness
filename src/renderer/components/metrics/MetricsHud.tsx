@@ -9,14 +9,8 @@ import PayloadBudget from './PayloadBudget'
 import PrefillBar from './PrefillBar'
 import SpeedGauge from './SpeedGauge'
 import './metrics.css'
+import { PHASE_TIP } from '@renderer/lib/phases'
 
-const PHASE_TIP: Record<InferencePhase, string> = {
-  idle: 'Nothing in flight.',
-  queued: 'Request sent. The server has not begun answering it yet.',
-  prefill: 'The model is reading the prompt. No tokens are produced during this phase, and the protocol reports no progress through it.',
-  decode: 'The model is generating tokens.',
-  tool: 'A tool call is running. The wait here is the tool, not the GPU.'
-}
 
 /**
  * The always-visible instrument strip.

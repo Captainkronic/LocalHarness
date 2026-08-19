@@ -92,6 +92,9 @@ export interface IpcApi {
     req: SendMessageRequest
   ) => Promise<{ ok: boolean; accepted: boolean; error?: string }>
   'chat:cancel': (conversationId: string) => Promise<void>
+  'chat:continue': (
+    conversationId: string
+  ) => Promise<{ ok: boolean; accepted: boolean; error?: string }>
   'chat:contextUsage': (conversationId: string) => Promise<ContextUsage>
   'chat:attachFiles': () => Promise<import('./types').Attachment[]>
 
@@ -288,6 +291,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conv:setWorkflow',
   'chat:send',
   'chat:cancel',
+  'chat:continue',
   'chat:contextUsage',
   'chat:attachFiles',
   'mcp:listSpecs',

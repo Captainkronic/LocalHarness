@@ -327,6 +327,16 @@ export interface ToolCall {
   /** Non-text results (images, audio, files) the tool produced. */
   artifacts?: Artifact[]
   error?: string
+  /**
+   * When the model first named this call — not when it started running.
+   *
+   * `startedAt` is stamped at execution, which on this backend can be minutes
+   * after the call appears: LM Studio buffers a tool call's arguments and sends
+   * them in one piece when they are finished, so a file-sized argument shows a
+   * named call and then nothing at all. Without this there is no honest way to
+   * say how long the model has been composing.
+   */
+  openedAt?: number
   startedAt?: number
   finishedAt?: number
 }
@@ -370,6 +380,12 @@ export interface ChatMessage {
   metrics?: TurnMetrics
   /** True while tokens are still arriving. */
   streaming?: boolean
+  /**
+   * The turn ended because it used up its step budget, not because the model
+   * was done. Set only by the orchestrator's cap exit; the UI offers to carry
+   * on from it, so it must never be inferred from the error text.
+   */
+  stoppedAtCap?: boolean
   error?: string
 }
 

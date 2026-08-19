@@ -19,41 +19,6 @@ export interface MessageProps {
   toolResults?: ReadonlyMap<string, string>
 }
 
-/**
- * What the app is doing before a single token has arrived.
- *
- * Prefill is the longest phase of an agentic turn on this hardware — twenty to
- * twenty-five seconds between tool calls while the model re-reads the whole
- * conversation — and it used to show a blinking cursor, which is
- * indistinguishable from a hang. The numbers were all already being measured.
- *
- * The estimate is labelled as one. It comes from a fitted rate, so it is
- * genuinely a projection, and this app does not print projections bare.
- */
-function Working() {
-  const phase = useStore((st) => st.live.phase)
-  const promptTokens = useStore((st) => st.live.promptTokens)
-  const etaMs = useStore((st) => st.live.prefillEtaMs)
-
-  // 'queued' is the window between the request going out and the first
-  // token landing — i.e. prefill, which is the silence being fixed.
-  const reading = phase === 'queued'
-  return (
-    <span className="working" role="status">
-      <span className="working-dot" aria-hidden="true" />
-      <span className="working-dot" aria-hidden="true" />
-      <span className="working-dot" aria-hidden="true" />
-      <span className="working-text">
-        {reading && promptTokens > 0
-          ? `Reading ${formatTokens(promptTokens)} tokens of context`
-          : 'Working'}
-        {reading && typeof etaMs === 'number' && etaMs > 1500
-          ? ` — about ${formatMs(etaMs)} left, estimated`
-          : ''}
-      </span>
-    </span>
-  )
-}
 
 export default function Message({ message, toolResults }: MessageProps) {
   // System prompts are not part of the conversation the user reads, and tool
@@ -125,12 +90,6 @@ function AssistantMessage({
           <Markdown text={message.content} />
           {message.streaming ? <span className="caret" aria-hidden="true" /> : null}
         </div>
-      ) : message.streaming && toolCalls.length === 0 ? (
-        // A bare blinking caret for the twenty-plus seconds of prefill is the
-        // longest silence in the app and says nothing at all. Everything here
-        // is already measured — the phase, how much is being read, and the
-        // estimate — it just was never asked for.
-        <Working />
       ) : null}
 
       {toolCalls.length > 0 ? (

@@ -157,6 +157,7 @@ export function registerIpc(d: IpcDeps): void {
 
     /* ---- chat ---- */
     'chat:send': (req) => d.orchestrator.send(req),
+    'chat:continue': (id) => d.orchestrator.continueTurn(id),
     'chat:cancel': (conversationId: string) => {
       d.orchestrator.cancel(conversationId)
     },

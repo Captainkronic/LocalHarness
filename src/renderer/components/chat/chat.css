@@ -910,6 +910,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--s2);
+  /* Lets .turn-strip drop its keyboard hint when the Code workflow's
+     narrower column would otherwise truncate the status sentence — and the
+     tail of that sentence is where the honesty qualifiers live. */
+  container-type: inline-size;
+  container-name: composer;
 }
 
 .composer-warn {
@@ -1062,28 +1067,104 @@
   background: color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
-.composer-foot {
+/* ------------------------------------------------------------------ */
+/* Turn strip — what is happening, under the composer                  */
+/*                                                                     */
+/* Replaces .composer-foot and the .working dots. Every value is an     */
+/* existing theme token; nothing new is invented here.                  */
+/* ------------------------------------------------------------------ */
+
+.turn-strip {
   display: flex;
   align-items: center;
-  gap: var(--s3);
-  font-size: var(--fs-micro);
-  color: var(--fg-faint);
+  gap: var(--s2);
+  min-height: 18px;
+  font-size: var(--fs-tiny);
 }
 
-.composer-foot-model {
-  font-family: var(--font-mono);
+.ts-ring {
+  flex: none;
+  /* Start the arc at twelve o'clock rather than three. */
+  transform: rotate(-90deg);
+}
+
+.ts-ring circle {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+
+.ts-track {
+  stroke: var(--bg-active);
+}
+
+/* Unknown window size: dashed and dim. Never a full ring and never an
+   empty one — both would state a fact we do not have. */
+.ts-track.is-unknown {
+  stroke: var(--fg-faint);
+  stroke-dasharray: 2 3;
+  opacity: 0.6;
+}
+
+.ts-arc {
+  stroke: var(--meter);
+  transition: stroke-dasharray 240ms var(--ease);
+}
+
+.ts-status {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-foot-nomodel {
+/* Idle reads exactly as the old .composer-foot-model did. */
+.ts-status.is-idle {
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+}
+
+.ts-status.is-live {
+  color: var(--fg-muted);
+}
+
+.ts-status.is-warn {
   color: var(--warn);
 }
 
-.composer-foot-hint {
-  margin-left: auto;
+.ts-status.is-error {
+  color: var(--danger);
+}
+
+/* Deliberately not amber. A gap in telemetry is an observation, not an
+   alarm, and colouring it as one invents a severity we cannot support. */
+.ts-stale {
+  color: var(--fg-dim);
+}
+
+.ts-clock {
   flex: none;
+  min-width: 56px;
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+.ts-hint {
+  flex: none;
+  color: var(--fg-faint);
+}
+
+@container composer (max-width: 460px) {
+  .ts-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-arc {
+    transition: none;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1460,64 +1541,21 @@
   }
 }
 
-/* --- working, before the first token --- */
-
-/*
- * Prefill is the longest silence in an agentic turn — twenty-plus seconds
- * between tool calls while the model re-reads the conversation — and it used
- * to be a blinking caret, which looks the same as a hang.
- *
- * The dots move because something is genuinely happening; the text says WHAT,
- * which is also the cheapest lesson in the app about where the time goes.
- */
-.working {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  color: var(--fg-dim);
-  font-size: var(--fs-small);
+/* The one control in the strip: stop a turn from carrying on by itself.
+   Sized and coloured as text rather than a button, because it sits in a
+   status line and a real button there would read as the primary action. */
+.ts-hold {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--warn);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
-/* Wraps, because "Reading 15.3k tokens of context — about 24s left, estimated"
-   is longer than a narrow chat column. */
-.working-text {
-  min-width: 0;
-}
-
-.working-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--r-full);
-  background: var(--accent);
-  animation: working-bounce 1.2s ease-in-out infinite;
-}
-
-.working-dot:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.working-dot:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes working-bounce {
-  0%,
-  70%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  35% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
-}
-
-/* Reduced motion keeps the text, which is the part carrying the information,
-   and drops the movement that was only ever reassurance. */
-@media (prefers-reduced-motion: reduce) {
-  .working-dot {
-    animation: none;
-    opacity: 0.8;
-  }
+.ts-hold:hover {
+  color: var(--fg);
 }

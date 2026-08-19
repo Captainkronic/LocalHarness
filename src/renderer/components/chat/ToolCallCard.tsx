@@ -3,9 +3,9 @@
  * full arguments, result and artifacts.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useReducer, useState } from 'react'
 import type { Artifact, ToolCall } from '@shared/types'
-import { basename, formatBytes, formatMs } from '@renderer/lib/format'
+import { basename, formatChars, formatMs } from '@renderer/lib/format'
 import './chat.css'
 
 export interface ToolCallCardProps {
@@ -68,6 +68,7 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
           status={call.status}
           duration={duration}
           writtenChars={call.arguments.length}
+          openedAt={call.openedAt}
           progressFraction={call.progressFraction}
           progressMessage={call.progressMessage}
         />
@@ -116,12 +117,36 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
   )
 }
 
+/**
+ * A 1Hz tick, only while a call is composing.
+ *
+ * The card re-renders when main pushes an update, and while this backend
+ * composes a tool call main has nothing to push — which is precisely the
+ * stretch the clock is there to measure. Without its own tick the duration
+ * would freeze at whatever it read when the call was named, and a frozen
+ * clock that looks live is the failure this whole change is about.
+ */
+function useTick(active: boolean): void {
+  const [, tick] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [active])
+}
+
+const PENDING_TIP =
+  'This server sends a tool call\u2019s arguments in one piece rather than streaming them, so ' +
+  'there is nothing to show until the whole call lands. On a file-sized argument that is minutes ' +
+  'of apparent silence.'
+
 /* ------------------------------------------------------------------ */
 
 function StatusBadge({
   status,
   duration,
   writtenChars,
+  openedAt,
   progressFraction,
   progressMessage
 }: {
@@ -131,11 +156,16 @@ function StatusBadge({
    *  the call. A write_file argument can be a whole file, so this is the only
    *  progress there is during the longest generation the app does. */
   writtenChars: number
+  /** When the model first named the call — the only clock that moves while it
+   *  composes arguments this backend does not stream. */
+  openedAt?: number
   /** Live render progress, 0..1, when the server reports a real total. */
   progressFraction?: number | null
   /** The server's own phrase for what it is doing right now. */
   progressMessage?: string
 }) {
+  useTick(status === 'pending' && writtenChars === 0)
+
   switch (status) {
     case 'awaiting_approval':
       return (
@@ -176,11 +206,20 @@ function StatusBadge({
       )
     case 'pending':
       // "queued" was a lie: the model is writing this call RIGHT NOW, and for a
-      // file-sized argument that is tens of seconds of apparent nothing.
+      // file-sized argument that is minutes of apparent nothing.
+      //
+      // The byte counter alone was structurally sizeless on this backend — the
+      // arguments arrive in one piece, so `writtenChars` goes from 0 to the
+      // whole file at the same instant the call stops being pending. A clock is
+      // the only thing that actually moves during the wait.
       return (
-        <span className="tool-state">
+        <span className="tool-state" title={PENDING_TIP}>
           <span className="dot dot-busy" />
-          {writtenChars > 0 ? `writing… ${formatBytes(writtenChars)}` : 'writing…'}
+          {writtenChars > 0
+            ? `composing… ${formatChars(writtenChars)}`
+            : openedAt !== undefined
+              ? `composing… ${formatMs(Date.now() - openedAt)}`
+              : 'composing…'}
         </span>
       )
     case 'error':
