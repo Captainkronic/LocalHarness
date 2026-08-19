@@ -86,12 +86,52 @@ while :; do
 done
 
 # The send BUTTON, not Return. A synthetic Return never reaches this app's
-# handler however the selection is arranged. The button is not at the window's
-# right edge either: the Workspace panel takes the last ~300px, putting send at
-# about 73% across. Recomputed here because the retry loop above may have run
-# after the window moved.
-SEND_X=$(( X + (W * 73 / 100) ))
-cliclick "kp:arrow-right"
-sleep 0.3
-cliclick "c:${SEND_X},${CY}"
-echo "sent (button ${SEND_X},${CY})"
+# handler however the selection is arranged.
+#
+# Its X is not a fixed fraction of the window. The Workspace panel is resizable,
+# and a run that assumed 73% clicked into empty space beside the button: the
+# prompt sat in the composer, unsent, and the script reported success. So try
+# candidate positions from the panel edge inward and CONFIRM the composer
+# emptied — an unsent prompt must be a failure, not a silent no-op.
+CY=$(( Y + H - 62 ))
+sent=""
+# NEVER click the same spot twice. Send and Stop are the SAME control: it turns
+# into Stop the instant the turn starts. A "click twice in case the first was
+# swallowed" pass sent the prompt and then aborted it 1s later, and the turn
+# died as "the model returned an empty reply (finish reason: aborted)".
+#
+# The first click after activation IS swallowed focusing the window, so absorb
+# that with a harmless click on the transcript first, then click send once.
+#
+# Step finely: the button is ~26pt wide, so 5% strides in a 1440pt window jump
+# 72pt and straddle it. A first pass missed at 60% and 65% with it at 63.3%.
+cliclick "c:$(( X + W / 2 )),$(( Y + H / 3 ))"
+sleep 0.5
+for pct in 63 64 62 65 61 66 60 67; do
+  SEND_X=$(( X + (W * pct / 100) ))
+  cliclick "c:${SEND_X},${CY}"
+  sleep 2
+  # Read the composer back. Empty means it went.
+  cliclick "c:$(( X + W / 3 )),${CY}"
+  sleep 0.3
+  # Clear the clipboard FIRST. Copying an empty selection is a no-op that
+  # leaves the previous contents in place — and the previous contents are the
+  # prompt, so a successful send would read back as a failed one.
+  printf 'SENTINEL' | pbcopy
+  cliclick "kd:cmd" "t:a" "ku:cmd"
+  sleep 0.2
+  cliclick "kd:cmd" "t:c" "ku:cmd"
+  sleep 0.4
+  LEFT="$(pbpaste)"
+  [ "$LEFT" = "SENTINEL" ] && LEFT=""
+  if [ "${#LEFT}" -lt 10 ]; then
+    sent="$pct"
+    break
+  fi
+done
+
+if [ -z "$sent" ]; then
+  echo "REFUSED: typed the prompt but could not find the send button — nothing was sent" >&2
+  exit 4
+fi
+echo "sent (button at ${pct}% of window width)"
