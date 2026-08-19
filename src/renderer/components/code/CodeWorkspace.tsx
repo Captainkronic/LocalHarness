@@ -29,13 +29,14 @@ import { useStore } from '@renderer/state/store'
 import { basename } from '@renderer/lib/format'
 import ChatView from '@renderer/components/chat/ChatView'
 import WatchPane from './WatchPane'
+import BrowserPane from './BrowserPane'
 import './code.css'
 import './ticker.css'
 
 const MODE_KEY = 'captainllama.code.mode'
 
 /** LH_CODE_MODE lets the screenshot driver photograph either half. */
-function readStoredMode(): 'chat' | 'watch' {
+function readStoredMode(): 'chat' | 'watch' | 'browser' {
   const forced = document.documentElement.dataset.codeMode
   if (forced === 'watch' || forced === 'chat') return forced
   try {
@@ -67,6 +68,7 @@ export interface Tab {
 
 export function CodeWorkspace(): JSX.Element {
   const activityAll = useStore((s) => s.fileActivity)
+  const conversation = useStore((s) => s.conversation)
   const conversationId = useStore((s) => s.activeConversationId)
   const phase = useStore((s) => s.live.phase)
   const roots = useStore((s) => s.settings.workspaceRoots)
@@ -80,7 +82,7 @@ export function CodeWorkspace(): JSX.Element {
    * starts; the first file activity flips to Watch once, and after that the
    * choice is the user's.
    */
-  const [mode, setMode] = useState<'chat' | 'watch'>(() => readStoredMode())
+  const [mode, setMode] = useState<'chat' | 'watch' | 'browser'>(() => readStoredMode())
 
   // Remember which half you were last in. Being dropped back into Chat every
   // launch is the sort of small forgetfulness that makes a tool feel careless.
@@ -196,6 +198,53 @@ export function CodeWorkspace(): JSX.Element {
     setAutoPath(jump?.target ?? tabs[0]?.path ?? null)
   }
 
+  /* Frames the model was shown this conversation. Counted here rather than in
+     BrowserPane so the tab can carry the number without mounting the pane. */
+  const frameCount = useMemo(() => {
+    let n = 0
+    for (const m of conversation?.messages ?? []) {
+      for (const call of m.toolCalls ?? []) {
+        const sc = call.structured as { screenshot?: unknown } | undefined
+        if (call.status === 'ok' && sc && typeof sc.screenshot === 'string') n += 1
+      }
+    }
+    return n
+  }, [conversation])
+
+  /**
+   * Flip to Browser the first time the model looks at a page, once.
+   *
+   * The same bargain the Watch tab makes: the moment something appears that you
+   * cannot see anywhere else is worth one interruption, and after that the
+   * choice is yours. Without it the frames sit behind a tab nobody knows to
+   * press, which is the same as not having built this.
+   */
+  const flipped = useRef(false)
+  useEffect(() => {
+    if (frameCount > 0 && !flipped.current) {
+      flipped.current = true
+      setMode('browser')
+    }
+  }, [frameCount])
+
+  if (mode === 'browser') {
+    return (
+      <div className="cw cw-chat">
+        <ModeBar
+          mode={mode}
+          onMode={setMode}
+          files={tabs.length}
+          frames={frameCount}
+          added={totals.added}
+          removed={totals.removed}
+        />
+        <div className="cw-chat-body">
+          <BrowserPane />
+        </div>
+      </div>
+    )
+  }
+
   if (mode === 'chat') {
     return (
       <div className="cw cw-chat">
@@ -203,6 +252,7 @@ export function CodeWorkspace(): JSX.Element {
           mode={mode}
           onMode={setMode}
           files={tabs.length}
+          frames={frameCount}
           added={totals.added}
           removed={totals.removed}
         />
@@ -219,6 +269,7 @@ export function CodeWorkspace(): JSX.Element {
         mode={mode}
         onMode={setMode}
         files={tabs.length}
+        frames={frameCount}
         added={totals.added}
         removed={totals.removed}
       />
@@ -289,13 +340,14 @@ function AutoApprove(): JSX.Element {
 /** Chat is where you talk to the agent; Watch is where you see what it did.
  *  Always visible, so neither half of the workflow can be lost. */
 function ModeBar(props: {
-  mode: 'chat' | 'watch'
-  onMode: (m: 'chat' | 'watch') => void
+  mode: 'chat' | 'watch' | 'browser'
+  onMode: (m: 'chat' | 'watch' | 'browser') => void
   files: number
+  frames: number
   added: number
   removed: number
 }): JSX.Element {
-  const { mode, onMode, files, added, removed } = props
+  const { mode, onMode, files, frames, added, removed } = props
   return (
     <div className="cw-modebar">
       <div className="cw-segmented" role="tablist" aria-label="Code view">
@@ -318,6 +370,21 @@ function ModeBar(props: {
           Watch
           {files > 0 ? <span className="cw-seg-badge tnum">{files}</span> : null}
         </button>
+        {/* Only once there is something to see. An empty tab that never lights
+            up is furniture. */}
+        {frames > 0 ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'browser'}
+            className={mode === 'browser' ? 'cw-seg is-on' : 'cw-seg'}
+            onClick={() => onMode('browser')}
+            title="The frames the model was shown by the browser tools"
+          >
+            Browser
+            <span className="cw-seg-badge tnum">{frames}</span>
+          </button>
+        ) : null}
       </div>
       <AutoApprove />
       {files > 0 ? (

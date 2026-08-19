@@ -1,0 +1,40 @@
+{
+  "id": "cb9bf1fd-49b4-490d-9b01-bcc71b79a146",
+  "title": "Build me a playable Space Invaders game as a sin",
+  "workflowId": "code",
+  "messages": [
+    {
+      "id": "499da10b-f822-4309-912b-92d7101122e0",
+      "role": "user",
+      "content": "Build me a playable Space Invaders game as a single self-contained HTML file called invaders.html in the workspace.",
+      "createdAt": 1787146779539
+    },
+    {
+      "id": "6fb7938c-956b-475f-8eca-88b15eb8eb99",
+      "role": "assistant",
+      "content": "",
+      "createdAt": 1787146779557,
+      "streaming": true
+    },
+    {
+      "id": "f9a8b373-a289-49de-9379-71f76c57403f",
+      "role": "assistant",
+      "content": "",
+      "createdAt": 1787146969977,
+      "streaming": false,
+      "toolCalls": [
+        {
+          "id": "332290366",
+          "name": "write_file",
+          "arguments": "",
+          "origin": "native",
+          "status": "pending"
+        }
+      ],
+      "error": "terminated"
+    }
+  ],
+  "modelId": "qwen/qwen3.8-27b",
+  "createdAt": 1787146779536,
+  "updatedAt": 1787147110731
+}

@@ -1,0 +1,5 @@
+[09:14:28] === snake ===
+43:88: execution error: Not authorized to send Apple events to System Events. (-1743)
+43:88: execution error: Not authorized to send Apple events to System Events. (-1743)
+REFUSED: CaptainLlama is not frontmost (it is ) — not clicking blind
+[09:14:35] SEND FAILED

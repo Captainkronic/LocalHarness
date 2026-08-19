@@ -537,7 +537,17 @@ and if it is not true, do not say it.`,
     blurb: 'An engineer with your codebase open. Reads, writes and runs things itself.',
     firstMove:
       'Add a workspace folder, then describe the change you want. Nothing outside that folder can be touched.',
-    skills: ['frontend-design', 'web-game-dev'],
+    /**
+     * None. The web-dev skills were removed from every harness deliberately:
+     * measured on qwen3.8, web-game-dev handed it full SRS kick tables and lock
+     * delay before any code existed and it worked through them instead of
+     * writing the game — twenty-five minutes, nothing on disk. Code performs
+     * better with no skill at all than with a good reference offered too early.
+     *
+     * Naming a skill that is not installed is harmless at runtime but silently
+     * misleading in a definition, so the list is empty rather than aspirational.
+     */
+    skills: [],
     glyph: '⌘',
     accent: '#5b9dd9',
     mcpServers: ['websearch'],

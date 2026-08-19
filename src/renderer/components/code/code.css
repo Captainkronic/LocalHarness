@@ -953,3 +953,150 @@
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
   background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
+
+/* ------------------------------------------------------------------ */
+/* Browser — what the model was shown                                  */
+/* ------------------------------------------------------------------ */
+
+.bp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  height: 100%;
+  min-height: 0;
+  padding: var(--s3);
+  overflow-y: auto;
+}
+
+.bp-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex: none;
+}
+
+.bp-title {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.bp-url {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The frame is the point of this pane, so it gets the room. Checkerboard
+   behind it because a screenshot of a white page on a white panel has no edge,
+   and knowing where the capture stops is half of reading it. */
+.bp-stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--s2);
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background:
+    repeating-conic-gradient(var(--bg-input) 0% 25%, var(--bg-void) 0% 50%) 50% / 16px 16px;
+}
+
+.bp-shot {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-sm);
+  box-shadow: 0 2px 14px rgb(0 0 0 / 0.35);
+}
+
+.bp-gone {
+  margin: var(--s4) 0;
+  font-size: var(--fs-small);
+  color: var(--fg-faint);
+}
+
+.bp-facts {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* The model's reading, next to the thing it read. Bordered rather than plain so
+   it is clearly a claim ABOUT the image above, not a caption on it. */
+.bp-vision {
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--accent-line);
+  background: var(--accent-soft);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.bp-vision p {
+  margin: 0;
+}
+
+.bp-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin: 0 0 var(--s1);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.bp-model {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg-faint);
+}
+
+/* ---- the filmstrip ---- */
+
+.bp-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  flex: none;
+}
+
+.bp-frame {
+  min-width: 24px;
+  padding: 2px var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-input);
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.bp-frame.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bp-follow {
+  margin-left: var(--s2);
+  padding: 2px var(--s2);
+  border: 0;
+  background: none;
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.bp-follow:hover {
+  color: var(--accent);
+}

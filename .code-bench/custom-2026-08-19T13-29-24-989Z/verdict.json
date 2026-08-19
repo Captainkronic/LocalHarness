@@ -1,0 +1,55 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "emptyTurns": 0,
+    "wallClockMs": 346864,
+    "assistantTurns": 5,
+    "reasoningChars": 4687,
+    "contentChars": 1423,
+    "toolCalls": 6,
+    "toolErrors": 0,
+    "fileWritten": true,
+    "fileBytes": 10851,
+    "missingMarkers": [],
+    "shapesFound": 0,
+    "shapesExpected": 0
+  },
+  "toolCalls": [
+    {
+      "name": "list_dir",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\".\"}"
+    },
+    {
+      "name": "glob",
+      "status": "ok",
+      "error": null,
+      "args": "{\"pattern\":\"breakout.html\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"breakout.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"en\\\">\\n<head>\\n<meta charset=\\\"UTF-8\\\">\\n<meta name=\\\"viewport\\\" content=\\\"width=device-width, "
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"breakout.html\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/g-breakout && node -e \\\"const fs=require('fs');const h=fs.readFileSync('breakout.html','utf8');const m=h.matc"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"breakout.html\",\"old_string\":\"    } else if (state === STATE.READY) {\\n      movePaddle(dt);\\n    }\",\"new_string\":\"    } else if (state === STATE.READY)"
+    }
+  ]
+}

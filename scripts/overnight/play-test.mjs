@@ -130,6 +130,11 @@ async function shot(label) {
 ws.onclose = () => { socketDead = true }
 await send('Runtime.enable')
 await send('Page.enable')
+/* Headless Chrome will accept Input.dispatchKeyEvent and deliver it nowhere if
+ * the target is not the front page. That is not an error — the call returns
+ * fine — so every control reads as broken and the game takes the blame. The
+ * keydown counter proved it: zero keys arrived across a whole run. */
+await send('Page.bringToFront')
 await sleep(1500)
 
 let stalls = 0
@@ -163,20 +168,36 @@ const CANVAS_SIG = `(() => {
 
 const TEXT = `document.body.innerText.replace(/\\s+/g,' ').slice(0,400)`
 
+/**
+ * Press a key, from inside the page.
+ *
+ * Input.dispatchKeyEvent was the obvious tool and never delivered a single
+ * event: the keydown counter read zero across whole runs while every dispatch
+ * returned ok, through both `keyDown` and `rawKeyDown`, with and without
+ * Page.bringToFront. Rather than keep guessing at the CDP input domain, this
+ * dispatches a real KeyboardEvent on the document.
+ *
+ * The honest limitation: this exercises the game's key HANDLERS, not the
+ * browser's input path. A game that listens on the wrong element, or is broken
+ * only under real focus, would still pass. What it does catch is the failure
+ * this gate exists for — a control wired to nothing.
+ */
 async function key(code, keyName, times = 1) {
   for (let i = 0; i < times; i++) {
-    for (const type of ['keyDown', 'keyUp']) {
-      await send('Input.dispatchKeyEvent', {
-        type,
-        windowsVirtualKeyCode: code,
-        nativeVirtualKeyCode: code,
-        key: keyName,
-        code: keyName
-      })
-    }
-    await sleep(160)
+    await evaluate(`(() => {
+      const opts = { key: ${JSON.stringify(keyName)}, code: ${JSON.stringify(
+        keyName === ' ' ? 'Space' : keyName
+      )}, keyCode: ${code}, which: ${code}, bubbles: true, cancelable: true }
+      for (const t of ['keydown', 'keyup']) {
+        const e = new KeyboardEvent(t, opts)
+        document.dispatchEvent(e)
+        window.dispatchEvent(new KeyboardEvent(t, opts))
+      }
+      return 1
+    })()`)
+    await sleep(150)
   }
-  await sleep(500)
+  await sleep(400)
 }
 
 const results = []
@@ -189,6 +210,30 @@ console.log(`\n\x1b[1mplay test\x1b[0m  ${FILE.split('/').pop()}\n`)
 
 const hasCanvas = (await evaluate(`document.querySelectorAll('canvas').length`)) > 0
 check('renders a canvas', hasCanvas)
+
+/* A keydown counter in the page.
+ *
+ * Without it there is no way to tell "this control does nothing" from "the key
+ * never arrived", and I spent three rounds guessing between them. Now the test
+ * can say which, and a synthetic-input problem stops being reported as a broken
+ * game. */
+await evaluate(`window.__keys=[];addEventListener('keydown',e=>window.__keys.push(e.key),true);1`)
+
+/* Most games open on a title card and wait. Testing "does it animate on its
+ * own" before pressing anything reports every one of them as frozen — which is
+ * exactly what happened to a Snake that was working perfectly. */
+const startText = await evaluate(TEXT)
+const needsStart = /press|start|click|space|enter|any key/i.test(startText)
+if (needsStart) {
+  await key(32, 'Space', 1)
+  await key(39, 'ArrowRight', 1)
+  await sleep(700)
+}
+check(
+  'starts on its own or on a keypress',
+  true,
+  needsStart ? 'waited for input, as its title card asks' : 'auto-started'
+)
 
 await shot('start')
 const a = await evaluate(CANVAS_SIG)
@@ -239,6 +284,12 @@ check(
   late !== later ? '' : over ? 'reached game over' : 'canvas stopped changing'
 )
 
+const gotKeys = await evaluate(`(window.__keys||[]).length`, 0)
+check(
+  'key events actually reached the page',
+  Number(gotKeys) > 0,
+  `page saw ${gotKeys} keydowns — if 0, the input failures above are the harness, not the game`
+)
 check('no javascript errors', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | ').slice(0, 120))
 check('page stayed responsive', stalls === 0 && !socketDead,
   socketDead ? 'the devtools socket closed mid-test' : stalls ? `${stalls} calls timed out` : '')

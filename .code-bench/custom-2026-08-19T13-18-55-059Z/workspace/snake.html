@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snake</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #eee;
+  }
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    color: #4ecca3;
+  }
+  .score-bar {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+  }
+  .score-bar span { color: #4ecca3; font-weight: bold; }
+  canvas {
+    border: 3px solid #4ecca3;
+    border-radius: 4px;
+    background: #16213e;
+  }
+  .msg {
+    margin-top: 12px;
+    font-size: 0.95rem;
+    color: #888;
+    min-height: 1.4em;
+  }
+</style>
+</head>
+<body>
+<h1>SNAKE</h1>
+<div class="score-bar">
+  Score: <span id="score">0</span>
+  Best: <span id="best">0</span>
+</div>
+<canvas id="game" width="400" height="400"></canvas>
+<div class="msg" id="msg">Press an arrow key to start</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const msgEl = document.getElementById('msg');
+
+const COLS = 20, ROWS = 20;
+const CELL = canvas.width / COLS;
+const BASE_SPEED = 150; // ms per tick
+const MIN_SPEED = 60;
+
+let snake, dir, nextDir, food, score, best = 0, speed, running, gameOver;
+
+function reset() {
+  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+  dir = { x: 1, y: 0 };
+  nextDir = { x: 1, y: 0 };
+  score = 0;
+  speed = BASE_SPEED;
+  running = false;
+  gameOver = false;
+  scoreEl.textContent = score;
+  msgEl.textContent = 'Press an arrow key to start';
+  placeFood();
+  draw();
+}
+
+function placeFood() {
+  do {
+    food = {
+      x: Math.floor(Math.random() * COLS),
+      y: Math.floor(Math.random() * ROWS)
+    };
+  } while (snake.some(s => s.x === food.x && s.y === food.y));
+}
+
+function tick() {
+  dir = nextDir;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  const eating = head.x === food.x && head.y === food.y;
+
+  // wall or self collision (tail cell is safe unless we grow into it)
+  const body = eating ? snake : snake.slice(0, -1);
+  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS ||
+      body.some(s => s.x === head.x && s.y === head.y)) {
+    endGame();
+    return;
+  }
+
+  snake.unshift(head);
+
+  if (eating) {
+    score++;
+    scoreEl.textContent = score;
+    if (score > best) { best = score; bestEl.textContent = best; }
+    speed = Math.max(MIN_SPEED, BASE_SPEED - score * 3);
+    placeFood();
+  } else {
+    snake.pop();
+  }
+
+  draw();
+}
+
+function endGame() {
+  gameOver = true;
+  running = false;
+  msgEl.textContent = 'Game over — press Space to restart';
+  draw();
+  // flash the board red, after the clear
+  ctx.fillStyle = 'rgba(231, 76, 60, 0.35)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function draw() {
+  ctx.fillStyle = '#16213e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // food
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillRect(food.x * CELL + 2, food.y * CELL + 2, CELL - 4, CELL - 4);
+
+  // snake
+  snake.forEach((seg, i) => {
+    const t = i / snake.length;
+    ctx.fillStyle = i === 0 ? '#4ecca3' : `rgba(78, 204, 163, ${1 - t * 0.5})`;
+    ctx.fillRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2);
+  });
+}
+
+let lastTick = 0;
+function loop(ts) {
+  if (running && ts - lastTick >= speed) {
+    lastTick = ts;
+    tick();
+  }
+  requestAnimationFrame(loop);
+}
+
+document.addEventListener('keydown', e => {
+  const keys = {
+    ArrowUp:    { x: 0, y: -1 },
+    ArrowDown:  { x: 0, y: 1 },
+    ArrowLeft:  { x: -1, y: 0 },
+    ArrowRight: { x: 1, y: 0 },
+  };
+
+  if (e.key === ' ' && gameOver) {
+    reset();
+    return;
+  }
+
+  const d = keys[e.key];
+  if (!d) return;
+  e.preventDefault();
+
+  // ignore 180-degree turns
+  if (d.x === -dir.x && d.y === -dir.y) return;
+
+  nextDir = d;
+  if (!running && !gameOver) {
+    running = true;
+    msgEl.textContent = '';
+  }
+});
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "emptyTurns": 0,
+    "wallClockMs": 518362,
+    "assistantTurns": 19,
+    "reasoningChars": 9198,
+    "contentChars": 2538,
+    "toolCalls": 20,
+    "toolErrors": 5,
+    "fileWritten": true,
+    "fileBytes": 4239,
+    "missingMarkers": [],
+    "shapesFound": 0,
+    "shapesExpected": 0
+  },
+  "toolCalls": [
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"en\\\">\\n<head>\\n<meta charset=\\\"UTF-8\\\">\\n<meta name=\\\"viewport\\\" content=\\\"width=device-width, ini"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\"}"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"old_string\":\"  ctx.fillStyle = #e74c3c;\",\"new_string\":\"  ctx.fillStyle = '#e74c3c';\"}"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"old_string\":\"  // wall or self collision\\n  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS ||\\n      snake.some(s => s.x"
+    },
+    {
+      "name": "edit_file",
+      "status": "error",
+      "error": "old_string was not found in snake.html. The match is exact, including indentation and line endings — read the file and copy the text you want to replace verbatim.",
+      "args": "{\"path\":\"snake.html\",\"old_string\":\"  draw();\\n\\n  if (head.x === food.x && head.y === food.y) {\\n    score++;\",\"new_string\":\"  draw();\\n\\n  if (eating) {\\n    s"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"old_string\":\"  msgEl.textContent = 'Game over — press Space to restart';\\n  // flash the snake red\\n  ctx.fillStyle = 'rgba(231, 76, 60, 0"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"offset\":90,\"limit\":30}"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake.html\",\"old_string\":\"  if (head.x === food.x && head.y === food.y) {\\n    score++;\",\"new_string\":\"  if (eating) {\\n    score++;\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"sed -n '/<script>/,/<\\\\/script>/p' snake.html | sed '1d;$d' > /tmp/snake.js && node --check /tmp/snake.js && echo \\\"JS OK\\\"\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "error",
+      "error": "Refused: path \"/tmp/snake_test.js\" resolves to /private/tmp/snake_test.js, which is outside every allowed workspace root.\nAllowed roots:\n  /Users/adam/LocalHarness/.overnight/g-snake",
+      "args": "{\"content\":\"// Headless smoke test for snake.html game logic\\nconst fs = require('fs');\\nconst src = fs.readFileSync('snake.html', 'utf8');\\nconst js = src.spli"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"content\":\"<1402 characters, already applied — read the file if you need them>\",\"path\":\"snake_test.js\"}"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake_test.js\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"content\":\"const fs = require('fs');\\nconst src = fs.readFileSync('snake.html', 'utf8');\\nconst js = src.split('<script>')[1].split('</' + 'script>')[0];\\n\\nco"
+    },
+    {
+      "name": "run_shell",
+      "status": "error",
+      "error": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\nfile:///Users/adam/LocalHarness/.overnight/g-snake/snake_test.js:1\nconst fs = require('fs');\n           ^\n\nReferenceError: require is not defined in ES module scope, you can use import instead\nThis file is being treated as an ES module because it has a '.js' file extension and '/Users/adam/LocalHarness/package.json' contains \"type\": \"module\". To treat it as a CommonJS script, rename it to use the '.cjs' file extension.\n    at file:///Users/adam/LocalHarness/.overnight/g-snake/snake_test.js:1:12\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:642:26)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v26.0.0",
+      "args": "{\"command\":\"node snake_test.js\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "error",
+      "error": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n/Users/adam/LocalHarness/.overnight/g-snake/snake_test.cjs:32\nconst len0 = snake.length;\n             ^\n\nReferenceError: snake is not defined\n    at Object.<anonymous> (/Users/adam/LocalHarness/.overnight/g-snake/snake_test.cjs:32:14)\n    at Module._compile (node:internal/modules/cjs/loader:1829:14)\n    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)\n    at Module.load (node:internal/modules/cjs/loader:1552:32)\n    at Module._load (node:internal/modules/cjs/loader:1354:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47\n\nNode.js v26.0.0",
+      "args": "{\"command\":\"mv snake_test.js snake_test.cjs && node snake_test.cjs\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"content\":\"<2464 characters, already applied — read the file if you need them>\",\"path\":\"snake_test.cjs\"}"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"snake_test.cjs\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "error",
+      "error": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\nevalmachine.<anonymous>:138\n  listeners.keydown({ key: 'ArrowRight', preventDefault: () => {} });\n  ^\n\nReferenceError: listeners is not defined\n    at evalmachine.<anonymous>:138:3\n    at Script.runInContext (node:vm:149:12)\n    at Object.runInContext (node:vm:301:6)\n    at Object.<anonymous> (/Users/adam/LocalHarness/.overnight/g-snake/snake_test.cjs:83:4)\n    at Module._compile (node:internal/modules/cjs/loader:1829:14)\n    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)\n    at Module.load (node:internal/modules/cjs/loader:1552:32)\n    at Module._load (node:internal/modules/cjs/loader:1354:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n\nNode.js v26.0.0",
+      "args": "{\"command\":\"cat > snake_test.cjs << 'HEREDOC'\\nconst fs = require('fs');\\nconst vm = require('vm');\\n\\nconst html = fs.readFileSync('snake.html', 'utf8');\\ncons"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"sed -i '' 's/  Math,/  Math,\\\\n  listeners,/' snake_test.cjs && node snake_test.cjs\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"rm snake_test.cjs\"}"
+    }
+  ]
+}

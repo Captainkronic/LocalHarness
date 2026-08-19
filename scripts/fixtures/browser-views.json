@@ -1,0 +1,40 @@
+[
+ {
+  "url": "file:///private/tmp/claude-501/-Applications/ba08a163-5837-4759-90c0-3e8b35e499cf/scratchpad/pwtest.html",
+  "title": "Probe Page",
+  "screenshot": "/Users/adam/.config/playwright-mcp/shots/probe-page-20260819-103948.png",
+  "width": 2560,
+  "height": 1600,
+  "viewport": {
+   "width": 1280,
+   "height": 800
+  },
+  "truncatedPx": 0,
+  "vision": {
+   "model": "qwen/qwen3.8-27b",
+   "answer": "The page features a dark background with a centered layout. A bold white heading reads \"Vision probe.\" Below it is a blue button labeled \"Press me.\" Underneath the button, small white text displays the status \"not pressed.\"",
+   "seconds": 7.6
+  },
+  "header": "PAGE VIEW  file:///private/tmp/claude-501/-Applications/ba08a163-5837-4759-90c0-3e8b35e499cf/scratchpad/pwtest.html   (8.6s)",
+  "at": "2026-08-19T10:39:56"
+ },
+ {
+  "url": "file:///private/tmp/claude-501/-Applications/ba08a163-5837-4759-90c0-3e8b35e499cf/scratchpad/pwtest.html",
+  "title": "Probe Page",
+  "screenshot": "/Users/adam/.config/playwright-mcp/shots/after-click-press-me-20260819-103956.png",
+  "width": 2560,
+  "height": 1600,
+  "viewport": {
+   "width": 1280,
+   "height": 800
+  },
+  "truncatedPx": 0,
+  "vision": {
+   "model": "qwen/qwen3.8-27b",
+   "answer": "The button was clicked, triggering an update to the text below it. The new text displays the timestamp of the interaction. The rest of the interface remains unchanged.",
+   "seconds": 7.6
+  },
+  "header": "ACTION  clicked Press me (exact text)   (7.8s)",
+  "at": "2026-08-19T10:40:04"
+ }
+]

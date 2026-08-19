@@ -1,0 +1,28 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "emptyTurns": 1,
+    "wallClockMs": 332726,
+    "assistantTurns": 2,
+    "reasoningChars": 0,
+    "contentChars": 0,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "fileWritten": false,
+    "fileBytes": 0,
+    "missingMarkers": [
+      "canvas",
+      "keydown"
+    ],
+    "shapesFound": 0,
+    "shapesExpected": 0
+  },
+  "toolCalls": [
+    {
+      "name": "write_file",
+      "status": "pending",
+      "error": null,
+      "args": ""
+    }
+  ]
+}

@@ -88,7 +88,26 @@ if (argv.includes('--list')) {
   process.exit(0)
 }
 const taskKey = arg('task', 'tetris')
-const task = TASKS[taskKey]
+/* A task from a file, so a stress sweep can drive many prompts through one
+ * bench without a code change per game. The expectations are the generic ones:
+ * a file of a plausible size, and the markers any canvas game must have. */
+const promptFile = arg('prompt-file', null)
+let task
+if (promptFile) {
+  const spec = JSON.parse(await readFile(promptFile, 'utf8'))
+  task = {
+    label: spec.name,
+    prompt: spec.prompt,
+    expect: {
+      file: `${spec.name}.html`,
+      minBytes: 1500,
+      mustInclude: ['canvas', 'keydown'],
+      shapes: []
+    }
+  }
+} else {
+  task = TASKS[taskKey]
+}
 if (!task) {
   console.error(`Unknown task ${taskKey}. Try --list.`)
   process.exit(1)

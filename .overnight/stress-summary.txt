@@ -1,0 +1,11 @@
+=== snake  09:18:54 ===
+  built snake.html     4239 bytes
+  [31m4 PROBLEM(S)[0m: the game animates on its own; left arrow does something; still running after sustained play; page stayed responsive
+=== breakout  09:29:24 ===
+  built breakout.html    10851 bytes
+  [31m7 PROBLEM(S)[0m: the game animates on its own; right arrow does something; rotate does something; the score or counters move when you play; still running after sustained play; key events actually reached the page; page stayed responsive
+=== invaders  09:39:37 ===
+  NOTHING BUILT
+=== pong  09:45:10 ===
+  NOTHING BUILT
+done 09:45:29

@@ -1,0 +1,4 @@
+snake|Build me a playable Snake game as a single self-contained HTML file called snake.html in the workspace.
+breakout|Build me a playable Breakout game as a single self-contained HTML file called breakout.html in the workspace.
+invaders|Build me a playable Space Invaders game as a single self-contained HTML file called invaders.html in the workspace.
+pong|Build me a playable one-player Pong game against a computer paddle, as a single self-contained HTML file called pong.html in the workspace.
