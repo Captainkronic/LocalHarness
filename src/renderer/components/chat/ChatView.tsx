@@ -21,6 +21,8 @@ export default function ChatView() {
   const activeWorkflow = useStore((s) => s.activeWorkflow)
   const mcpStates = useStore((s) => s.mcpStates)
   const residentModelId = useStore((s) => s.health.residentModelId)
+  const defaultModelId = useStore((s) => s.settings.defaultModelId)
+  const conversationModelId = useStore((s) => s.conversation?.modelId ?? null)
 
   const [draft, setDraft] = useState('')
   const [focusSignal, setFocusSignal] = useState(0)
@@ -48,11 +50,20 @@ export default function ChatView() {
   }, [mcpStates, workflow])
 
   /** Non-null only when the first message here would evict a different model. */
+  /*
+   * Which model a send would actually put on the box.
+   *
+   * Must mirror Orchestrator.resolveModel's precedence exactly, and did not: it
+   * read workflow.preferredModel alone, so pinning a model — the supported way
+   * to say "use this one" — left a banner insisting the workflow's default was
+   * about to evict it. The swap never happened; the warning was pure noise, and
+   * a warning that cries wolf about a twenty-second eviction is worse than none.
+   */
   const swap = useMemo(() => {
-    const want = workflow.preferredModel
+    const want = conversationModelId ?? defaultModelId ?? workflow.preferredModel
     if (!want || !residentModelId || residentModelId === want) return null
     return { from: residentModelId, to: want }
-  }, [workflow, residentModelId])
+  }, [conversationModelId, defaultModelId, workflow, residentModelId])
 
   const applySuggestion = useCallback((s: string) => {
     setDraft(s)
@@ -83,8 +94,8 @@ export default function ChatView() {
               silently unload the model you were part-way through using. */}
           {swap !== null ? (
             <p className="chat-empty-swap">
-              Sending here loads <strong>{shortModel(swap.to)}</strong>, which unloads{' '}
-              <strong>{shortModel(swap.from)}</strong> — about twenty seconds, and only one model
+              Sending here loads <strong>{swapNames(swap).to}</strong>, which unloads{' '}
+              <strong>{swapNames(swap).from}</strong> — about twenty seconds, and only one model
               fits at a time.
             </p>
           ) : null}
@@ -221,4 +232,19 @@ function pickSome(pool: string[], n: number): string[] {
 function shortModel(id: string): string {
   const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id
   return tail.split('@')[0]
+}
+
+/**
+ * Names for the two sides of a model swap, short unless short is ambiguous.
+ *
+ * Dropping the publisher reads better right up until the two models differ ONLY
+ * by publisher — and that is exactly when someone is comparing builds of the
+ * same model. Loading a Q5 rebuild of qwen3.8-27b over the stock one rendered
+ * as "loads qwen3.8-27b, which unloads qwen3.8-27b", a sentence that describes
+ * nothing and hid a swap the user did not want.
+ */
+function swapNames(swap: { from: string; to: string }): { from: string; to: string } {
+  const from = shortModel(swap.from)
+  const to = shortModel(swap.to)
+  return from === to ? { from: swap.from, to: swap.to } : { from, to }
 }

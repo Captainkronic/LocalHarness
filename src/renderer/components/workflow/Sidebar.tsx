@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import type { WorkflowId } from '@shared/types'
 import { workflowPayload } from '@renderer/lib/payload'
 import { useStore } from '@renderer/state/store'
@@ -60,6 +60,12 @@ export function Sidebar(): JSX.Element {
   const deleteConversation = useStore((s) => s.deleteConversation)
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [tuningOpen, setTuningOpen] = useState<boolean>(
+    () => localStorage.getItem('lh.sidebar.tuning') === 'open'
+  )
+  useEffect(() => {
+    localStorage.setItem('lh.sidebar.tuning', tuningOpen ? 'open' : 'closed')
+  }, [tuningOpen])
 
   const definition = useMemo(
     () => workflows.find((w) => w.id === activeWorkflow) ?? null,
@@ -139,14 +145,6 @@ export function Sidebar(): JSX.Element {
         <McpPanel />
       </section>
 
-      {/* Beside the MCP servers on purpose: both are capability the model can
-          reach for, and the cost difference is only legible side by side. */}
-      <section className="sb-section">
-        <ReasoningPicker />
-        <SamplingPanel />
-        <SkillsPanel />
-      </section>
-
       <section className="sb-section sb-convs">
         <div className="sb-convs-head">
           <span className="section-label">Conversations</span>
@@ -210,6 +208,36 @@ export function Sidebar(): JSX.Element {
             })}
           </div>
         )}
+      </section>
+
+      {/*
+        Tuning lives below the conversations and starts closed.
+        
+        It used to sit between the MCP panel and the list, which pushed the
+        conversations to the bottom of a tall column — the one thing in this
+        sidebar you navigate BY was the hardest thing to reach, and three
+        controls you set once a week were above it. Beside the MCP servers still
+        makes sense as an argument about cost, but not at that price.
+      */}
+      <section className="sb-section sb-tune">
+        <button
+          type="button"
+          className="sb-tune-head"
+          aria-expanded={tuningOpen}
+          onClick={() => setTuningOpen((v) => !v)}
+        >
+          <span className={tuningOpen ? 'sb-tune-chev is-open' : 'sb-tune-chev'} aria-hidden="true">
+            ›
+          </span>
+          <span className="section-label">Thinking, inference &amp; skills</span>
+        </button>
+        {tuningOpen ? (
+          <div className="sb-tune-body">
+            <ReasoningPicker />
+            <SamplingPanel />
+            <SkillsPanel />
+          </div>
+        ) : null}
       </section>
     </aside>
   )

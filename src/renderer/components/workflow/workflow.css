@@ -1100,3 +1100,43 @@
   line-height: 1.45;
   color: var(--fg-faint);
 }
+
+/* --- tuning, collapsed by default --- */
+
+.sb-tune {
+  flex: none;
+  border-bottom: 0;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.sb-tune-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sb-tune-head:hover {
+  background: var(--bg-hover);
+}
+
+.sb-tune-chev {
+  color: var(--fg-dim);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.sb-tune-chev.is-open {
+  transform: rotate(90deg);
+}
+
+/* Bounded so a long skills list cannot swallow the conversations again — the
+   whole point of moving it down here. */
+.sb-tune-body {
+  max-height: 46vh;
+  overflow-y: auto;
+}

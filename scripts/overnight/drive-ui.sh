@@ -107,7 +107,10 @@ sent=""
 # 72pt and straddle it. A first pass missed at 60% and 65% with it at 63.3%.
 cliclick "c:$(( X + W / 2 )),$(( Y + H / 3 ))"
 sleep 0.5
-for pct in 63 64 62 65 61 66 60 67; do
+# Range widened after a miss at 58.3%: the send button's position depends on
+# the Workspace panel's width, which the user resizes, so it wanders further
+# than a tight band around one remembered value.
+for pct in 63 64 62 65 61 66 60 67 59 68 58 69 57 70; do
   SEND_X=$(( X + (W * pct / 100) ))
   cliclick "c:${SEND_X},${CY}"
   sleep 2
