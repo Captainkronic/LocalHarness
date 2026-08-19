@@ -26,6 +26,7 @@ import {
 import { DEFAULT_WORKFLOW, WORKFLOWS, isVoiceWorkflow } from '@shared/workflows'
 import type {
   ReasoningEffort,
+  SamplingOverrides,
   ApprovalDecision,
   ApprovalRequest,
   Artifact,
@@ -126,6 +127,7 @@ export interface AppState {
   /* image editing */
   /** Resolves with how many of the chosen files were accepted. */
   setWorkflowReasoning(workflowId: WorkflowId, effort: ReasoningEffort): Promise<void>
+  setWorkflowSampling(workflowId: WorkflowId, patch: Partial<SamplingOverrides>): Promise<void>
   pickEditSources(): Promise<number>
   /** Resolves false when the file was refused — wrong type, unreadable, too big. */
   createEditFromPath(path: string, parentId?: string): Promise<boolean>
@@ -179,6 +181,7 @@ const INITIAL_SETTINGS: Settings = {
   modelPollMs: 15_000,
   extraEndpoints: [],
   workflowReasoning: {},
+  workflowSampling: {},
   workflowMcpOverrides: {},
   panelLayout: {},
   liveAvatarId: null
@@ -676,6 +679,11 @@ export const useStore = create<AppState>()((set, get) => {
     // Every mutation returns the updated job AND main pushes event:editJob, so
     // these deliberately do not set state themselves — the event handler is the
     // single writer, which keeps optimistic and pushed state from diverging.
+    setWorkflowSampling: async (workflowId, patch) => {
+      const settings = await call('settings', 'settings:setSampling', workflowId, patch)
+      if (settings) set({ settings })
+    },
+
     setWorkflowReasoning: async (workflowId, effort) => {
       const settings = await call('settings', 'settings:setReasoning', workflowId, effort)
       if (settings) set({ settings })

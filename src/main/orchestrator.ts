@@ -287,7 +287,21 @@ export class Orchestrator {
   private async runTurn(conv: Conversation, model: ModelInfo): Promise<void> {
     const wf = this.workflow(conv.workflowId)
     const settings = this.d.settings.get()
-    const controller = new AbortController()
+    /**
+     * Replaced on retry, not reused.
+     *
+     * This was a `const` created once for the whole turn, and the runaway
+     * breaker aborts it. The retry then re-entered the loop and called
+     * streamChat with that same already-aborted signal, so the rescue request
+     * died before it sent a byte and the turn ended with an empty reply. The
+     * recovery path had therefore never once worked: every spiral it caught
+     * produced nothing, which looks exactly like the model giving up and is
+     * why it went unnoticed.
+     *
+     * `this.active.controller` is repointed with it, so Cancel still stops
+     * whichever request is actually in flight.
+     */
+    let controller = new AbortController()
     const meter = new TurnMeter()
 
     this.active = {
@@ -316,15 +330,50 @@ export class Orchestrator {
     // it does that WITHOUT touching the saved setting. Silently rewriting the
     // user's own choice because one turn misbehaved would be the app deciding
     // something it was not asked to decide.
+    /**
+     * The workflow's sampler, with the user's overrides on top.
+     *
+     * Spread in this order so an override wins and anything untouched still
+     * tracks the workflow definition — a later change to a default reaches
+     * everyone who has not deliberately moved that one knob.
+     */
+    const sampling = {
+      ...wf.sampling,
+      ...(this.d.settings.get().workflowSampling[conv.workflowId] ?? {})
+    }
+
     let effort =
       this.d.settings.get().workflowReasoning[conv.workflowId] ?? wf.sampling.reasoningEffort
 
     /**
-     * Half the output budget is generous for thinking and still leaves room to
-     * answer. Reasoning is billed from the same ceiling, so anything past this
-     * cannot produce a complete answer even if it stops immediately.
+     * How much thinking counts as a spiral rather than deliberation.
+     *
+     * Was a flat half of the output budget, which was right for the `low`
+     * default and wrong for everything else: raising the thinking level made
+     * the model spend more, while the cap that stops it stayed put. Measured on
+     * qwen3.8-27b at `high`, a first turn on a from-scratch build reached 8,192
+     * tokens — the old cap exactly — and was aborted before it had written a
+     * line, then retried with thinking OFF. Turning the dial up reliably turned
+     * thinking off, which is worse than the dial doing nothing.
+     *
+     * So it scales. The ceiling is still the output budget, because reasoning
+     * bills from the same allowance and past that no complete answer can follow
+     * however soon it stops.
      */
-    const reasoningCap = Math.floor(wf.sampling.maxTokens * 0.5)
+    const REASONING_SHARE: Record<string, number> = {
+      none: 0.05,
+      // 0.2, not 0.5. Half the budget is 8,192 tokens on the Code workflow, and
+      // measured on qwen3.8 a first turn will happily spend all of it building a
+      // complete mental model before writing a line — eighteen minutes on a
+      // one-sentence Tetris request, with nothing on disk. The breaker is not
+      // there to allow deliberation, it is there to end a spiral, and a spiral
+      // is recognisable long before 8k tokens. Tripping it costs one retry with
+      // thinking off, which measurably DOES produce a file.
+      low: 0.2,
+      medium: 0.45,
+      high: 0.75
+    }
+    const reasoningCap = Math.floor(sampling.maxTokens * (REASONING_SHARE[effort ?? 'low'] ?? 0.5))
     let reasoningSoFar = 0
     let reasoningTripped = false
     let reasoningRetried = false
@@ -377,12 +426,14 @@ export class Orchestrator {
           model: model.id,
           messages,
           tools: tools.length ? tools : undefined,
-          temperature: wf.sampling.temperature,
-          topP: wf.sampling.topP,
-          frequencyPenalty: wf.sampling.frequencyPenalty,
+          temperature: sampling.temperature,
+          topP: sampling.topP,
+          topK: sampling.topK,
+          minP: sampling.minP,
+          frequencyPenalty: sampling.frequencyPenalty,
           presencePenalty: wf.sampling.presencePenalty,
           repetitionPenalty: wf.sampling.repetitionPenalty,
-          maxTokens: wf.sampling.maxTokens,
+          maxTokens: sampling.maxTokens,
           // Reasoning is billed against maxTokens, so an unbounded default can
           // spend the entire answer budget thinking — qwen once used all 8,192
           // of Code's and returned nothing after eleven minutes. The user's
@@ -474,18 +525,17 @@ export class Orchestrator {
       // genuinely hard request cannot ping-pong.
 
       if (reasoningTripped && !reasoningRetried) {
-
         reasoningRetried = true
-
         assistant.reasoning = undefined
-
         assistant.content = ''
-          effort = 'none'
+        effort = 'none'
+
+        // A fresh signal, or the retry inherits the abort that caused it.
+        controller = new AbortController()
+        if (this.active) this.active.controller = controller
 
         this.log('info', 'llm', 'retrying the turn with reasoning off')
-
         continue
-
       }
 
 
@@ -494,6 +544,35 @@ export class Orchestrator {
       meter.setReasoningEffort(effort)
       const turnMetrics = meter.finish(usage, finishReason)
       assistant.metrics = turnMetrics
+
+      /**
+       * A turn that produced nothing at all.
+       *
+       * Measured twice while benchmarking a Tetris build: once when the
+       * conversation outgrew the window and the trimmer dropped tool_call
+       * messages, and once when the model spent its whole budget reasoning and
+       * stopped. Both times the reply came back with no content, no tool call
+       * and no error, was saved as an ordinary assistant message, and rendered
+       * as a blank turn. From the outside that is indistinguishable from the
+       * app having lost the message — and from the inside there was nothing to
+       * search the logs for.
+       *
+       * Named here rather than left blank. `finishReason` usually says why:
+       * 'length' means it ran out of budget mid-thought, which is the case
+       * worth telling someone about, since the fix is a setting rather than a
+       * retry.
+       */
+      if (assistant.content.trim() === '' && (assistant.toolCalls ?? []).length === 0) {
+        const why =
+          finishReason === 'length'
+            ? `it used all ${usage.completionTokens} tokens without finishing an answer` +
+              (turnMetrics.reasoningTokens
+                ? ` — ${turnMetrics.reasoningTokens} of them thinking. Lower the thinking level, or raise the reply cap.`
+                : '. Raise the reply cap.')
+            : `the model returned an empty reply (finish reason: ${finishReason || 'unknown'})`
+        assistant.error = `No answer: ${why}`
+        this.log('warn', 'llm', `empty turn — ${why}`)
+      }
       this.calibrator.observe(
         model.id,
         usage.promptTokens,

@@ -1,0 +1,7 @@
+[05:55:22] === noskill-5bit — qwen/qwen3.8-27b ===
+result: {"ok":true}
+now loaded: qwen/qwen3.8-27b ctx=54272
+sent (button 1087,855)
+[05:56:13] sent
+[05:56:33] turn 1 at 20s
+[05:57:05] turn 2 at 52s

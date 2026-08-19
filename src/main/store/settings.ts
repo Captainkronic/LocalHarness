@@ -59,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'mtp', label: 'MTP MLX', baseUrl: 'http://127.0.0.1:1236/v1' }
   ],
   workflowReasoning: {},
+  workflowSampling: {},
   workflowMcpOverrides: {},
   panelLayout: {},
   liveAvatarId: null
@@ -183,6 +184,42 @@ function dedupe(values: string[]): string[] {
  */
 /** Exported for tests: the clamping here is what makes a hand-edited settings
  *  file safe, and it is only exercised by a file nobody writes by hand. */
+/**
+ * Sampler overrides from a file nobody writes by hand, and might.
+ *
+ * Every value is clamped to a range the sampler can actually use. A hand-typed
+ * temperature of 20 or a top_k of -1 does not fail loudly at this layer — it
+ * reaches the server and comes back as an opaque 400, or worse, is accepted and
+ * quietly ruins the output.
+ */
+const SAMPLING_RANGE: Record<string, [number, number]> = {
+  temperature: [0, 2],
+  topP: [0, 1],
+  topK: [0, 500],
+  minP: [0, 1],
+  frequencyPenalty: [-2, 2],
+  presencePenalty: [-2, 2],
+  maxTokens: [64, 131072]
+}
+
+function asWorkflowSampling(
+  value: unknown
+): Settings['workflowSampling'] | undefined {
+  if (!isRecord(value)) return undefined
+  const out: Record<string, Record<string, number>> = {}
+  for (const [wf, patch] of Object.entries(value)) {
+    if (!isRecord(patch)) continue
+    const kept: Record<string, number> = {}
+    for (const [key, raw] of Object.entries(patch)) {
+      const range = SAMPLING_RANGE[key]
+      if (!range || typeof raw !== 'number' || !Number.isFinite(raw)) continue
+      kept[key] = Math.min(range[1], Math.max(range[0], raw))
+    }
+    if (Object.keys(kept).length > 0) out[wf] = kept
+  }
+  return out as Settings['workflowSampling']
+}
+
 export function mergeSettings(base: Settings, raw: unknown): Settings {
   const src: Record<string, unknown> = isRecord(raw) ? raw : {}
 
@@ -216,6 +253,7 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     modelPollMs: asClampedNumber(src.modelPollMs, MIN_POLL_MS, MAX_POLL_MS) ?? base.modelPollMs,
     extraEndpoints: asEndpoints(src.extraEndpoints) ?? base.extraEndpoints,
     workflowReasoning: asWorkflowReasoning(src.workflowReasoning) ?? base.workflowReasoning,
+    workflowSampling: asWorkflowSampling(src.workflowSampling) ?? base.workflowSampling,
     workflowMcpOverrides: asWorkflowOverrides(src.workflowMcpOverrides) ?? base.workflowMcpOverrides,
     panelLayout: asPanelLayout(src.panelLayout) ?? base.panelLayout,
     // `in`, not a truthiness test: null is a MEANINGFUL value here — it is how

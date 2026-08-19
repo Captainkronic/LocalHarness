@@ -1,0 +1,21 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "wallClockMs": 513825,
+    "assistantTurns": 1,
+    "reasoningChars": 0,
+    "contentChars": 0,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "fileWritten": false,
+    "fileBytes": 0,
+    "missingMarkers": [
+      "canvas",
+      "requestAnimationFrame",
+      "keydown"
+    ],
+    "shapesFound": 0,
+    "shapesExpected": 7
+  },
+  "toolCalls": []
+}

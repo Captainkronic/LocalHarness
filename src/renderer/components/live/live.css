@@ -22,7 +22,16 @@
   background: var(--bg-app);
 
   --lv-orb: clamp(150px, 30vh, 244px);
-  --lv-caption: clamp(19px, 2.1vw, 28px);
+  /*
+   * The spoken reply, on screen.
+   *
+   * Was clamp(19px, 2.1vw, 28px) — sized for reading across a room, which is
+   * the wrong brief. This text is a TRANSCRIPT of something you are already
+   * hearing, not something you are reading instead, and at 28px a couple of
+   * sentences filled the stage and pushed the orb and the timings out of view.
+   * Slightly above body text is enough to mark it as the thing being said.
+   */
+  --lv-caption: clamp(13px, 1.05vw, 16px);
 }
 
 /* ------------------------------------------------------------------ */

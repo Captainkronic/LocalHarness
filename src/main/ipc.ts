@@ -215,6 +215,19 @@ export function registerIpc(d: IpcDeps): void {
         workflowReasoning: { ...current.workflowReasoning, [workflowId]: effort }
       })
     },
+    /** A sparse patch: only what the user moved is stored, and clearing a
+     *  field (undefined) returns that knob to the workflow's default. */
+    'settings:setSampling': (workflowId: WorkflowId, patch: Record<string, number | undefined>) => {
+      const current = d.settings.get()
+      const merged = { ...(current.workflowSampling[workflowId] ?? {}) }
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined || v === null || Number.isNaN(v)) delete (merged as Record<string, unknown>)[k]
+        else (merged as Record<string, number>)[k] = v
+      }
+      return d.settings.update({
+        workflowSampling: { ...current.workflowSampling, [workflowId]: merged }
+      })
+    },
     'mcp:setEnabled': async (
       workflowId: WorkflowId,
       serverId: string,

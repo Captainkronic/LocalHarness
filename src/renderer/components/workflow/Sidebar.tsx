@@ -5,6 +5,7 @@ import { useStore } from '@renderer/state/store'
 import { relativeTime } from '@renderer/lib/format'
 import McpPanel from './McpPanel'
 import ReasoningPicker from './ReasoningPicker'
+import SamplingPanel from './SamplingPanel'
 import SkillsPanel from './SkillsPanel'
 import './workflow.css'
 
@@ -142,6 +143,7 @@ export function Sidebar(): JSX.Element {
           reach for, and the cost difference is only legible side by side. */}
       <section className="sb-section">
         <ReasoningPicker />
+        <SamplingPanel />
         <SkillsPanel />
       </section>
 

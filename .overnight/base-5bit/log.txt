@@ -1,0 +1,13 @@
+[05:28:06] === base-5bit — qwen/qwen3.8-27b ===
+result: {"ok":true}
+now loaded: qwen/qwen3.8-27b ctx=54272
+sent (button 1087,850)
+[05:28:59] sent
+[05:29:19] turn 1 at 20s
+[05:29:50] turn 2 at 51s
+[05:54:00] TIMEOUT 1501s
+MODEL qwen/qwen3.8-27b
+turns 3  wall 55s  think 354 chars  peakctx 7714
+tools use_skill, read_file, read_file
+bytes 0
+RESULT NOTHING

@@ -144,6 +144,19 @@ export interface WorkflowDefinition {
 export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 
+/** The sampler settings a user may override per workflow. Deliberately a
+ *  subset of SamplingDefaults: reasoningEffort has its own control, and the
+ *  system prompt is not a slider. */
+export interface SamplingOverrides {
+  temperature: number
+  topP: number
+  topK: number
+  minP: number
+  frequencyPenalty: number
+  presencePenalty: number
+  maxTokens: number
+}
+
 export interface SamplingDefaults {
   /** See ChatRequest — measured levers against runaway reasoning. */
   frequencyPenalty?: number
@@ -151,6 +164,14 @@ export interface SamplingDefaults {
   repetitionPenalty?: number
   temperature: number
   topP: number
+  /**
+   * Nucleus sampling's companion, and the one Qwen actually specify for
+   * thinking mode (top_k 20). It was never plumbed through this app at all,
+   * so the value in a workflow definition would have been silently ignored.
+   */
+  topK?: number
+  /** Qwen specify min_p 0 for thinking mode. Never sent before either. */
+  minP?: number
   /** Cap on generated tokens. Reasoning models burn budget on reasoning_content,
    *  so this is deliberately generous — see maxTokens notes in ARCHITECTURE.md. */
   maxTokens: number
@@ -1052,6 +1073,19 @@ export interface Settings {
    */
   extraEndpoints: LlmEndpoint[]
   workflowReasoning: Partial<Record<WorkflowId, ReasoningEffort>>
+  /**
+   * Per-workflow sampling overrides, on top of the workflow's own defaults.
+   *
+   * These were hardcoded and unreachable, which made the one class of problem
+   * this app actually has — a model that thinks until its budget is gone —
+   * impossible to work on from inside the app. Qwen publish a specific sampler
+   * setup for thinking mode and it differs from what a workflow ships with;
+   * without this, trying it meant editing source and rebuilding.
+   *
+   * Sparse on purpose: only what the user changed is stored, so a later change
+   * to a workflow's defaults still reaches anyone who has not overridden it.
+   */
+  workflowSampling: Partial<Record<WorkflowId, Partial<SamplingOverrides>>>
   workflowMcpOverrides: Partial<Record<WorkflowId, string[]>>
   /**
    * Right-hand panel size, per KIND rather than per workflow.

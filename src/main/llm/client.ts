@@ -55,6 +55,8 @@ export interface ChatRequest {
   /** llama.cpp-style multiplicative penalty. Measured at 1.15: 764 tokens. */
   repetitionPenalty?: number
   topP: number
+  topK?: number
+  minP?: number
   maxTokens: number
   /** OpenAI `reasoning_effort`. Omitted leaves the model's own default alone;
    *  'none' suppresses reasoning entirely, which is what makes spoken replies
@@ -136,6 +138,11 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     stream_options: { include_usage: true },
     temperature: req.temperature,
     top_p: req.topP,
+    // Omitted entirely when unset rather than sent as a default — "unset" and
+    // "the value that happens to be the default" are different requests, and
+    // only the first lets the server decide.
+    ...(req.topK === undefined ? {} : { top_k: req.topK }),
+    ...(req.minP === undefined ? {} : { min_p: req.minP }),
     // Only sent when set, so a model or server that rejects one is not handed
     // it by default.
     ...(req.frequencyPenalty !== undefined ? { frequency_penalty: req.frequencyPenalty } : {}),

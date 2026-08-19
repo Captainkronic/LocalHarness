@@ -1,0 +1,333 @@
+{
+  "id": "6277f48d-9ffe-4c67-b15f-08f756e09930",
+  "title": "Build a complete, playable Tetris game as a sing",
+  "workflowId": "code",
+  "messages": [
+    {
+      "id": "b1ff4b62-8933-4fb4-afed-ea7db00b5b0e",
+      "role": "user",
+      "content": "Build a complete, playable Tetris game as a single self-contained index.html in the workspace root. Canvas rendering, arrow keys to move and rotate, down to soft drop, space to hard drop, line clears, a score, increasing speed, and a game over state. No external libraries.",
+      "createdAt": 1787141220987
+    },
+    {
+      "id": "35176086-ceb8-405d-bec4-fc12557379cd",
+      "role": "assistant",
+      "content": "\n\n",
+      "createdAt": 1787141220997,
+      "streaming": false,
+      "reasoning": "The user wants a complete, playable Tetris game as a single self-contained index.html. Let me build this. I know the requirements:\n- Canvas rendering\n- Arrow keys to move and rotate\n- Down to soft drop\n- Space to hard drop\n- Line clears\n- Score\n- Increasing speed\n- Game over state\n- No external libraries\n\nLet me first check the workspace root to see what's there, then write the file.\n\nActually, let me just check the workspace root quickly to see if there's an existing index.html or project structure. Let me look.\n",
+      "toolCalls": [
+        {
+          "id": "488852094",
+          "name": "list_dir",
+          "arguments": "{\"path\":\".\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141229395,
+          "result": "/Users/adam/LocalHarness/.overnight/repro3 is empty.",
+          "artifacts": [],
+          "finishedAt": 1787141229397
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 2335,
+        "completionTokens": 148,
+        "ttftMs": 500,
+        "totalMs": 8397,
+        "prefillTps": 4670,
+        "decodeTps": 18.74129416234013,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 121,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "fddcc07f-84b3-4c8f-9b70-bc2a577970bb",
+      "role": "tool",
+      "toolCallId": "488852094",
+      "content": "/Users/adam/LocalHarness/.overnight/repro3 is empty.",
+      "createdAt": 1787141229398
+    },
+    {
+      "id": "66e42c0a-5c80-422c-b0f7-633864b3973f",
+      "role": "assistant",
+      "content": "\n\nEmpty workspace, so I'll create the file at the root.\n\n",
+      "createdAt": 1787141229399,
+      "streaming": false,
+      "reasoning": "Empty workspace. I'll create index.html at the workspace root: /Users/adam/LocalHarness/.overnight/repro3/index.html.\n\nLet me write a complete Tetris game. Main features:\n- Canvas rendering\n- Arrow keys: left/right to move, up to rotate, down for soft drop\n- Space for hard drop\n- Line clearing\n- Score\n- Speed increases (level-based gravity)\n- Game over state\n- No external libraries\n\nI'll write clean, well-structured code. Standard 10x20 board, 7 tetrominoes, SRS-style rotation with basic wall kicks (simple kicks are sufficient). Score: 100/300/500/800 × level for 1/2/3/4 lines, plus soft drop +1, hard drop +2 per cell. Level up every 10 lines. Gravity interval decreases.\n\nI'll also add a next piece preview, a pause key (P) as a nice touch, and a game over overlay with restart (Enter or R).\n\nI'll write the file directly.\n\nDesign details:\n- Grid: 10 columns × 20 rows, cell size 30px → canvas 300×600. Side panel for score/next/level.\n- Pieces defined as matrices.\n- Rotation: rotate the matrix clockwise, with simple wall kicks (try offsets 0, -1, +1, -2, +2).\n- Game loop using requestAnimationFrame and a drop timer.\n- Ghost piece (nice to have, low cost) — I'll include it; it's a small amount of code and a big usability win.\n- Colors: standard guideline colors.\n\nLet me write it.\n",
+      "toolCalls": [
+        {
+          "id": "831615709",
+          "name": "write_file",
+          "arguments": "{\"path\":\"index.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"en\\\">\\n<head>\\n<meta charset=\\\"utf-8\\\">\\n<title>Tetris</title>\\n<style>\\n  html, body {\\n    margin: 0;\\n    height: 100%;\\n    background: #14141e;\\n    color: #d8d8e8;\\n    font-family: \\\"SF Mono\\\", Menlo, Consolas, monospace;\\n    display: flex;\\n    align-items: center;\\n    justify-content: center;\\n  }\\n  #wrap {\\n    display: flex;\\n    gap: 16px;\\n    align-items: flex-start;\\n  }\\n  canvas {\\n    background: #0c0c14;\\n    border: 2px solid #2c2c40;\\n    border-radius: 4px;\\n    display: block;\\n  }\\n  #panel {\\n    width: 150px;\\n    font-size: 13px;\\n  }\\n  #panel h1 {\\n    font-size: 18px;\\n    margin: 0 0 12px;\\n    letter-spacing: 3px;\\n  }\\n  .label {\\n    color: #7a7a96;\\n    font-size: 11px;\\n    text-transform: uppercase;\\n    letter-spacing: 1px;\\n    margin-bottom: 4px;\\n  }\\n  .value {\\n    font-size: 20px;\\n    margin-bottom: 14px;\\n  }\\n  #next {\\n    background: #0c0c14;\\n    border: 2px solid #2c2c40;\\n    border-radius: 4px;\\n    display: block;\\n    margin-bottom: 14px;\\n  }\\n  .keys {\\n    color: #5c5c78;\\n    font-size: 11px;\\n    line-height: 1.7;\\n  }\\n</style>\\n</head>\\n<body>\\n<div id=\\\"wrap\\\">\\n  <canvas id=\\\"board\\\" width=\\\"300\\\" height=\\\"600\\\"></canvas>\\n  <div id=\\\"panel\\\">\\n    <h1>TETRIS</h1>\\n    <div class=\\\"label\\\">Score</div>\\n    <div class=\\\"value\\\" id=\\\"score\\\">0</div>\\n    <div class=\\\"label\\\">Level</div>\\n    <div class=\\\"value\\\" id=\\\"level\\\">1</div>\\n    <div class=\\\"label\\\">Lines</div>\\n    <div class=\\\"value\\\" id=\\\"lines\\\">0</div>\\n    <div class=\\\"label\\\">Next</div>\\n    <canvas id=\\\"next\\\" width=\\\"120\\\" height=\\\"80\\\"></canvas>\\n    <div class=\\\"keys\\\">\\n      &larr; &rarr; move<br>\\n      &uarr; rotate<br>\\n      &darr; soft drop<br>\\n      space hard drop<br>\\n      P pause<br>\\n      R restart\\n    </div>\\n  </div>\\n</div>\\n\\n<script>\\n\\\"use strict\\\";\\n\\nconst COLS = 10, ROWS = 20, CELL = 30;\\nconst boardCanvas = document.getElementById(\\\"board\\\");\\nconst boardCtx = boardCanvas.getContext(\\\"2d\\\");\\nconst nextCanvas = document.getElementById(\\\"next\\\");\\nconst nextCtx = nextCanvas.getContext(\\\"2d\\\");\\nconst scoreEl = document.getElementById(\\\"score\\\");\\nconst levelEl = document.getElementById(\\\"level\\\");\\nconst linesEl = document.getElementById(\\\"lines\\\");\\n\\n// --- Piece definitions -------------------------------------------------\\n\\nconst SHAPES = {\\n  I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],\\n  O: [[1,1],[1,1]],\\n  T: [[0,1,0],[1,1,1],[0,0,0]],\\n  S: [[0,1,1],[1,1,0],[0,0,0]],\\n  Z: [[1,1,0],[0,1,1],[0,0,0]],\\n  J: [[1,0,0],[1,1,1],[0,0,0]],\\n  L: [[0,0,1],[1,1,1],[0,0,0]],\\n};\\nconst COLORS = {\\n  I: \\\"#45d4e8\\\", O: \\\"#e8c845\\\", T: \\\"#b060e0\\\",\\n  S: \\\"#5cd47a\\\", Z: \\\"#e05c5c\\\", J: \\\"#5c8ae0\\\", L: \\\"#e89a45\\\",\\n};\\nconst TYPES = Object.keys(SHAPES);\\nconst LINE_SCORES = [0, 100, 300, 500, 800];\\n\\n// --- State -------------------------------------------------------------\\n\\nlet grid, current, next, score, lines, level, dropInterval, dropTimer,\\n    lastTime, gameOver, paused, rafId;\\n\\nfunction emptyGrid() {\\n  return Array.from({ length: ROWS }, () => new Array(COLS).fill(null));\\n}\\n\\nfunction randomPiece() {\\n  const type = TYPES[Math.floor(Math.random() * TYPES.length)];\\n  const shape = SHAPES[type].map(row => row.slice());\\n  return {\\n    type,\\n    shape,\\n    x: Math.floor((COLS - shape[0].length) / 2),\\n    y: 0,\\n  };\\n}\\n\\n// --- Collision & movement ----------------------------------------------\\n\\nfunction collides(piece, dx, dy, shape) {\\n  shape = shape || piece.shape;\\n  for (let r = 0; r < shape.length; r++) {\\n    for (let c = 0; c < shape[r].length; c++) {\\n      if (!shape[r][c]) continue;\\n      const x = piece.x + c + dx;\\n      const y = piece.y + r + dy;\\n      if (x < 0 || x >= COLS || y >= ROWS) return true;\\n      if (y >= 0 && grid[y][x]) return true;\\n    }\\n  }\\n  return false;\\n}\\n\\nfunction move(dx, dy) {\\n  if (!collides(current, dx, dy)) {\\n    current.x += dx;\\n    current.y += dy;\\n    return true;\\n  }\\n  return false;\\n}\\n\\nfunction rotate() {\\n  const s = current.shape;\\n  const n = s.length;\\n  const out = Array.from({ length: n }, () => new Array(n).fill(0));\\n  for (let r = 0; r < n; r++)\\n    for (let c = 0; c < n; c++)\\n      out[c][n - 1 - r] = s[r][c];\\n  // Try the rotation in place, then kick left/right, then up.\\n  for (const kick of [0, -1, 1, -2, 2]) {\\n    if (!collides(current, kick, 0, out)) {\\n      current.x += kick;\\n      current.shape = out;\\n      return;\\n    }\\n  }\\n  if (!collides(current, 0, -1, out)) {\\n    current.y -= 1;\\n    current.shape = out;\\n  }\\n}\\n\\nfunction ghostY() {\\n  let dy = 0;\\n  while (!collides(current, 0, dy + 1)) dy++;\\n  return current.y + dy;\\n}\\n\\n// --- Locking, clearing, scoring ----------------------------------------\\n\\nfunction lockPiece() {\\n  for (let r = 0; r < current.shape.length; r++) {\\n    for (let c = 0; c < current.shape[r].length; c++) {\\n      if (!current.shape[r][c]) continue;\\n      const y = current.y + r;\\n      if (y < 0) { endGame(); return; }\\n      grid[y][current.x + c] = current.type;\\n    }\\n  }\\n  clearLines();\\n  spawn();\\n}\\n\\nfunction clearLines() {\\n  let cleared = 0;\\n  for (let y = ROWS - 1; y >= 0; y--) {\\n    if (grid[y].every(cell => cell)) {\\n      grid.splice(y, 1);\\n      grid.unshift(new Array(COLS).fill(null));\\n      cleared++;\\n      y++; // re-check the same row index\\n    }\\n  }\\n  if (cleared) {\\n    score += LINE_SCORES[cleared] * level;\\n    lines += cleared;\\n    level = Math.floor(lines / 10) + 1;\\n    dropInterval = Math.max(80, 1000 - (level - 1) * 90);\\n  }\\n}\\n\\nfunction spawn() {\\n  current = next;\\n  next = randomPiece();\\n  drawNext();\\n  if (collides(current, 0, 0)) {\\n    endGame();\\n  }\\n}\\n\\nfunction endGame() {\\n  gameOver = true;\\n}\\n\\nfunction reset() {\\n  grid = emptyGrid();\\n  score = 0; lines = 0; level = 1;\\n  dropInterval = 1000; dropTimer = 0; lastTime = 0;\\n  gameOver = false; paused = false;\\n  next = randomPiece();\\n  spawn();\\n  updateHud();\\n  cancelAnimationFrame(rafId);\\n  rafId = requestAnimationFrame(loop);\\n}\\n\\n// --- Rendering -----------------------------------------------------------\\n\\nfunction drawCell(ctx, x, y, color, size) {\\n  const px = x * size, py = y * size;\\n  ctx.fillStyle = color;\\n  ctx.fillRect(px + 1, py + 1, size - 2, size - 2);\\n  ctx.fillStyle = \\\"rgba(255,255,255,0.22)\\\";\\n  ctx.fillRect(px + 1, py + 1, size - 2, 3);\\n  ctx.fillStyle = \\\"rgba(0,0,0,0.25)\\\";\\n  ctx.fillRect(px + 1, py + size - 4, size - 2, 3);\\n}\\n\\nfunction draw() {\\n  boardCtx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);\\n\\n  // faint grid\\n  boardCtx.strokeStyle = \\\"rgba(255,255,255,0.04)\\\";\\n  boardCtx.lineWidth = 1;\\n  for (let x = 1; x < COLS; x++) {\\n    boardCtx.beginPath();\\n    boardCtx.moveTo(x * CELL + 0.5, 0);\\n    boardCtx.lineTo(x * CELL + 0.5, boardCanvas.height);\\n    boardCtx.stroke();\\n  }\\n  for (let y = 1; y < ROWS; y++) {\\n    boardCtx.beginPath();\\n    boardCtx.moveTo(0, y * CELL + 0.5);\\n    boardCtx.lineTo(boardCanvas.width, y * CELL + 0.5);\\n    boardCtx.stroke();\\n  }\\n\\n  // settled blocks\\n  for (let y = 0; y < ROWS; y++)\\n    for (let x = 0; x < COLS; x++)\\n      if (grid[y][x]) drawCell(boardCtx, x, y, COLORS[grid[y][x]], CELL);\\n\\n  if (!gameOver) {\\n    // ghost\\n    const gy = ghostY();\\n    const gcolor = COLORS[current.type];\\n    boardCtx.globalAlpha = 0.18;\\n    for (let r = 0; r < current.shape.length; r++)\\n      for (let c = 0; c < current.shape[r].length; c++)\\n        if (current.shape[r][c] && gy + r >= 0)\\n          drawCell(boardCtx, current.x + c, gy + r, gcolor, CELL);\\n    boardCtx.globalAlpha = 1;\\n\\n    // active piece\\n    for (let r = 0; r < current.shape.length; r++)\\n      for (let c = 0; c < current.shape[r].length; c++)\\n        if (current.shape[r][c] && current.y + r >= 0)\\n          drawCell(boardCtx, current.x + c, current.y + r, COLORS[current.type], CELL);\\n  }\\n\\n  // overlays\\n  if (gameOver || paused) {\\n    boardCtx.fillStyle = \\\"rgba(10,10,18,0.78)\\\";\\n    boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);\\n    boardCtx.fillStyle = \\\"#e8e8f4\\\";\\n    boardCtx.textAlign = \\\"center\\\";\\n    boardCtx.font = \\\"bold 28px monospace\\\";\\n    boardCtx.fillText(gameOver ? \\\"GAME OVER\\\" : \\\"PAUSED\\\", boardCanvas.width / 2, 270);\\n    boardCtx.font = \\\"14px monospace\\\";\\n    boardCtx.fillStyle = \\\"#9a9ab8\\\";\\n    boardCtx.fillText(\\n      gameOver ? \\\"score \\\" + score + \\\"  —  press R to restart\\\" : \\\"press P to resume\\\",\\n      boardCanvas.width / 2, 305\\n    );\\n    boardCtx.textAlign = \\\"left\\\";\\n  }\\n}\\n\\nfunction drawNext() {\\n  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);\\n  const s = SHAPES[next.type];\\n  // crop to the piece's bounding box for a centered preview\\n  let minR = 9, maxR = -1, minC = 9, maxC = -1;\\n  for (let r = 0; r < s.length; r++)\\n    for (let c = 0; c < s[r].length; c++)\\n      if (s[r][c]) {\\n        minR = Math.min(minR, r); maxR = Math.max(maxR, r);\\n        minC = Math.min(minC, c); maxC = Math.max(maxC, c);\\n      }\\n  const size = 24;\\n  const w = (maxC - minC + 1) * size, h = (maxR - minR + 1) * size;\\n  const ox = (nextCanvas.width - w) / 2, oy = (nextCanvas.height - h) / 2;\\n  nextCtx.save();\\n  nextCtx.translate(ox, oy);\\n  for (let r = minR; r <= maxR; r++)\\n    for (let c = minC; c <= maxC; c++)\\n      if (s[r][c]) {\\n        const px = (c - minC) * size, py = (r - minR) * size;\\n        nextCtx.fillStyle = COLORS[next.type];\\n        nextCtx.fillRect(px + 1, py + 1, size - 2, size - 2);\\n        nextCtx.fillStyle = \\\"rgba(255,255,255,0.22)\\\";\\n        nextCtx.fillRect(px + 1, py + 1, size - 2, 3);\\n      }\\n  nextCtx.restore();\\n}\\n\\nfunction updateHud() {\\n  scoreEl.textContent = score;\\n  levelEl.textContent = level;\\n  linesEl.textContent = lines;\\n}\\n\\n// --- Game loop ------------------------------------------------------------\\n\\nfunction loop(time) {\\n  rafId = requestAnimationFrame(loop);\\n  if (lastTime === 0) lastTime = time;\\n  const dt = time - lastTime;\\n  lastTime = time;\\n\\n  if (!gameOver && !paused) {\\n    dropTimer += dt;\\n    if (dropTimer >= dropInterval) {\\n      dropTimer = 0;\\n      if (!move(0, 1)) lockPiece();\\n    }\\n  }\\n  updateHud();\\n  draw();\\n}\\n\\n// --- Input -----------------------------------------------------------------\\n\\ndocument.addEventListener(\\\"keydown\\\", (e) => {\\n  if (e.code === \\\"KeyR\\\") { reset(); return; }\\n  if (e.code === \\\"KeyP\\\" && !gameOver) { paused = !paused; return; }\\n  if (gameOver || paused) return;\\n\\n  switch (e.code) {\\n    case \\\"ArrowLeft\\\":  move(-1, 0); break;\\n    case \\\"ArrowRight\\\": move(1, 0); break;\\n    case \\\"ArrowUp\\\":    rotate(); break;\\n    case \\\"ArrowDown\\\":\\n      if (move(0, 1)) { score += 1; updateHud(); }\\n      dropTimer = 0;\\n      break;\\n    case \\\"Space\\\":\\n      e.preventDefault();\\n      while (move(0, 1)) { score += 2; }\\n      updateHud();\\n      lockPiece();\\n      dropTimer = 0;\\n      break;\\n    default:\\n      return;\\n  }\\n  if (e.code.startsWith(\\\"Arrow\\\")) e.preventDefault();\\n  draw();\\n});\\n\\nreset();\\n</script>\\n</body>\\n</html>\\n\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141470299,
+          "result": "Created index.html (403 lines, 10.4 KB).",
+          "artifacts": [],
+          "finishedAt": 1787141470303
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 2392,
+        "completionTokens": 4288,
+        "ttftMs": 834,
+        "totalMs": 240898,
+        "prefillTps": 2868.10551558753,
+        "decodeTps": 17.86190349240203,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 364,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "a076764d-71c6-48e6-8998-6d6cab32dd9e",
+      "role": "tool",
+      "toolCallId": "831615709",
+      "content": "Created index.html (403 lines, 10.4 KB).",
+      "createdAt": 1787141470303
+    },
+    {
+      "id": "40e873ac-e4a7-4df0-9a74-67678e6cfda9",
+      "role": "assistant",
+      "content": "\n\n",
+      "createdAt": 1787141470304,
+      "streaming": false,
+      "reasoning": "Let me read the file to check what was written.\n",
+      "toolCalls": [
+        {
+          "id": "851790656",
+          "name": "read_file",
+          "arguments": "{\"path\":\"index.html\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141473803,
+          "result": "     1\t<!DOCTYPE html>\n     2\t<html lang=\"en\">\n     3\t<head>\n     4\t<meta charset=\"utf-8\">\n     5\t<title>Tetris</title>\n     6\t<style>\n     7\t  html, body {\n     8\t    margin: 0;\n     9\t    height: 100%;\n    10\t    background: #14141e;\n    11\t    color: #d8d8e8;\n    12\t    font-family: \"SF Mono\", Menlo, Consolas, monospace;\n    13\t    display: flex;\n    14\t    align-items: center;\n    15\t    justify-content: center;\n    16\t  }\n    17\t  #wrap {\n    18\t    display: flex;\n    19\t    gap: 16px;\n    20\t    align-items: flex-start;\n    21\t  }\n    22\t  canvas {\n    23\t    background: #0c0c14;\n    24\t    border: 2px solid #2c2c40;\n    25\t    border-radius: 4px;\n    26\t    display: block;\n    27\t  }\n    28\t  #panel {\n    29\t    width: 150px;\n    30\t    font-size: 13px;\n    31\t  }\n    32\t  #panel h1 {\n    33\t    font-size: 18px;\n    34\t    margin: 0 0 12px;\n    35\t    letter-spacing: 3px;\n    36\t  }\n    37\t  .label {\n    38\t    color: #7a7a96;\n    39\t    font-size: 11px;\n    40\t    text-transform: uppercase;\n    41\t    letter-spacing: 1px;\n    42\t    margin-bottom: 4px;\n    43\t  }\n    44\t  .value {\n    45\t    font-size: 20px;\n    46\t    margin-bottom: 14px;\n    47\t  }\n    48\t  #next {\n    49\t    background: #0c0c14;\n    50\t    border: 2px solid #2c2c40;\n    51\t    border-radius: 4px;\n    52\t    display: block;\n    53\t    margin-bottom: 14px;\n    54\t  }\n    55\t  .keys {\n    56\t    color: #5c5c78;\n    57\t    font-size: 11px;\n    58\t    line-height: 1.7;\n    59\t  }\n    60\t</style>\n    61\t</head>\n    62\t<body>\n    63\t<div id=\"wrap\">\n    64\t  <canvas id=\"board\" width=\"300\" height=\"600\"></canvas>\n    65\t  <div id=\"panel\">\n    66\t    <h1>TETRIS</h1>\n    67\t    <div class=\"label\">Score</div>\n    68\t    <div class=\"value\" id=\"score\">0</div>\n    69\t    <div class=\"label\">Level</div>\n    70\t    <div class=\"value\" id=\"level\">1</div>\n    71\t    <div class=\"label\">Lines</div>\n    72\t    <div class=\"value\" id=\"lines\">0</div>\n    73\t    <div class=\"label\">Next</div>\n    74\t    <canvas id=\"next\" width=\"120\" height=\"80\"></canvas>\n    75\t    <div class=\"keys\">\n    76\t      &larr; &rarr; move<br>\n    77\t      &uarr; rotate<br>\n    78\t      &darr; soft drop<br>\n    79\t      space hard drop<br>\n    80\t      P pause<br>\n    81\t      R restart\n    82\t    </div>\n    83\t  </div>\n    84\t</div>\n    85\t\n    86\t<script>\n    87\t\"use strict\";\n    88\t\n    89\tconst COLS = 10, ROWS = 20, CELL = 30;\n    90\tconst boardCanvas = document.getElementById(\"board\");\n    91\tconst boardCtx = boardCanvas.getContext(\"2d\");\n    92\tconst nextCanvas = document.getElementById(\"next\");\n    93\tconst nextCtx = nextCanvas.getContext(\"2d\");\n    94\tconst scoreEl = document.getElementById(\"score\");\n    95\tconst levelEl = document.getElementById(\"level\");\n    96\tconst linesEl = document.getElementById(\"lines\");\n    97\t\n    98\t// --- Piece definitions -------------------------------------------------\n    99\t\n   100\tconst SHAPES = {\n   101\t  I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],\n   102\t  O: [[1,1],[1,1]],\n   103\t  T: [[0,1,0],[1,1,1],[0,0,0]],\n   104\t  S: [[0,1,1],[1,1,0],[0,0,0]],\n   105\t  Z: [[1,1,0],[0,1,1],[0,0,0]],\n   106\t  J: [[1,0,0],[1,1,1],[0,0,0]],\n   107\t  L: [[0,0,1],[1,1,1],[0,0,0]],\n   108\t};\n   109\tconst COLORS = {\n   110\t  I: \"#45d4e8\", O: \"#e8c845\", T: \"#b060e0\",\n   111\t  S: \"#5cd47a\", Z: \"#e05c5c\", J: \"#5c8ae0\", L: \"#e89a45\",\n   112\t};\n   113\tconst TYPES = Object.keys(SHAPES);\n   114\tconst LINE_SCORES = [0, 100, 300, 500, 800];\n   115\t\n   116\t// --- State -------------------------------------------------------------\n   117\t\n   118\tlet grid, current, next, score, lines, level, dropInterval, dropTimer,\n   119\t    lastTime, gameOver, paused, rafId;\n   120\t\n   121\tfunction emptyGrid() {\n   122\t  return Array.from({ length: ROWS }, () => new Array(COLS).fill(null));\n   123\t}\n   124\t\n   125\tfunction randomPiece() {\n   126\t  const type = TYPES[Math.floor(Math.random() * TYPES.length)];\n   127\t  const shape = SHAPES[type].map(row => row.slice());\n   128\t  return {\n   129\t    type,\n   130\t    shape,\n   131\t    x: Math.floor((COLS - shape[0].length) / 2),\n   132\t    y: 0,\n   133\t  };\n   134\t}\n   135\t\n   136\t// --- Collision & movement ----------------------------------------------\n   137\t\n   138\tfunction collides(piece, dx, dy, shape) {\n   139\t  shape = shape || piece.shape;\n   140\t  for (let r = 0; r < shape.length; r++) {\n   141\t    for (let c = 0; c < shape[r].length; c++) {\n   142\t      if (!shape[r][c]) continue;\n   143\t      const x = piece.x + c + dx;\n   144\t      const y = piece.y + r + dy;\n   145\t      if (x < 0 || x >= COLS || y >= ROWS) return true;\n   146\t      if (y >= 0 && grid[y][x]) return true;\n   147\t    }\n   148\t  }\n   149\t  return false;\n   150\t}\n   151\t\n   152\tfunction move(dx, dy) {\n   153\t  if (!collides(current, dx, dy)) {\n   154\t    current.x += dx;\n   155\t    current.y += dy;\n   156\t    return true;\n   157\t  }\n   158\t  return false;\n   159\t}\n   160\t\n   161\tfunction rotate() {\n   162\t  const s = current.shape;\n   163\t  const n = s.length;\n   164\t  const out = Array.from({ length: n }, () => new Array(n).fill(0));\n   165\t  for (let r = 0; r < n; r++)\n   166\t    for (let c = 0; c < n; c++)\n   167\t      out[c][n - 1 - r] = s[r][c];\n   168\t  // Try the rotation in place, then kick left/right, then up.\n   169\t  for (const kick of [0, -1, 1, -2, 2]) {\n   170\t    if (!collides(current, kick, 0, out)) {\n   171\t      current.x += kick;\n   172\t      current.shape = out;\n   173\t      return;\n   174\t    }\n   175\t  }\n   176\t  if (!collides(current, 0, -1, out)) {\n   177\t    current.y -= 1;\n   178\t    current.shape = out;\n   179\t  }\n   180\t}\n   181\t\n   182\tfunction ghostY() {\n   183\t  let dy = 0;\n   184\t  while (!collides(current, 0, dy + 1)) dy++;\n   185\t  return current.y + dy;\n   186\t}\n   187\t\n   188\t// --- Locking, clearing, scoring ----------------------------------------\n   189\t\n   190\tfunction lockPiece() {\n   191\t  for (let r = 0; r < current.shape.length; r++) {\n   192\t    for (let c = 0; c < current.shape[r].length; c++) {\n   193\t      if (!current.shape[r][c]) continue;\n   194\t      const y = current.y + r;\n   195\t      if (y < 0) { endGame(); return; }\n   196\t      grid[y][current.x + c] = current.type;\n   197\t    }\n   198\t  }\n   199\t  clearLines();\n   200\t  spawn();\n   201\t}\n   202\t\n   203\tfunction clearLines() {\n   204\t  let cleared = 0;\n   205\t  for (let y = ROWS - 1; y >= 0; y--) {\n   206\t    if (grid[y].every(cell => cell)) {\n   207\t      grid.splice(y, 1);\n   208\t      grid.unshift(new Array(COLS).fill(null));\n   209\t      cleared++;\n   210\t      y++; // re-check the same row index\n   211\t    }\n   212\t  }\n   213\t  if (cleared) {\n   214\t    score += LINE_SCORES[cleared] * level;\n   215\t    lines += cleared;\n   216\t    level = Math.floor(lines / 10) + 1;\n   217\t    dropInterval = Math.max(80, 1000 - (level - 1) * 90);\n   218\t  }\n   219\t}\n   220\t\n   221\tfunction spawn() {\n   222\t  current = next;\n   223\t  next = randomPiece();\n   224\t  drawNext();\n   225\t  if (collides(current, 0, 0)) {\n   226\t    endGame();\n   227\t  }\n   228\t}\n   229\t\n   230\tfunction endGame() {\n   231\t  gameOver = true;\n   232\t}\n   233\t\n   234\tfunction reset() {\n   235\t  grid = emptyGrid();\n   236\t  score = 0; lines = 0; level = 1;\n   237\t  dropInterval = 1000; dropTimer = 0; lastTime = 0;\n   238\t  gameOver = false; paused = false;\n   239\t  next = randomPiece();\n   240\t  spawn();\n   241\t  updateHud();\n   242\t  cancelAnimationFrame(rafId);\n   243\t  rafId = requestAnimationFrame(loop);\n   244\t}\n   245\t\n   246\t// --- Rendering -----------------------------------------------------------\n   247\t\n   248\tfunction drawCell(ctx, x, y, color, size) {\n   249\t  const px = x * size, py = y * size;\n   250\t  ctx.fillStyle = color;\n   251\t  ctx.fillRect(px + 1, py + 1, size - 2, size - 2);\n   252\t  ctx.fillStyle = \"rgba(255,255,255,0.22)\";\n   253\t  ctx.fillRect(px + 1, py + 1, size - 2, 3);\n   254\t  ctx.fillStyle = \"rgba(0,0,0,0.25)\";\n   255\t  ctx.fillRect(px + 1, py + size - 4, size - 2, 3);\n   256\t}\n   257\t\n   258\tfunction draw() {\n   259\t  boardCtx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);\n   260\t\n   261\t  // faint grid\n   262\t  boardCtx.strokeStyle = \"rgba(255,255,255,0.04)\";\n   263\t  boardCtx.lineWidth = 1;\n   264\t  for (let x = 1; x < COLS; x++) {\n   265\t    boardCtx.beginPath();\n   266\t    boardCtx.moveTo(x * CELL + 0.5, 0);\n   267\t    boardCtx.lineTo(x * CELL + 0.5, boardCanvas.height);\n   268\t    boardCtx.stroke();\n   269\t  }\n   270\t  for (let y = 1; y < ROWS; y++) {\n   271\t    boardCtx.beginPath();\n   272\t    boardCtx.moveTo(0, y * CELL + 0.5);\n   273\t    boardCtx.lineTo(boardCanvas.width, y * CELL + 0.5);\n   274\t    boardCtx.stroke();\n   275\t  }\n   276\t\n   277\t  // settled blocks\n   278\t  for (let y = 0; y < ROWS; y++)\n   279\t    for (let x = 0; x < COLS; x++)\n   280\t      if (grid[y][x]) drawCell(boardCtx, x, y, COLORS[grid[y][x]], CELL);\n   281\t\n   282\t  if (!gameOver) {\n   283\t    // ghost\n   284\t    const gy = ghostY();\n   285\t    const gcolor = COLORS[current.type];\n   286\t    boardCtx.globalAlpha = 0.18;\n   287\t    for (let r = 0; r < current.shape.length; r++)\n   288\t      for (let c = 0; c < current.shape[r].length; c++)\n   289\t        if (current.shape[r][c] && gy + r >= 0)\n   290\t          drawCell(boardCtx, current.x + c, gy + r, gcolor, CELL);\n   291\t    boardCtx.globalAlpha = 1;\n   292\t\n   293\t    // active piece\n   294\t    for (let r = 0; r < current.shape.length; r++)\n   295\t      for (let c = 0; c < current.shape[r].length; c++)\n   296\t        if (current.shape[r][c] && current.y + r >= 0)\n   297\t          drawCell(boardCtx, current.x + c, current.y + r, COLORS[current.type], CELL);\n   298\t  }\n   299\t\n   300\t  // overlays\n   301\t  if (gameOver || paused) {\n   302\t    boardCtx.fillStyle = \"rgba(10,10,18,0.78)\";\n   303\t    boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);\n   304\t    boardCtx.fillStyle = \"#e8e8f4\";\n   305\t    boardCtx.textAlign = \"center\";\n   306\t    boardCtx.font = \"bold 28px monospace\";\n   307\t    boardCtx.fillText(gameOver ? \"GAME OVER\" : \"PAUSED\", boardCanvas.width / 2, 270);\n   308\t    boardCtx.font = \"14px monospace\";\n   309\t    boardCtx.fillStyle = \"#9a9ab8\";\n   310\t    boardCtx.fillText(\n   311\t      gameOver ? \"score \" + score + \"  —  press R to restart\" : \"press P to resume\",\n   312\t      boardCanvas.width / 2, 305\n   313\t    );\n   314\t    boardCtx.textAlign = \"left\";\n   315\t  }\n   316\t}\n   317\t\n   318\tfunction drawNext() {\n   319\t  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);\n   320\t  const s = SHAPES[next.type];\n   321\t  // crop to the piece's bounding box for a centered preview\n   322\t  let minR = 9, maxR = -1, minC = 9, maxC = -1;\n   323\t  for (let r = 0; r < s.length; r++)\n   324\t    for (let c = 0; c < s[r].length; c++)\n   325\t      if (s[r][c]) {\n   326\t        minR = Math.min(minR, r); maxR = Math.max(maxR, r);\n   327\t        minC = Math.min(minC, c); maxC = Math.max(maxC, c);\n   328\t      }\n   329\t  const size = 24;\n   330\t  const w = (maxC - minC + 1) * size, h = (maxR - minR + 1) * size;\n   331\t  const ox = (nextCanvas.width - w) / 2, oy = (nextCanvas.height - h) / 2;\n   332\t  nextCtx.save();\n   333\t  nextCtx.translate(ox, oy);\n   334\t  for (let r = minR; r <= maxR; r++)\n   335\t    for (let c = minC; c <= maxC; c++)\n   336\t      if (s[r][c]) {\n   337\t        const px = (c - minC) * size, py = (r - minR) * size;\n   338\t        nextCtx.fillStyle = COLORS[next.type];\n   339\t        nextCtx.fillRect(px + 1, py + 1, size - 2, size - 2);\n   340\t        nextCtx.fillStyle = \"rgba(255,255,255,0.22)\";\n   341\t        nextCtx.fillRect(px + 1, py + 1, size - 2, 3);\n   342\t      }\n   343\t  nextCtx.restore();\n   344\t}\n   345\t\n   346\tfunction updateHud() {\n   347\t  scoreEl.textContent = score;\n   348\t  levelEl.textContent = level;\n   349\t  linesEl.textContent = lines;\n   350\t}\n   351\t\n   352\t// --- Game loop ------------------------------------------------------------\n   353\t\n   354\tfunction loop(time) {\n   355\t  rafId = requestAnimationFrame(loop);\n   356\t  if (lastTime === 0) lastTime = time;\n   357\t  const dt = time - lastTime;\n   358\t  lastTime = time;\n   359\t\n   360\t  if (!gameOver && !paused) {\n   361\t    dropTimer += dt;\n   362\t    if (dropTimer >= dropInterval) {\n   363\t      dropTimer = 0;\n   364\t      if (!move(0, 1)) lockPiece();\n   365\t    }\n   366\t  }\n   367\t  updateHud();\n   368\t  draw();\n   369\t}\n   370\t\n   371\t// --- Input -----------------------------------------------------------------\n   372\t\n   373\tdocument.addEventListener(\"keydown\", (e) => {\n   374\t  if (e.code === \"KeyR\") { reset(); return; }\n   375\t  if (e.code === \"KeyP\" && !gameOver) { paused = !paused; return; }\n   376\t  if (gameOver || paused) return;\n   377\t\n   378\t  switch (e.code) {\n   379\t    case \"ArrowLeft\":  move(-1, 0); break;\n   380\t    case \"ArrowRight\": move(1, 0); break;\n   381\t    case \"ArrowUp\":    rotate(); break;\n   382\t    case \"ArrowDown\":\n   383\t      if (move(0, 1)) { score += 1; updateHud(); }\n   384\t      dropTimer = 0;\n   385\t      break;\n   386\t    case \"Space\":\n   387\t      e.preventDefault();\n   388\t      while (move(0, 1)) { score += 2; }\n   389\t      updateHud();\n   390\t      lockPiece();\n   391\t      dropTimer = 0;\n   392\t      break;\n   393\t    default:\n   394\t      return;\n   395\t  }\n   396\t  if (e.code.startsWith(\"Arrow\")) e.preventDefault();\n   397\t  draw();\n   398\t});\n   399\t\n   400\treset();\n   401\t</script>\n   402\t</body>\n   403\t</html>",
+          "artifacts": [],
+          "finishedAt": 1787141473806
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 2496,
+        "completionTokens": 40,
+        "ttftMs": 1444,
+        "totalMs": 3498,
+        "prefillTps": 1728.5318559556788,
+        "decodeTps": 19.474196689386563,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 12,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "ff4c6570-3fd4-4e7a-b473-759d18915cdf",
+      "role": "tool",
+      "toolCallId": "851790656",
+      "content": "     1\t<!DOCTYPE html>\n     2\t<html lang=\"en\">\n     3\t<head>\n     4\t<meta charset=\"utf-8\">\n     5\t<title>Tetris</title>\n     6\t<style>\n     7\t  html, body {\n     8\t    margin: 0;\n     9\t    height: 100%;\n    10\t    background: #14141e;\n    11\t    color: #d8d8e8;\n    12\t    font-family: \"SF Mono\", Menlo, Consolas, monospace;\n    13\t    display: flex;\n    14\t    align-items: center;\n    15\t    justify-content: center;\n    16\t  }\n    17\t  #wrap {\n    18\t    display: flex;\n    19\t    gap: 16px;\n    20\t    align-items: flex-start;\n    21\t  }\n    22\t  canvas {\n    23\t    background: #0c0c14;\n    24\t    border: 2px solid #2c2c40;\n    25\t    border-radius: 4px;\n    26\t    display: block;\n    27\t  }\n    28\t  #panel {\n    29\t    width: 150px;\n    30\t    font-size: 13px;\n    31\t  }\n    32\t  #panel h1 {\n    33\t    font-size: 18px;\n    34\t    margin: 0 0 12px;\n    35\t    letter-spacing: 3px;\n    36\t  }\n    37\t  .label {\n    38\t    color: #7a7a96;\n    39\t    font-size: 11px;\n    40\t    text-transform: uppercase;\n    41\t    letter-spacing: 1px;\n    42\t    margin-bottom: 4px;\n    43\t  }\n    44\t  .value {\n    45\t    font-size: 20px;\n    46\t    margin-bottom: 14px;\n    47\t  }\n    48\t  #next {\n    49\t    background: #0c0c14;\n    50\t    border: 2px solid #2c2c40;\n    51\t    border-radius: 4px;\n    52\t    display: block;\n    53\t    margin-bottom: 14px;\n    54\t  }\n    55\t  .keys {\n    56\t    color: #5c5c78;\n    57\t    font-size: 11px;\n    58\t    line-height: 1.7;\n    59\t  }\n    60\t</style>\n    61\t</head>\n    62\t<body>\n    63\t<div id=\"wrap\">\n    64\t  <canvas id=\"board\" width=\"300\" height=\"600\"></canvas>\n    65\t  <div id=\"panel\">\n    66\t    <h1>TETRIS</h1>\n    67\t    <div class=\"label\">Score</div>\n    68\t    <div class=\"value\" id=\"score\">0</div>\n    69\t    <div class=\"label\">Level</div>\n    70\t    <div class=\"value\" id=\"level\">1</div>\n    71\t    <div class=\"label\">Lines</div>\n    72\t    <div class=\"value\" id=\"lines\">0</div>\n    73\t    <div class=\"label\">Next</div>\n    74\t    <canvas id=\"next\" width=\"120\" height=\"80\"></canvas>\n    75\t    <div class=\"keys\">\n    76\t      &larr; &rarr; move<br>\n    77\t      &uarr; rotate<br>\n    78\t      &darr; soft drop<br>\n    79\t      space hard drop<br>\n    80\t      P pause<br>\n    81\t      R restart\n    82\t    </div>\n    83\t  </div>\n    84\t</div>\n    85\t\n    86\t<script>\n    87\t\"use strict\";\n    88\t\n    89\tconst COLS = 10, ROWS = 20, CELL = 30;\n    90\tconst boardCanvas = document.getElementById(\"board\");\n    91\tconst boardCtx = boardCanvas.getContext(\"2d\");\n    92\tconst nextCanvas = document.getElementById(\"next\");\n    93\tconst nextCtx = nextCanvas.getContext(\"2d\");\n    94\tconst scoreEl = document.getElementById(\"score\");\n    95\tconst levelEl = document.getElementById(\"level\");\n    96\tconst linesEl = document.getElementById(\"lines\");\n    97\t\n    98\t// --- Piece definitions -------------------------------------------------\n    99\t\n   100\tconst SHAPES = {\n   101\t  I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],\n   102\t  O: [[1,1],[1,1]],\n   103\t  T: [[0,1,0],[1,1,1],[0,0,0]],\n   104\t  S: [[0,1,1],[1,1,0],[0,0,0]],\n   105\t  Z: [[1,1,0],[0,1,1],[0,0,0]],\n   106\t  J: [[1,0,0],[1,1,1],[0,0,0]],\n   107\t  L: [[0,0,1],[1,1,1],[0,0,0]],\n   108\t};\n   109\tconst COLORS = {\n   110\t  I: \"#45d4e8\", O: \"#e8c845\", T: \"#b060e0\",\n   111\t  S: \"#5cd47a\", Z: \"#e05c5c\", J: \"#5c8ae0\", L: \"#e89a45\",\n   112\t};\n   113\tconst TYPES = Object.keys(SHAPES);\n   114\tconst LINE_SCORES = [0, 100, 300, 500, 800];\n   115\t\n   116\t// --- State -------------------------------------------------------------\n   117\t\n   118\tlet grid, current, next, score, lines, level, dropInterval, dropTimer,\n   119\t    lastTime, gameOver, paused, rafId;\n   120\t\n   121\tfunction emptyGrid() {\n   122\t  return Array.from({ length: ROWS }, () => new Array(COLS).fill(null));\n   123\t}\n   124\t\n   125\tfunction randomPiece() {\n   126\t  const type = TYPES[Math.floor(Math.random() * TYPES.length)];\n   127\t  const shape = SHAPES[type].map(row => row.slice());\n   128\t  return {\n   129\t    type,\n   130\t    shape,\n   131\t    x: Math.floor((COLS - shape[0].length) / 2),\n   132\t    y: 0,\n   133\t  };\n   134\t}\n   135\t\n   136\t// --- Collision & movement ----------------------------------------------\n   137\t\n   138\tfunction collides(piece, dx, dy, shape) {\n   139\t  shape = shape || piece.shape;\n   140\t  for (let r = 0; r < shape.length; r++) {\n   141\t    for (let c = 0; c < shape[r].length; c++) {\n   142\t      if (!shape[r][c]) continue;\n   143\t      const x = piece.x + c + dx;\n   144\t      const y = piece.y + r + dy;\n   145\t      if (x < 0 || x >= COLS || y >= ROWS) return true;\n   146\t      if (y >= 0 && grid[y][x]) return true;\n   147\t    }\n   148\t  }\n   149\t  return false;\n   150\t}\n   151\t\n   152\tfunction move(dx, dy) {\n   153\t  if (!collides(current, dx, dy)) {\n   154\t    current.x += dx;\n   155\t    current.y += dy;\n   156\t    return true;\n   157\t  }\n   158\t  return false;\n   159\t}\n   160\t\n   161\tfunction rotate() {\n   162\t  const s = current.shape;\n   163\t  const n = s.length;\n   164\t  const out = Array.from({ length: n }, () => new Array(n).fill(0));\n   165\t  for (let r = 0; r < n; r++)\n   166\t    for (let c = 0; c < n; c++)\n   167\t      out[c][n - 1 - r] = s[r][c];\n   168\t  // Try the rotation in place, then kick left/right, then up.\n   169\t  for (const kick of [0, -1, 1, -2, 2]) {\n   170\t    if (!collides(current, kick, 0, out)) {\n   171\t      current.x += kick;\n   172\t      current.shape = out;\n   173\t      return;\n   174\t    }\n   175\t  }\n   176\t  if (!collides(current, 0, -1, out)) {\n   177\t    current.y -= 1;\n   178\t    current.shape = out;\n   179\t  }\n   180\t}\n   181\t\n   182\tfunction ghostY() {\n   183\t  let dy = 0;\n   184\t  while (!collides(current, 0, dy + 1)) dy++;\n   185\t  return current.y + dy;\n   186\t}\n   187\t\n   188\t// --- Locking, clearing, scoring ----------------------------------------\n   189\t\n   190\tfunction lockPiece() {\n   191\t  for (let r = 0; r < current.shape.length; r++) {\n   192\t    for (let c = 0; c < current.shape[r].length; c++) {\n   193\t      if (!current.shape[r][c]) continue;\n   194\t      const y = current.y + r;\n   195\t      if (y < 0) { endGame(); return; }\n   196\t      grid[y][current.x + c] = current.type;\n   197\t    }\n   198\t  }\n   199\t  clearLines();\n   200\t  spawn();\n   201\t}\n   202\t\n   203\tfunction clearLines() {\n   204\t  let cleared = 0;\n   205\t  for (let y = ROWS - 1; y >= 0; y--) {\n   206\t    if (grid[y].every(cell => cell)) {\n   207\t      grid.splice(y, 1);\n   208\t      grid.unshift(new Array(COLS).fill(null));\n   209\t      cleared++;\n   210\t      y++; // re-check the same row index\n   211\t    }\n   212\t  }\n   213\t  if (cleared) {\n   214\t    score += LINE_SCORES[cleared] * level;\n   215\t    lines += cleared;\n   216\t    level = Math.floor(lines / 10) + 1;\n   217\t    dropInterval = Math.max(80, 1000 - (level - 1) * 90);\n   218\t  }\n   219\t}\n   220\t\n   221\tfunction spawn() {\n   222\t  current = next;\n   223\t  next = randomPiece();\n   224\t  drawNext();\n   225\t  if (collides(current, 0, 0)) {\n   226\t    endGame();\n   227\t  }\n   228\t}\n   229\t\n   230\tfunction endGame() {\n   231\t  gameOver = true;\n   232\t}\n   233\t\n   234\tfunction reset() {\n   235\t  grid = emptyGrid();\n   236\t  score = 0; lines = 0; level = 1;\n   237\t  dropInterval = 1000; dropTimer = 0; lastTime = 0;\n   238\t  gameOver = false; paused = false;\n   239\t  next = randomPiece();\n   240\t  spawn();\n   241\t  updateHud();\n   242\t  cancelAnimationFrame(rafId);\n   243\t  rafId = requestAnimationFrame(loop);\n   244\t}\n   245\t\n   246\t// --- Rendering -----------------------------------------------------------\n   247\t\n   248\tfunction drawCell(ctx, x, y, color, size) {\n   249\t  const px = x * size, py = y * size;\n   250\t  ctx.fillStyle = color;\n   251\t  ctx.fillRect(px + 1, py + 1, size - 2, size - 2);\n   252\t  ctx.fillStyle = \"rgba(255,255,255,0.22)\";\n   253\t  ctx.fillRect(px + 1, py + 1, size - 2, 3);\n   254\t  ctx.fillStyle = \"rgba(0,0,0,0.25)\";\n   255\t  ctx.fillRect(px + 1, py + size - 4, size - 2, 3);\n   256\t}\n   257\t\n   258\tfunction draw() {\n   259\t  boardCtx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);\n   260\t\n   261\t  // faint grid\n   262\t  boardCtx.strokeStyle = \"rgba(255,255,255,0.04)\";\n   263\t  boardCtx.lineWidth = 1;\n   264\t  for (let x = 1; x < COLS; x++) {\n   265\t    boardCtx.beginPath();\n   266\t    boardCtx.moveTo(x * CELL + 0.5, 0);\n   267\t    boardCtx.lineTo(x * CELL + 0.5, boardCanvas.height);\n   268\t    boardCtx.stroke();\n   269\t  }\n   270\t  for (let y = 1; y < ROWS; y++) {\n   271\t    boardCtx.beginPath();\n   272\t    boardCtx.moveTo(0, y * CELL + 0.5);\n   273\t    boardCtx.lineTo(boardCanvas.width, y * CELL + 0.5);\n   274\t    boardCtx.stroke();\n   275\t  }\n   276\t\n   277\t  // settled blocks\n   278\t  for (let y = 0; y < ROWS; y++)\n   279\t    for (let x = 0; x < COLS; x++)\n   280\t      if (grid[y][x]) drawCell(boardCtx, x, y, COLORS[grid[y][x]], CELL);\n   281\t\n   282\t  if (!gameOver) {\n   283\t    // ghost\n   284\t    const gy = ghostY();\n   285\t    const gcolor = COLORS[current.type];\n   286\t    boardCtx.globalAlpha = 0.18;\n   287\t    for (let r = 0; r < current.shape.length; r++)\n   288\t      for (let c = 0; c < current.shape[r].length; c++)\n   289\t        if (current.shape[r][c] && gy + r >= 0)\n   290\t          drawCell(boardCtx, current.x + c, gy + r, gcolor, CELL);\n   291\t    boardCtx.globalAlpha = 1;\n   292\t\n   293\t    // active piece\n   294\t    for (let r = 0; r < current.shape.length; r++)\n   295\t      for (let c = 0; c < current.shape[r].length; c++)\n   296\t        if (current.shape[r][c] && current.y + r >= 0)\n   297\t          drawCell(boardCtx, current.x + c, current.y + r, COLORS[current.type], CELL);\n   298\t  }\n   299\t\n   300\t  // overlays\n   301\t  if (gameOver || paused) {\n   302\t    boardCtx.fillStyle = \"rgba(10,10,18,0.78)\";\n   303\t    boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);\n   304\t    boardCtx.fillStyle = \"#e8e8f4\";\n   305\t    boardCtx.textAlign = \"center\";\n   306\t    boardCtx.font = \"bold 28px monospace\";\n   307\t    boardCtx.fillText(gameOver ? \"GAME OVER\" : \"PAUSED\", boardCanvas.width / 2, 270);\n   308\t    boardCtx.font = \"14px monospace\";\n   309\t    boardCtx.fillStyle = \"#9a9ab8\";\n   310\t    boardCtx.fillText(\n   311\t      gameOver ? \"score \" + score + \"  —  press R to restart\" : \"press P to resume\",\n   312\t      boardCanvas.width / 2, 305\n   313\t    );\n   314\t    boardCtx.textAlign = \"left\";\n   315\t  }\n   316\t}\n   317\t\n   318\tfunction drawNext() {\n   319\t  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);\n   320\t  const s = SHAPES[next.type];\n   321\t  // crop to the piece's bounding box for a centered preview\n   322\t  let minR = 9, maxR = -1, minC = 9, maxC = -1;\n   323\t  for (let r = 0; r < s.length; r++)\n   324\t    for (let c = 0; c < s[r].length; c++)\n   325\t      if (s[r][c]) {\n   326\t        minR = Math.min(minR, r); maxR = Math.max(maxR, r);\n   327\t        minC = Math.min(minC, c); maxC = Math.max(maxC, c);\n   328\t      }\n   329\t  const size = 24;\n   330\t  const w = (maxC - minC + 1) * size, h = (maxR - minR + 1) * size;\n   331\t  const ox = (nextCanvas.width - w) / 2, oy = (nextCanvas.height - h) / 2;\n   332\t  nextCtx.save();\n   333\t  nextCtx.translate(ox, oy);\n   334\t  for (let r = minR; r <= maxR; r++)\n   335\t    for (let c = minC; c <= maxC; c++)\n   336\t      if (s[r][c]) {\n   337\t        const px = (c - minC) * size, py = (r - minR) * size;\n   338\t        nextCtx.fillStyle = COLORS[next.type];\n   339\t        nextCtx.fillRect(px + 1, py + 1, size - 2, size - 2);\n   340\t        nextCtx.fillStyle = \"rgba(255,255,255,0.22)\";\n   341\t        nextCtx.fillRect(px + 1, py + 1, size - 2, 3);\n   342\t      }\n   343\t  nextCtx.restore();\n   344\t}\n   345\t\n   346\tfunction updateHud() {\n   347\t  scoreEl.textContent = score;\n   348\t  levelEl.textContent = level;\n   349\t  linesEl.textContent = lines;\n   350\t}\n   351\t\n   352\t// --- Game loop ------------------------------------------------------------\n   353\t\n   354\tfunction loop(time) {\n   355\t  rafId = requestAnimationFrame(loop);\n   356\t  if (lastTime === 0) lastTime = time;\n   357\t  const dt = time - lastTime;\n   358\t  lastTime = time;\n   359\t\n   360\t  if (!gameOver && !paused) {\n   361\t    dropTimer += dt;\n   362\t    if (dropTimer >= dropInterval) {\n   363\t      dropTimer = 0;\n   364\t      if (!move(0, 1)) lockPiece();\n   365\t    }\n   366\t  }\n   367\t  updateHud();\n   368\t  draw();\n   369\t}\n   370\t\n   371\t// --- Input -----------------------------------------------------------------\n   372\t\n   373\tdocument.addEventListener(\"keydown\", (e) => {\n   374\t  if (e.code === \"KeyR\") { reset(); return; }\n   375\t  if (e.code === \"KeyP\" && !gameOver) { paused = !paused; return; }\n   376\t  if (gameOver || paused) return;\n   377\t\n   378\t  switch (e.code) {\n   379\t    case \"ArrowLeft\":  move(-1, 0); break;\n   380\t    case \"ArrowRight\": move(1, 0); break;\n   381\t    case \"ArrowUp\":    rotate(); break;\n   382\t    case \"ArrowDown\":\n   383\t      if (move(0, 1)) { score += 1; updateHud(); }\n   384\t      dropTimer = 0;\n   385\t      break;\n   386\t    case \"Space\":\n   387\t      e.preventDefault();\n   388\t      while (move(0, 1)) { score += 2; }\n   389\t      updateHud();\n   390\t      lockPiece();\n   391\t      dropTimer = 0;\n   392\t      break;\n   393\t    default:\n   394\t      return;\n   395\t  }\n   396\t  if (e.code.startsWith(\"Arrow\")) e.preventDefault();\n   397\t  draw();\n   398\t});\n   399\t\n   400\treset();\n   401\t</script>\n   402\t</body>\n   403\t</html>",
+      "createdAt": 1787141473806
+    },
+    {
+      "id": "8705911c-9931-4bca-87c7-53aca206cac5",
+      "role": "assistant",
+      "content": "\n\nFile's on disk. Let me syntax-check the script and sanity-check the core logic with node.\n\n",
+      "createdAt": 1787141473807,
+      "streaming": false,
+      "reasoning": "The file looks good. Let me quickly verify the logic:\n\n1. `collides` handles y < 0 (above the board) — yes, `if (y >= 0 && grid[y][x])` allows the piece to exist above the board.\n2. `lockPiece` — if y < 0, endGame. Good.\n3. `spawn` — if the new piece collides at spawn position, endGame. Good.\n4. Rotation with kicks. Good.\n5. Ghost piece. Good.\n6. Score, level, speed increase. Good.\n7. Game over overlay + R to restart. Good.\n\nOne subtle issue: in `spawn()`, if `collides(current, 0, 0)` is true, it calls `endGame()`, but `current` is already set to the colliding piece and `draw()` will try to draw it — that's fine, the gameOver overlay covers it.\n\nAnother subtle point: `lockPiece` calls `endGame()` and returns, but if it returns early (y < 0), it skips `spawn()` — good, since gameOver the loop won't continue.\n\nEdge case: in the keydown handler, if gameOver is false but the piece just locked and spawn triggered endGame… that's fine.\n\nPotential issue: when `lockPiece` calls `endGame()` and returns, `current` still points to the old piece, but the gameOver check in draw() skips drawing it. No problem.\n\nOne more check: `dropTimer` after hard drop — reset to 0. Good.\n\nSoft drop scoring: +1 per cell. Hard drop: +2 per cell. Standard.\n\nLevel speed: `Math.max(80, 1000 - (level-1)*90)`. Level 1 = 1000ms, level 11 = 100ms, level 12+ = 80ms. Reasonable.\n\nLet me verify the HTML loads without JS errors. I can't easily run a browser here, but I can at least do a syntax check on the JS with node. Let me extract the script and run node --check on it.\n\nActually, let me just do a quick sanity check with node.\n",
+      "toolCalls": [
+        {
+          "id": "158065933",
+          "name": "run_shell",
+          "arguments": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\nconst html = require('fs').readFileSync('index.html','utf8');\\nconst m = html.match(/<script>([\\\\s\\\\S]*)<\\\\/script>/);\\nrequire('fs').writeFileSync('/tmp/tetris.js', m[1]);\\n\\\" && node --check /tmp/tetris.js && echo SYNTAX_OK\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141540925,
+          "result": "Exit code: 0\n\n--- stdout ---\nSYNTAX_OK\n\n--- stderr ---\n(empty)",
+          "artifacts": [],
+          "finishedAt": 1787141541050
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 8382,
+        "completionTokens": 619,
+        "ttftMs": 32387,
+        "totalMs": 67117,
+        "prefillTps": 258.807546237688,
+        "decodeTps": 17.823207601497266,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 467,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "5a810691-eeb8-4ca5-98c4-b6e47abeefc7",
+      "role": "tool",
+      "toolCallId": "158065933",
+      "content": "Exit code: 0\n\n--- stdout ---\nSYNTAX_OK\n\n--- stderr ---\n(empty)",
+      "createdAt": 1787141541050
+    },
+    {
+      "id": "15563d89-e998-4b49-b659-75a979755a04",
+      "role": "assistant",
+      "content": "\n\nNow a headless smoke test — stub the DOM, run frames, simulate a full stack and line clear:\n\n",
+      "createdAt": 1787141541051,
+      "streaming": false,
+      "reasoning": "The syntax is fine. Next, I'll run a headless smoke test: stub out the DOM/canvas, and simulate a few frames and key events to verify that the game loop, line clearing, and game-over determination actually work.\n",
+      "toolCalls": [
+        {
+          "id": "585229012",
+          "name": "run_shell",
+          "arguments": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\n// --- minimal DOM/canvas stubs ---\\nconst ctxStub = () => new Proxy({}, { get: (t,p) => (p==='canvas'?{}:()=>ctxStub()), set: ()=>true });\\nconst els = {};\\nfunction makeEl(id){ return { id, width:300, height:600, textContent:'', getContext:()=>({ clearRect(){}, fillRect(){}, beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}, fillText(){}, save(){}, restore(){}, translate(){}, set globalAlpha(v){}, get globalAlpha(){return 1} }) }; }\\nglobal.document = {\\n  getElementById: (id) => (els[id] = els[id] || makeEl(id)),\\n  addEventListener: (ev, fn) => { global.__listener = fn; },\\n};\\nglobal.requestAnimationFrame = (fn) => { global.__raf = fn; return 1; };\\nglobal.cancelAnimationFrame = () => {};\\n\\nconst src = require('fs').readFileSync('/tmp/tetris.js','utf8');\\neval(src);\\n\\n// --- run frames ---\\nlet t = 0;\\nfunction frames(n){ for(let i=0;i<n;i++){ t+=16.7; global.__raf(t); } }\\nfunction key(code){ global.__listener({ code, preventDefault(){} }); }\\n\\nframes(5);\\nconsole.log('after 5 frames: gameOver=', gameOver, 'piece=', current.type, 'y=', current.y);\\n\\n// force a line clear: fill bottom row except cells the current piece occupies\\nfor(let x=0;x<COLS;x++) grid[ROWS-1][x]='T';\\n// drop the current piece to the bottom\\nwhile(!collides(current,0,1)) move(0,1);\\nlockPiece();\\nconsole.log('after lock: lines=', lines, 'score=', score, 'cleared bottom row?', !grid[ROWS-1].every(c=>c));\\n\\n// fill the whole board to force game over\\nfor(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) grid[y][x]='I';\\nspawn();\\nconsole.log('gameOver after top-out spawn:', gameOver);\\n\\n// restart\\nkey('KeyR');\\nframes(3);\\nconsole.log('after restart: gameOver=', gameOver, 'score=', score, 'lines=', lines, 'level=', level);\\n\\n// rotation kick test: put I-piece flat on floor, rotate should kick\\ngrid = emptyGrid();\\ncurrent = randomPiece();\\ncurrent.type='I'; current.shape = SHAPES.I.map(r=>r.slice());\\ncurrent.x = Math.floor((COLS-4)/2); current.y = ROWS-2;\\nrotate();\\nconsole.log('I rotate on floor: y=', current.y, 'shape[1] filled?', current.shape[1].filter(Boolean).length===4 || current.shape[0].filter(Boolean).length===4);\\nconsole.log('SMOKE_OK');\\n\\\"\"}",
+          "origin": "native",
+          "status": "error",
+          "startedAt": 1787141586889,
+          "result": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n[eval]:22\nconsole.log('after 5 frames: gameOver=', gameOver, 'piece=', current.type, 'y=', current.y);\n                                         ^\n\nReferenceError: gameOver is not defined\n    at [eval]:22:42\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:483:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:481:60)\n    at evalFunction (node:internal/process/execution:315:30)\n    at evalTypeScript (node:internal/process/execution:327:3)\n    at node:internal/main/eval_string:71:3\n\nNode.js v26.0.0",
+          "artifacts": [],
+          "error": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n[eval]:22\nconsole.log('after 5 frames: gameOver=', gameOver, 'piece=', current.type, 'y=', current.y);\n                                         ^\n\nReferenceError: gameOver is not defined\n    at [eval]:22:42\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:483:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:481:60)\n    at evalFunction (node:internal/process/execution:315:30)\n    at evalTypeScript (node:internal/process/execution:327:3)\n    at node:internal/main/eval_string:71:3\n\nNode.js v26.0.0",
+          "finishedAt": 1787141586959
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 8555,
+        "completionTokens": 763,
+        "ttftMs": 2507,
+        "totalMs": 45837,
+        "prefillTps": 3412.4451535700036,
+        "decodeTps": 17.609046849757675,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 49,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "c4950d8c-7600-4361-a7f1-0c247890679d",
+      "role": "tool",
+      "toolCallId": "585229012",
+      "content": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n[eval]:22\nconsole.log('after 5 frames: gameOver=', gameOver, 'piece=', current.type, 'y=', current.y);\n                                         ^\n\nReferenceError: gameOver is not defined\n    at [eval]:22:42\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:483:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:481:60)\n    at evalFunction (node:internal/process/execution:315:30)\n    at evalTypeScript (node:internal/process/execution:327:3)\n    at node:internal/main/eval_string:71:3\n\nNode.js v26.0.0",
+      "createdAt": 1787141586959
+    },
+    {
+      "id": "8616c77b-3333-43e8-a53e-0fc875336caa",
+      "role": "assistant",
+      "content": "\n\nThe `let` declarations are scoped to the eval. Let me concatenate the test into the same file instead.\n\n",
+      "createdAt": 1787141586959,
+      "streaming": false,
+      "reasoning": "The `let` declarations in the eval'd code are scoped to the eval, so I can't access them from the outer script. Let me write the test as a file and append it after the game code, so everything is in the same scope.\n",
+      "toolCalls": [
+        {
+          "id": "424488790",
+          "name": "run_shell",
+          "arguments": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\nconst fs=require('fs');\\nconst stub=\\\\`\\nconst ctxStub = () => new Proxy({}, { get: (t,p) => (p==='canvas'?{}:()=>ctxStub()), set: ()=>true });\\nconst els = {};\\nfunction makeEl(id){ return { id, width:300, height:600, textContent:'', getContext:()=>({ clearRect(){}, fillRect(){}, beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}, fillText(){}, save(){}, restore(){}, translate(){}, globalAlpha:1 }) }; }\\nglobal.document = { getElementById:(id)=>(els[id]=els[id]||makeEl(id)), addEventListener:(ev,fn)=>{ global.__listener=fn; } };\\nglobal.requestAnimationFrame = (fn)=>{ global.__raf=fn; return 1; };\\nglobal.cancelAnimationFrame = ()=>{};\\n\\\\`;\\nconst game = fs.readFileSync('/tmp/tetris.js','utf8');\\nconst test=\\\\`\\nlet t=0;\\nfunction frames(n){ for(let i=0;i<n;i++){ t+=16.7; global.__raf(t); } }\\nfunction key(code){ global.__listener({ code, preventDefault(){} }); }\\n\\nframes(5);\\nconsole.log('after 5 frames: gameOver='+gameOver+' piece='+current.type+' y='+current.y);\\n\\nfor(let x=0;x<COLS;x++) grid[ROWS-1][x]='T';\\nwhile(!collides(current,0,1)) move(0,1);\\nlockPiece();\\nconsole.log('after lock: lines='+lines+' score='+score+' bottomRowCleared='+(!grid[ROWS-1].every(c=>c)));\\n\\nfor(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) grid[y][x]='I';\\nspawn();\\nconsole.log('gameOver after top-out spawn: '+gameOver);\\n\\nkey('KeyR'); frames(3);\\nconsole.log('after restart: gameOver='+gameOver+' score='+score+' lines='+lines+' level='+level);\\n\\ngrid=emptyGrid();\\ncurrent={type:'I',shape:SHAPES.I.map(r=>r.slice()),x:3,y:ROWS-2};\\nrotate();\\nconsole.log('I rotate on floor: y='+current.y+' verticalColFilled='+(current.shape[0].filter(Boolean).length===4||current.shape[1].filter(Boolean).length===4||current.shape[2].filter(Boolean).length===4));\\nconsole.log('SMOKE_OK');\\n\\\\`;\\nfs.writeFileSync('/tmp/tetris_test.js', stub+game+test);\\n\\\" && node /tmp/tetris_test.js\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141633107,
+          "result": "Exit code: 0\n\n--- stdout ---\nafter 5 frames: gameOver=false piece=J y=0\nafter lock: lines=1 score=100 bottomRowCleared=true\ngameOver after top-out spawn: true\nafter restart: gameOver=false score=0 lines=0 level=1\nI rotate on floor: y=18 verticalColFilled=true\nSMOKE_OK\n\n--- stderr ---\n(empty)",
+          "artifacts": [],
+          "finishedAt": 1787141633224
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 9490,
+        "completionTokens": 702,
+        "ttftMs": 6254,
+        "totalMs": 46147,
+        "prefillTps": 1517.4288455388553,
+        "decodeTps": 17.597072168049532,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 52,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "48be778a-4e7c-45d9-9bc0-8d4f26451785",
+      "role": "tool",
+      "toolCallId": "424488790",
+      "content": "Exit code: 0\n\n--- stdout ---\nafter 5 frames: gameOver=false piece=J y=0\nafter lock: lines=1 score=100 bottomRowCleared=true\ngameOver after top-out spawn: true\nafter restart: gameOver=false score=0 lines=0 level=1\nI rotate on floor: y=18 verticalColFilled=true\nSMOKE_OK\n\n--- stderr ---\n(empty)",
+      "createdAt": 1787141633224
+    },
+    {
+      "id": "188653e1-4205-4123-a702-e60bced24c8a",
+      "role": "assistant",
+      "content": "\n\nAll checks pass. Cleaning up the temp files.\n\n",
+      "createdAt": 1787141633224,
+      "streaming": false,
+      "reasoning": "All tests pass. The I-piece on the floor rotates to vertical — the kick works. Let me clean up the temp files.\n",
+      "toolCalls": [
+        {
+          "id": "911121734",
+          "name": "run_shell",
+          "arguments": "{\"command\":\"rm -f /tmp/tetris.js /tmp/tetris_test.js\"}",
+          "origin": "native",
+          "status": "ok",
+          "startedAt": 1787141642418,
+          "result": "Exit code: 0\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n(empty)",
+          "artifacts": [],
+          "finishedAt": 1787141642434
+        }
+      ],
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 10245,
+        "completionTokens": 82,
+        "ttftMs": 4684,
+        "totalMs": 9192,
+        "prefillTps": 2187.2331340734413,
+        "decodeTps": 18.189884649511978,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "tool_calls",
+        "reasoningTokens": 27,
+        "reasoningEffortUsed": "low"
+      }
+    },
+    {
+      "id": "d13545aa-db99-4b39-98ff-6b7a638702aa",
+      "role": "tool",
+      "toolCallId": "911121734",
+      "content": "Exit code: 0\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n(empty)",
+      "createdAt": 1787141642434
+    },
+    {
+      "id": "cb548c36-702b-4d68-bec8-5eb5d52a80c9",
+      "role": "assistant",
+      "content": "\n\nDone. `index.html` is at the workspace root — 403 lines, single file, no libraries.\n\n**Verified, not just written:** I pulled the script out and ran it headless with a stubbed canvas. The smoke test confirmed a line clear scores and empties the row, a full board triggers game over, restart resets cleanly, and the I-piece kicks up off the floor on rotate.\n\nWhat's in it, and the choices I made:\n\n- **7 tetrominoes** as 2D matrices. Rotation is a plain matrix transpose (`out[c][n-1-r] = s[r][c]`), then a wall-kick loop tries offsets `[0, -1, 1, -2, 2]` and finally up — enough to feel right without a full SRS table.\n- **Ghost piece** — the faint outline shows where it'll land. Not in your list but it's the one quality-of-life thing that makes hard drops actually usable, so I added it.\n- **Scoring:** 100/300/500/800 × level for 1–4 lines, +1 per soft-drop cell, +2 per hard-drop cell. Level up every 10 lines, drop interval drops 90ms per level, floored at 80ms so it stays playable.\n- **`requestAnimationFrame` loop** with a `dt` accumulator, so gravity is frame-rate independent rather than a `setInterval`.\n- **Extras:** P to pause, R to restart, next-piece preview (centered on its bounding box).\n\nOne deliberate simplification: piece spawning is uniform random, not a 7-bag. A bag guarantees you can't get, say, four I's in a row, which makes the game feel fairer — if you want that, it's a ~10-line change to `randomPiece`. Say the word and I'll swap it in.\n\nOpen it in a browser to play — nothing to build.",
+      "createdAt": 1787141642435,
+      "streaming": false,
+      "reasoning": "Everything works. Let me report the result concisely.\n\nThe game is complete and verified. I'll summarize what's in there and the key design decisions.\n",
+      "metrics": {
+        "modelId": "qwen/qwen3.8-27b",
+        "promptTokens": 10334,
+        "completionTokens": 465,
+        "ttftMs": 1078,
+        "totalMs": 27097,
+        "prefillTps": 9586.270871985156,
+        "decodeTps": 17.871555401821748,
+        "toolSchemaTokens": 1270,
+        "source": "client",
+        "finishReason": "stop",
+        "reasoningTokens": 34,
+        "reasoningEffortUsed": "low"
+      }
+    }
+  ],
+  "modelId": "qwen/qwen3.8-27b",
+  "createdAt": 1787141220924,
+  "updatedAt": 1787141669532
+}

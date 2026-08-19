@@ -1,0 +1,6 @@
+[06:03:29] === newskill-5bit — qwen/qwen3.8-27b ===
+result: {"ok":true}
+now loaded: qwen/qwen3.8-27b ctx=54272
+sent (button 1087,850)
+[06:04:20] sent
+[06:04:45] turn 1 at 25s

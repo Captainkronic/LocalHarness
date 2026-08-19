@@ -1,0 +1,24 @@
+{
+  "id": "75ed9c1d-4dc5-48b6-9b9d-5a2552728fda",
+  "title": "Build a complete, playable Tetris game as a sing",
+  "workflowId": "code",
+  "messages": [
+    {
+      "id": "0b4e48b3-0581-45dc-8a2f-0270d85d4e4c",
+      "role": "user",
+      "content": "Build a complete, playable Tetris game as a single self-contained index.html in the workspace root. Canvas rendering, arrow keys to move and rotate, down to soft drop, space to hard drop, line clears, a score, increasing speed, and a game over state. No external libraries.",
+      "createdAt": 1787099226892
+    },
+    {
+      "id": "1423181e-1e33-4ddd-a12d-81f8b0a955a9",
+      "role": "assistant",
+      "content": "",
+      "createdAt": 1787099226932,
+      "streaming": false,
+      "error": "400 Bad Request from http://adams-mac-studio.tailc7bb1e.ts.net:1235/v1/chat/completions: {\n    \"error\": {\n        \"message\": \"Failed to load model \\\"qwen/qwen3.8-27b\\\". Error: Model loading was stopped due to insufficient system resources. Under the current settings, this model requires approximately 25.10 GB of memory, and continuing to load it would likely overload your system and cause it to freeze. If you think this is incorrect, you can adjust the model loading guardrails in settings.\",\n        \"type\": \"invalid_request_error\",\n        \"param\": \"model\",\n        \"code\": null\n    }\n}"
+    }
+  ],
+  "modelId": "qwen/qwen3.8-27b",
+  "createdAt": 1787099226892,
+  "updatedAt": 1787099226973
+}

@@ -71,6 +71,57 @@ export function todayLine(now: Date = new Date()): string {
   })}.`
 }
 
+/**
+ * Fields whose value is a payload rather than an instruction.
+ *
+ * These are what a coding turn puts a whole file into, and once written they are
+ * on disk — replaying them is paying to tell the model something it can read.
+ */
+const BULK_FIELDS = new Set(['content', 'new_string', 'old_string', 'text', 'body'])
+
+/** Beyond this a value is a payload, not an argument. */
+const BULK_LIMIT = 600
+
+/**
+ * Replaces bulk argument values in REPLAYED tool calls with a note of their size.
+ *
+ * Measured on a Tetris build: the model wrote a complete 12.8KB index.html on
+ * its second turn, and every turn after that re-sent those 12.8KB as part of the
+ * assistant message that made the call. Turn 3 waited 24.9s for its first token
+ * and 5.7 minutes overall, and the cost compounded with each further edit. The
+ * file was on disk the whole time.
+ *
+ * Only the HISTORY is elided. The call as issued is untouched, the tool ran on
+ * the real arguments, and the result the model saw is unchanged — this affects
+ * nothing except what gets re-read on later turns. The marker says what was
+ * there and what to do about it, because a silently truncated argument would
+ * teach the model it had written a short file.
+ */
+export function elideBulkArguments(raw: string): string {
+  if (raw.length <= BULK_LIMIT) return raw
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // Not parseable — a fragment from a cut-off turn. Left exactly as it is:
+    // rewriting it blind risks making it less recoverable, not more.
+    return raw
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return raw
+
+  let touched = false
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (BULK_FIELDS.has(key) && typeof value === 'string' && value.length > BULK_LIMIT) {
+      out[key] = `<${value.length} characters, already applied — read the file if you need them>`
+      touched = true
+    } else {
+      out[key] = value
+    }
+  }
+  return touched ? JSON.stringify(out) : raw
+}
+
 export function buildMessages(
   conv: Conversation,
   systemPrompt: string,
@@ -125,7 +176,7 @@ export function buildMessages(
             type: 'function' as const,
             // Arguments can still be a partial JSON fragment if the turn was cut
             // short; an empty object keeps the history parseable.
-            function: { name: c.name, arguments: c.arguments.trim() || '{}' }
+            function: { name: c.name, arguments: elideBulkArguments(c.arguments.trim() || '{}') }
           }))
         }
         out.push(wire)

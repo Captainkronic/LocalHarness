@@ -1,0 +1,5 @@
+Create a playable Tetris game as one self-contained HTML file at tetris/tetris.html in the workspace.
+
+Requirements: canvas rendering, arrow keys to move and rotate, down to soft drop, line clearing, a visible score, and a game over state. No external libraries.
+
+Write the complete file in a single write_file call, then stop and tell me it is done. Do not read it back or revise it.

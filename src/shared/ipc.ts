@@ -45,7 +45,8 @@ import type {
   WorkflowId,
   Avatar,
   AvatarBuildSpec,
-  AvatarBuildProgress
+  AvatarBuildProgress,
+  SamplingOverrides
 } from './types'
 
 export interface IpcApi {
@@ -99,6 +100,10 @@ export interface IpcApi {
   'mcp:listStates': () => Promise<McpServerState[]>
   /** Per-workflow reasoning effort. Returns the saved settings. */
   'settings:setReasoning': (workflowId: WorkflowId, effort: ReasoningEffort) => Promise<Settings>
+  'settings:setSampling': (
+    workflowId: WorkflowId,
+    patch: Partial<SamplingOverrides>
+  ) => Promise<Settings>
   'mcp:setEnabled': (
     workflowId: WorkflowId,
     serverId: string,
@@ -282,6 +287,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'mcp:listSpecs',
   'mcp:listStates',
   'settings:setReasoning',
+  'settings:setSampling',
   'mcp:setEnabled',
   'mcp:setToolEnabled',
   'mcp:restart',

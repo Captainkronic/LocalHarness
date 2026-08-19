@@ -1,0 +1,23 @@
+{
+  "id": "ae42cdf3-ee30-4abd-8dc9-7eacd7b40c1c",
+  "title": "Build a complete, playable Tetris game as a sing",
+  "workflowId": "code",
+  "messages": [
+    {
+      "id": "c12cba42-9db5-48d5-93ca-678a57f57927",
+      "role": "user",
+      "content": "Build a complete, playable Tetris game as a single self-contained index.html in the workspace root. Canvas rendering, arrow keys to move and rotate, down to soft drop, space to hard drop, line clears, a score, increasing speed, and a game over state. No external libraries.",
+      "createdAt": 1787100566557
+    },
+    {
+      "id": "00d5edfc-b32f-4cc5-8770-ff8a00559424",
+      "role": "assistant",
+      "content": "",
+      "createdAt": 1787100566639,
+      "streaming": true
+    }
+  ],
+  "modelId": "qwen/qwen3.8-27b",
+  "createdAt": 1787100566553,
+  "updatedAt": 1787101069197
+}

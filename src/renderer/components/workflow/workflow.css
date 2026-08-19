@@ -994,3 +994,109 @@
   color: var(--accent);
   font-weight: 500;
 }
+
+/* ------------------------------------------------------------------ */
+/* Inference                                                           */
+/* ------------------------------------------------------------------ */
+
+.smp {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.smp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s2) 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* Collapsed, this is the whole point: it answers "have I changed anything in
+   here" without being opened. */
+.smp-count {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.smp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--s2);
+}
+
+.smp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.smp-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.smp-input {
+  width: 76px;
+  padding: 2px var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-input);
+  color: var(--fg);
+  font-size: var(--fs-small);
+}
+
+.smp-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* An overridden knob has to look different from one that is merely showing a
+   default, or the panel reads as seven settings you chose. */
+.smp-row.is-set .smp-input {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.smp-origin {
+  width: 46px;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+.smp-row.is-set .smp-origin {
+  color: var(--accent);
+}
+
+.smp-reset {
+  margin-top: var(--s1);
+  padding: 2px var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--fg-dim);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.smp-reset:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.smp-note {
+  margin: var(--s1) 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--fg-faint);
+}

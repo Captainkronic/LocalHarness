@@ -1,0 +1,49 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "emptyTurns": 0,
+    "wallClockMs": 429654,
+    "assistantTurns": 6,
+    "reasoningChars": 6278,
+    "contentChars": 1490,
+    "toolCalls": 5,
+    "toolErrors": 0,
+    "fileWritten": true,
+    "fileBytes": 10628,
+    "missingMarkers": [],
+    "shapesFound": 7,
+    "shapesExpected": 7
+  },
+  "toolCalls": [
+    {
+      "name": "list_dir",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\".\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"index.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"en\\\">\\n<head>\\n<meta charset=\\\"utf-8\\\">\\n<title>Tetris</title>\\n<style>\\n  html, body {\\n    margi"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"index.html\"}"
+    },
+    {
+      "name": "edit_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"index.html\",\"old_string\":\"      if (shape[r][c]) {\\n        const x = (ox + (c - minC) * 24) / 24;\\n        const y = (oy + (r - minR) * 24) / 24;\\n   "
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro1 && sed -n '/<script>/,/<\\\\/script>/p' index.html | sed '1d;$d' > /tmp/tetris_check.js && node --check "
+    }
+  ]
+}

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tetris</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: radial-gradient(circle at 50% 20%, #1b2340, #0a0d18 70%);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    color: #cdd6f4;
+  }
+  .wrap { display: flex; gap: 18px; align-items: flex-start; }
+  canvas { background: #0d1020; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .panel { width: 172px; display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .card h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #7f8bb3; }
+  .card .val { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  #next { display:block; margin-top: 6px; background:#0d1020; border-radius:6px; }
+  .keys { font-size: 12px; line-height: 1.9; color: #9aa5cf; }
+  .keys b { color: #cdd6f4; font-weight: 600; }
+  kbd {
+    background:#1a2140; border:1px solid #33406e; border-bottom-width:2px;
+    border-radius:5px; padding:1px 6px; font-size:11px; color:#cdd6f4;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="board" width="300" height="600"></canvas>
+    <div class="panel">
+      <div class="card"><h2>Score</h2><div class="val" id="score">0</div></div>
+      <div class="card"><h2>Lines</h2><div class="val" id="lines">0</div></div>
+      <div class="card"><h2>Level</h2><div class="val" id="level">1</div></div>
+      <div class="card"><h2>Next</h2><canvas id="next" width="120" height="90"></canvas></div>
+      <div class="card keys">
+        <b>Move</b>&nbsp; <kbd>&larr;</kbd> <kbd>&rarr;</kbd><br>
+        <b>Rotate</b>&nbsp; <kbd>&uarr;</kbd><br>
+        <b>Soft drop</b>&nbsp; <kbd>&darr;</kbd><br>
+        <b>Hard drop</b>&nbsp; <kbd>Space</kbd><br>
+        <b>Pause</b>&nbsp; <kbd>P</kbd><br>
+        <b>Restart</b>&nbsp; <kbd>R</kbd>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  const COLS = 10, ROWS = 20, CELL = 30;
+  const CLEAR_MS = 180;
+
+  // Tetromino shapes (each a square-ish matrix) + colors.
+  const PIECES = {
+    I: { m: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], c: "#4fd6e6" },
+    O: { m: [[1,1],[1,1]],                                   c: "#f5d33a" },
+    T: { m: [[0,1,0],[1,1,1],[0,0,0]],                       c: "#b98cf5" },
+    S: { m: [[0,1,1],[1,1,0],[0,0,0]],                       c: "#63d97a" },
+    Z: { m: [[1,1,0],[0,1,1],[0,0,0]],                       c: "#ef5b6b" },
+    J: { m: [[1,0,0],[1,1,1],[0,0,0]],                       c: "#5a8def" },
+    L: { m: [[0,0,1],[1,1,1],[0,0,0]],                       c: "#f2953c" },
+  };
+  const TYPES = Object.keys(PIECES);
+
+  const boardCanvas = document.getElementById("board");
+  const bctx = boardCanvas.getContext("2d");
+  const nextCanvas = document.getElementById("next");
+  const nctx = nextCanvas.getContext("2d");
+
+  let board, piece, nextType;
+  let score, lines, level;
+  let state;          // 'playing' | 'clearing' | 'gameover' | 'paused'
+  let prevPausedState;
+  let clearingRows = [];
+  let clearStart = 0;
+  let lastDrop = 0;
+
+  // --- helpers -------------------------------------------------------------
+
+  function createBoard() {
+    return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  }
+
+  function dropInterval() {
+    // Faster as the level climbs, with a floor so it stays playable.
+    return Math.max(90, Math.round(780 * Math.pow(0.82, level - 1)));
+  }
+
+  function randomType() {
+    return TYPES[(Math.random() * TYPES.length) | 0];
+  }
+
+  function cloneMatrix(m) { return m.map(r => r.slice()); }
+
+  // Rotate a matrix clockwise (dir=1) or counter-clockwise (dir=-1).
+  function rotate(m, dir) {
+    const N = m.length;
+    const out = Array.from({ length: N }, () => Array(N).fill(0));
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        if (dir === 1) out[x][N - 1 - y] = m[y][x];
+        else           out[N - 1 - x][y] = m[y][x];
+      }
+    return out;
+  }
+
+  function collides(matrix, px, py) {
+    for (let y = 0; y < matrix.length; y++) {
+      for (let x = 0; x < matrix[y].length; x++) {
+        if (!matrix[y][x]) continue;
+        const bx = px + x, by = py + y;
+        if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+        if (by >= 0 && board[by][bx]) return true;
+      }
+    }
+    return false;
+  }
+
+  function spawnPiece(type) {
+    const def = PIECES[type];
+    const m = cloneMatrix(def.m);
+    piece = { type, matrix: m, x: (COLS - m[0].length) >> 1, y: -topOffset(m), c: def.c };
+    // If it already collides the stack has reached the top -> game over.
+    if (collides(piece.matrix, piece.x, piece.y)) {
+      state = "gameover";
+      updateHud();
+    }
+  }
+
+  // How many empty rows sit above the first filled row (used to spawn high).
+  function topOffset(m) {
+    for (let y = 0; y < m.length; y++) if (m[y].some(Boolean)) return y;
+    return 0;
+  }
+
+  function lockPiece() {
+    const { matrix, x, y, c } = piece;
+    for (let j = 0; j < matrix.length; j++)
+      for (let i = 0; i < matrix[j].length; i++) {
+        if (!matrix[j][i]) continue;
+        const by = y + j, bx = x + i;
+        if (by >= 0 && by < ROWS) board[by][bx] = c;
+      }
+
+    clearingRows = [];
+    for (let r = 0; r < ROWS; r++) if (board[r].every(Boolean)) clearingRows.push(r);
+
+    if (clearingRows.length) {
+      state = "clearing";
+      clearStart = performance.now();
+      addScore([0, 100, 300, 500, 800][clearingRows.length] * level);
+      lines += clearingRows.length;
+      level = Math.floor(lines / 10) + 1;
+    } else {
+      piece = null;
+      spawnPiece(nextType);
+      nextType = randomType();
+    }
+    updateHud();
+  }
+
+  function finishClear() {
+    board = board.filter((_, r) => !clearingRows.includes(r));
+    while (board.length < ROWS) board.unshift(Array(COLS).fill(null));
+    clearingRows = [];
+    piece = null;
+    spawnPiece(nextType);
+    nextType = randomType();
+    state = "playing";
+  }
+
+  function addScore(n) { score += n; updateHud(); }
+
+  function tryMove(dx, dy) {
+    if (state !== "playing" || !piece) return false;
+    if (!collides(piece.matrix, piece.x + dx, piece.y + dy)) {
+      piece.x += dx; piece.y += dy;
+      return true;
+    }
+    return false;
+  }
+
+  function tryRotate(dir) {
+    if (state !== "playing" || !piece) return;
+    const rotated = rotate(piece.matrix, dir);
+    // Basic wall kicks: try staying, then nudging sideways, then up.
+    const kicks = [0, -1, 1, -2, 2];
+    for (const k of kicks) {
+      if (!collides(rotated, piece.x + k, piece.y)) { piece.matrix = rotated; piece.x += k; return; }
+      if (!collides(rotated, piece.x + k, piece.y - 1)) { piece.matrix = rotated; piece.x += k; piece.y -= 1; return; }
+    }
+  }
+
+  function softDrop() {
+    if (state !== "playing") return;
+    if (tryMove(0, 1)) addScore(1);
+    else lockPiece();
+    lastDrop = performance.now();
+  }
+
+  function hardDrop() {
+    if (state !== "playing" || !piece) return;
+    let d = 0;
+    while (!collides(piece.matrix, piece.x, piece.y + 1)) { piece.y++; d++; }
+    addScore(d * 2);
+    lockPiece();
+    lastDrop = performance.now();
+  }
+
+  function restart() {
+    board = createBoard();
+    score = 0; lines = 0; level = 1;
+    nextType = randomType();
+    state = "playing";
+    piece = null;
+    spawnPiece(nextType);
+    nextType = randomType();
+    lastDrop = performance.now();
+    updateHud();
+  }
+
+  function togglePause() {
+    if (state === "playing") { prevPausedState = "playing"; state = "paused"; }
+    else if (state === "paused") { state = prevPausedState; lastDrop = performance.now(); }
+  }
+
+  // --- rendering -----------------------------------------------------------
+
+  function drawCell(ctx, px, py, color, size) {
+    const pad = 1;
+    ctx.fillStyle = color;
+    ctx.fillRect(px + pad, py + pad, size - pad * 2, size - pad * 2);
+    // subtle top highlight for a bit of depth
+    ctx.fillStyle = "rgba(255,255,255,.18)";
+    ctx.fillRect(px + pad, py + pad, size - pad * 2, 3);
+  }
+
+  function draw() {
+    bctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+
+    // grid lines
+    bctx.strokeStyle = "rgba(255,255,255,.04)";
+    bctx.lineWidth = 1;
+    for (let x = 1; x < COLS; x++) { bctx.beginPath(); bctx.moveTo(x * CELL + .5, 0); bctx.lineTo(x * CELL + .5, ROWS * CELL); bctx.stroke(); }
+    for (let y = 1; y < ROWS; y++) { bctx.beginPath(); bctx.moveTo(0, y * CELL + .5); bctx.lineTo(COLS * CELL, y * CELL + .5); bctx.stroke(); }
+
+    // locked cells
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (board[r][c]) drawCell(bctx, c * CELL, r * CELL, board[r][c], CELL);
+
+    // clearing flash
+    if (state === "clearing") {
+      const t = (performance.now() - clearStart) / CLEAR_MS;
+      bctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - t)})`;
+      for (const r of clearingRows) bctx.fillRect(0, r * CELL, COLS * CELL, CELL);
+    }
+
+    // active piece + ghost (only while it's live, not during the clear flash)
+    if (piece && (state === "playing" || state === "paused")) {
+      let gy = piece.y;
+      while (!collides(piece.matrix, piece.x, gy + 1)) gy++;
+      bctx.globalAlpha = 0.22;
+      drawPieceAt(bctx, piece.matrix, piece.x, gy, piece.c);
+      bctx.globalAlpha = 1;
+      drawPieceAt(bctx, piece.matrix, piece.x, piece.y, piece.c);
+    }
+
+    // overlays
+    if (state === "gameover" || state === "paused") {
+      bctx.fillStyle = "rgba(6,8,16,.72)";
+      bctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+      bctx.fillStyle = "#cdd6f4";
+      bctx.textAlign = "center";
+      bctx.font = "bold 30px 'SF Mono', monospace";
+      bctx.fillText(state === "gameover" ? "GAME OVER" : "PAUSED", boardCanvas.width / 2, boardCanvas.height / 2 - 8);
+      bctx.font = "14px 'SF Mono', monospace";
+      bctx.fillStyle = "#9aa5cf";
+      bctx.fillText(state === "gameover" ? "Press R to restart" : "Press P to resume", boardCanvas.width / 2, boardCanvas.height / 2 + 22);
+      bctx.textAlign = "start";
+    }
+
+    drawNext();
+  }
+
+  function drawPieceAt(ctx, matrix, ox, oy, color) {
+    for (let y = 0; y < matrix.length; y++)
+      for (let x = 0; x < matrix[y].length; x++)
+        if (matrix[y][x] && oy + y >= 0)
+          drawCell(ctx, (ox + x) * CELL, (oy + y) * CELL, color, CELL);
+  }
+
+  function drawNext() {
+    nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+    const def = PIECES[nextType];
+    const m = def.m;
+    // trim empty rows/cols to center nicely
+    let minX = 99, maxX = -1, minY = 99, maxY = -1;
+    for (let y = 0; y < m.length; y++) for (let x = 0; x < m[y].length; x++) if (m[y][x]) {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    const s = 22;
+    const w = (maxX - minX + 1) * s, h = (maxY - minY + 1) * s;
+    const offX = (nextCanvas.width - w) / 2, offY = (nextCanvas.height - h) / 2;
+    for (let y = minY; y <= maxY; y++)
+      for (let x = minX; x <= maxX; x++)
+        if (m[y][x]) drawCell(nctx, offX + (x - minX) * s, offY + (y - minY) * s, def.c, s);
+  }
+
+  function updateHud() {
+    document.getElementById("score").textContent = score.toLocaleString();
+    document.getElementById("lines").textContent = lines;
+    document.getElementById("level").textContent = level;
+  }
+
+  // --- main loop -----------------------------------------------------------
+
+  function frame(now) {
+    if (state === "playing" && piece) {
+      if (now - lastDrop >= dropInterval()) {
+        if (!tryMove(0, 1)) lockPiece();
+        lastDrop = now;
+      }
+    } else if (state === "clearing") {
+      if (now - clearStart >= CLEAR_MS) finishClear();
+    }
+
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // --- input ---------------------------------------------------------------
+
+  document.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(k)) e.preventDefault();
+
+    if (k === "r" || k === "R") { restart(); return; }
+    if (k === "p" || k === "P") { togglePause(); return; }
+
+    if (state !== "playing") return;
+    switch (k) {
+      case "ArrowLeft":  tryMove(-1, 0); break;
+      case "ArrowRight": tryMove(1, 0); break;
+      case "ArrowUp":    tryRotate(1); break;
+      case "ArrowDown":  softDrop(); break;
+      case " ":          hardDrop(); break;
+    }
+  });
+
+  // --- go ------------------------------------------------------------------
+
+  restart();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

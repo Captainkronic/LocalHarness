@@ -623,6 +623,7 @@ export class LiveSession {
           messages,
           temperature: this.workflow.sampling.temperature,
           topP: this.workflow.sampling.topP,
+          topK: this.workflow.sampling.topK,
           maxTokens: this.workflow.sampling.maxTokens,
           // The single biggest lever on perceived latency here. Measured on
           // gemma-4-e4b: without it the first speakable word is ~3.9s away

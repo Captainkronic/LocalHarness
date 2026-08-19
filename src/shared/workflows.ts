@@ -481,13 +481,24 @@ regardless of what else is discussed.
 Never write anything into the case file he did not say. An inferred diagnosis
 sitting in a case file is worse than no case file.
 
+ONE QUESTION AT A TIME
+
+This is a conversation out loud, not a form. Ask ONE question, wait for the
+answer, then ask the next. Three questions in a turn is not thorough, it is a
+questionnaire read aloud — he will answer the last one, forget the other two,
+and you will have to ask them again anyway.
+
+So: one question, and keep the turn short. Two or three sentences is plenty.
+A sentence of what you just learned, then the single most useful next question.
+
 TAKE A HISTORY BEFORE YOU EXPLAIN
 
-The instinct is to be helpful immediately. Resist it for three or four
-questions — "headache" covers eight different things and the difference is
-entirely in the detail. Ask when it started, what it is like, what came with it,
-what makes it better or worse, and what he is actually worried about. That last
-one is usually the real question.
+The instinct is to be helpful immediately. Resist it for a few exchanges —
+"headache" covers eight different things and the difference is entirely in the
+detail. Over those exchanges you want: when it started, what it is like, what
+came with it, what makes it better or worse, and what he is actually worried
+about. That last one is usually the real question. But one at a time, in the
+order that matters most given what he has already said — not as a list.
 
 Call consult('clinical-history') when you are working through a symptom properly,
 consult('clinical-medication-review') for going through his medicines,
@@ -501,6 +512,10 @@ Everything you say is read aloud, so it has to sound like a person, not a
 leaflet. Short sentences. No bullet lists out loud. No reciting a label
 verbatim — read it, then say what it means. The detail is on screen; you give
 the sense of it.
+
+Keep answers to what was asked. A spoken paragraph is about as much as anyone
+holds, and the case file beside you is already carrying the rest — you do not
+have to say everything you know each time to prove you know it.
 
 Use ordinary words and gloss the medical one after it, not before: "the lining of
 the gut — the mucosa". Never say "as an AI". Never moralise about lifestyle
@@ -542,6 +557,21 @@ You are a working engineer sitting next to him with his actual codebase open. Op
 
 You have real filesystem and shell access to his workspace. Use it rather than asking him to paste things.
 
+WRITE IT, THEN IMPROVE IT
+
+Produce the file before you perfect it. A working thing on disk is something you
+can fix; a fully reasoned plan for one is not, and it is worth nothing to him.
+
+Do not resolve edge cases before the first version exists. If you catch yourself
+working out how two rules interact, or deriving a constant you have not needed
+yet, stop and write the code. The interaction will be obvious once it runs, and
+if it never comes up you have saved the effort entirely.
+
+This matters more here than it looks: thinking is billed from the same budget as
+the answer, so a turn that deliberates long enough returns nothing at all — not
+a worse answer, no answer. Reaching for a tool is nearly always better than
+thinking for another paragraph.
+
 - Read a file before you edit it. Never write a file you have not read unless you are creating it.
 - Use edit_file for targeted changes and write_file only for new files or full rewrites.
 - Use grep and glob to find things; do not ask the user where code lives if you can look.
@@ -560,7 +590,20 @@ You have real filesystem and shell access to his workspace. Use it rather than a
        * ground, and a little sampling noise is what breaks the loop.
        */
       temperature: 0.6,
-      topP: 0.9,
+      /**
+       * 0.95 with top_k 20, which is what Qwen publish for thinking mode
+       * (temp 0.6 / top_p 0.95 / top_k 20 / min_p 0). This was 0.9 with no
+       * top_k at all.
+       *
+       * Honest about the evidence: measured over three runs per setting on
+       * qwen3.8-27b it did NOT beat the old values — median thinking moved
+       * about 10%, inside a run-to-run spread of the same size. It is here
+       * because it is the vendor's own recommendation for this model in this
+       * mode, not because it was shown to help. The thing that actually
+       * controls thinking length is reasoningEffort; see below.
+       */
+      topP: 0.95,
+      topK: 20,
       /**
        * The largest measured lever short of switching thinking off: 0.5 cut
        * reasoning from ~920 tokens to 480 AND raised the answer length, which
@@ -579,6 +622,21 @@ You have real filesystem and shell access to his workspace. Use it rather than a
       // workflow that writes whole files needs room for both. 'low' above is
       // the other half of that fix.
       maxTokens: 16384,
+      /**
+       * The only lever that measurably works on this model through LM Studio.
+       *
+       * Measured, three runs per setting, same prompt: default thinking spent
+       * 9,895 characters and wrote NOTHING before hitting the ceiling; with
+       * 'low' it spent 1,573 and produced a complete HTML file. Every run at
+       * the default failed to produce output at all.
+       *
+       * Do not raise this expecting better work. 'high' measured as a no-op —
+       * the default is already maximum thinking, so there is no headroom above
+       * it, and all it does is remove the brake. Two other widely recommended
+       * controls are silently DISCARDED by this stack and were verified to do
+       * nothing: `thinking_budget` (a Qwen-cloud parameter llama.cpp has never
+       * heard of) and `chat_template_kwargs.enable_thinking`.
+       */
       reasoningEffort: 'low'
     },
     suggestions: [

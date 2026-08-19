@@ -1,0 +1,14 @@
+The Tetris game at tetris/tetris.html has a bug that freezes the whole page.
+
+Reproduce: load the page and press the Up arrow to rotate. The tab locks up and stops responding to any further input. Verified with a headless browser: after the rotate keydown, the page never answers again.
+
+The cause is the ghost-piece loop in the render function:
+
+    let gy = 0;
+    while (!collides(current, 0, gy + 1)) gy++;
+
+That loop has no upper bound and runs every frame. After some rotations the exit condition is never met and it spins forever.
+
+Fix it by bounding that loop to at most ROWS iterations, and make tryRotate reject a rotation whose resulting shape would sit outside the board rather than leaving the piece in a state the ghost loop cannot resolve.
+
+Use edit_file to change only what is needed. Do not rewrite the whole file. Then stop.

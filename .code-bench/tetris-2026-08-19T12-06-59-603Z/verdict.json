@@ -1,0 +1,61 @@
+{
+  "verdict": {
+    "outcome": "finished",
+    "emptyTurns": 0,
+    "wallClockMs": 449998,
+    "assistantTurns": 8,
+    "reasoningChars": 4169,
+    "contentChars": 1924,
+    "toolCalls": 7,
+    "toolErrors": 1,
+    "fileWritten": true,
+    "fileBytes": 10602,
+    "missingMarkers": [],
+    "shapesFound": 7,
+    "shapesExpected": 7
+  },
+  "toolCalls": [
+    {
+      "name": "list_dir",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\".\"}"
+    },
+    {
+      "name": "write_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"index.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"en\\\">\\n<head>\\n<meta charset=\\\"utf-8\\\">\\n<title>Tetris</title>\\n<style>\\n  html, body {\\n    margi"
+    },
+    {
+      "name": "read_file",
+      "status": "ok",
+      "error": null,
+      "args": "{\"path\":\"index.html\"}"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\nconst html = require('fs').readFileSync('index.html','utf8');\\nconst m = html.match(/<s"
+    },
+    {
+      "name": "run_shell",
+      "status": "error",
+      "error": "Exit code: 1\n\n--- stdout ---\n(empty)\n\n--- stderr ---\n[eval]:22\nconsole.log('after 5 frames: gameOver=', gameOver, 'piece=', current.type, 'y=', current.y);\n                                         ^\n\nReferenceError: gameOver is not defined\n    at [eval]:22:42\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:483:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:481:60)\n    at evalFunction (node:internal/process/execution:315:30)\n    at evalTypeScript (node:internal/process/execution:327:3)\n    at node:internal/main/eval_string:71:3\n\nNode.js v26.0.0",
+      "args": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\n// --- minimal DOM/canvas stubs ---\\nconst ctxStub = () => new Proxy({}, { get: (t,p) ="
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"cd /Users/adam/LocalHarness/.overnight/repro3 && node -e \\\"\\nconst fs=require('fs');\\nconst stub=\\\\`\\nconst ctxStub = () => new Proxy({}, { get: (t,"
+    },
+    {
+      "name": "run_shell",
+      "status": "ok",
+      "error": null,
+      "args": "{\"command\":\"rm -f /tmp/tetris.js /tmp/tetris_test.js\"}"
+    }
+  ]
+}
