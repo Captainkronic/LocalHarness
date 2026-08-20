@@ -203,6 +203,24 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     payload.tool_choice = 'auto'
   }
 
+  /*
+   * One line per request, describing what is ACTUALLY on the wire.
+   *
+   * This exists because the app's own record of a request disagreed with the
+   * request. Metrics said reasoning_effort 'none' on turns where nothing in
+   * the code could have set it, and a whole afternoon went into arguing with a
+   * field recorded after the fact instead of reading what was sent. Anything
+   * downstream — a meter, a footer, a panel — is a copy; this is the original.
+   */
+  console.log(
+    `[llm] -> ${String(payload.model)} ` +
+      `effort=${payload.reasoning_effort === undefined ? '(omitted)' : String(payload.reasoning_effort)} ` +
+      `temp=${String(payload.temperature)} top_p=${String(payload.top_p)} ` +
+      `max_tokens=${String(payload.max_tokens)} ` +
+      `msgs=${Array.isArray(payload.messages) ? payload.messages.length : 0} ` +
+      `tools=${Array.isArray(payload.tools) ? payload.tools.length : 0}`
+  )
+
   let doneEmitted = false
   const emitDone = (reason: string): void => {
     if (doneEmitted) return
