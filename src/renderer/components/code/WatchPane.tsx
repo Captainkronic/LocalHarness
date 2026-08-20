@@ -509,6 +509,10 @@ export function WatchPane({
                         t ? `\n${t.touches} touch${t.touches === 1 ? '' : 'es'}` : ''
                       }`}
                       onClick={() => openFile(slot.path)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        void window.harness.invoke('files:contextMenu', slot.path)
+                      }}
                     >
                       <span className={`wp-tab-glyph fam-${familyOf(slot.name)}`}>
                         <FileIcon name={slot.name} />

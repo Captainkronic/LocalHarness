@@ -723,6 +723,10 @@ function TreeRow({
       aria-selected={active}
       title={tooltip(row, changed)}
       onClick={() => onActivate(row)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        void window.harness.invoke('files:contextMenu', row.path)
+      }}
     >
       {row.isDirectory ? (
         <span className={row.open ? 'ft-twisty is-open' : 'ft-twisty'} aria-hidden="true">

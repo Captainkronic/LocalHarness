@@ -131,6 +131,8 @@ export interface IpcApi {
   /* ---- artifacts ---- */
   'artifacts:list': (workflowId: WorkflowId) => Promise<Artifact[]>
   'artifacts:reveal': (path: string) => Promise<void>
+  /** Native right-click menu for a file on disk: reveal, open, copy path. */
+  'files:contextMenu': (path: string) => Promise<void>
   'artifacts:open': (path: string) => Promise<void>
   'artifacts:readDataUrl': (path: string) => Promise<string | null>
 
@@ -307,6 +309,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'approval:pending',
   'artifacts:list',
   'artifacts:reveal',
+  'files:contextMenu',
   'artifacts:open',
   'artifacts:readDataUrl',
   'telemetry:health',

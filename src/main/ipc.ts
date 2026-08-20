@@ -6,7 +6,7 @@
  * is not implemented here is a compile error rather than a runtime 'no handler'.
  */
 
-import { dialog, ipcMain, shell, app, BrowserWindow } from 'electron'
+import { dialog, ipcMain, shell, app, BrowserWindow, Menu, clipboard } from 'electron'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 
@@ -271,6 +271,39 @@ export function registerIpc(d: IpcDeps): void {
       d.orchestrator.artifacts(workflowId),
     'artifacts:reveal': (path: string) => {
       shell.showItemInFolder(path)
+    },
+
+    /* A real context menu, built in main.
+     *
+     * Rendering one in the renderer means reimplementing native behaviour —
+     * dismissal, keyboard, screen edges, the platform's own look — and getting
+     * it subtly wrong. This is a right-click on a file, which macOS has had an
+     * answer for since before the web, so it uses that answer. */
+    'files:contextMenu': async (path: string) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      if (!win) return
+      const menu = Menu.buildFromTemplate([
+        {
+          label: 'Reveal in Finder',
+          click: () => shell.showItemInFolder(path)
+        },
+        {
+          label: 'Open',
+          click: () => {
+            void shell.openPath(path)
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Copy path',
+          click: () => clipboard.writeText(path)
+        },
+        {
+          label: 'Copy file name',
+          click: () => clipboard.writeText(path.slice(path.lastIndexOf('/') + 1))
+        }
+      ])
+      menu.popup({ window: win })
     },
     'artifacts:open': (path: string) => {
       // A tool result may hand us a URL rather than a path; openExternal handles
