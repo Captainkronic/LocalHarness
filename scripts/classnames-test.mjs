@@ -113,7 +113,7 @@ console.log(
  * with square corners before it was noticed. Variables set from JS as an inline
  * style are legitimately absent from the stylesheets, so they are listed here
  * rather than inferred. */
-const INJECTED = new Set(['--meter', '--gut-w', '--cw-gut', '--cw-d', '--wf-accent'])
+const INJECTED = new Set(['--meter', '--gut-w', '--cw-gut', '--cw-d', '--wf-accent', '--lbs-h'])
 const declaredVars = new Set()
 const usedVars = new Map()
 for (const f of cssFiles) {

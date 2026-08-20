@@ -68,14 +68,32 @@ export class BrowserMirror {
     this.o = opts
   }
 
-  /** A viewer opened the Browser tab. */
+  /** A viewer opened a surface that shows the stream. */
   watch(): void {
     this.watchers += 1
     if (this.watchers === 1) {
       this.closing = false
       this.retryMs = RETRY_START_MS
       void this.connect()
+      return
     }
+    /*
+     * A LATER viewer has to be told the state it is joining.
+     *
+     * setStatus only emits on a CHANGE, and the renderer resets its own copy to
+     * 'off' whenever a viewer unmounts. The strip under the composer mounts and
+     * unmounts as the model moves between browser and other tools, so a viewer
+     * routinely arrives while main is already 'live' — and then nothing is ever
+     * emitted, because from main's side nothing changed. The socket stays up,
+     * frames keep flowing, and the panel sits on "opening the page" forever.
+     *
+     * Observed exactly that: an ESTABLISHED connection to the browser and a
+     * panel insisting it was still opening one.
+     */
+    this.o.onStatus(this.status)
+    // force: the newcomer has no frame at all, so the usual "do not paint over a
+    // newer frame" guard would leave it staring at an empty box.
+    if (this.status === 'live') this.seed(true)
   }
 
   /** A viewer looked away. The last one out turns the stream off. */
@@ -223,7 +241,7 @@ export class BrowserMirror {
   }
 
   /** One still, so the view is never empty while a page is up. */
-  private seed(): void {
+  private seed(force = false): void {
     const ws = this.ws
     if (!ws) return
     const id = this.nextId++
@@ -239,8 +257,10 @@ export class BrowserMirror {
       const data = msg.result?.data
       if (typeof data !== 'string' || data.length === 0) return
       // Only if the live stream has not already produced something: a real
-      // frame is newer and this must not paint over it.
-      if (this.lastFrameAt !== 0) return
+      // frame is newer and this must not paint over it. A forced seed is for a
+      // viewer that joined late and holds no frame of its own, where "newer"
+      // means nothing — it has nothing to be newer than.
+      if (!force && this.lastFrameAt !== 0) return
       this.lastFrameAt = Date.now()
       this.o.onFrame({
         dataUrl: `data:image/jpeg;base64,${data}`,

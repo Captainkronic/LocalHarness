@@ -18,7 +18,7 @@
  * nobody.
  */
 
-import { useMemo, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react'
 
 import { useStore } from '@renderer/state/store'
 import { useMirrorStream } from '@renderer/components/code/useMirrorStream'
@@ -64,18 +64,58 @@ export function LiveBrowserStrip(): JSX.Element | null {
  * leave the screencast running for the whole session, since the parent stays
  * mounted the entire time the panel is open.
  */
+/** Bounds for the drag. Below the floor the picture is unreadable; above the
+ *  ceiling the sandbox and touched-files lists get pushed off the panel. */
+const MIN_H = 140
+const MAX_H = 760
+const STORE_KEY = 'lh.liveBrowser.height'
+
 function Strip(): JSX.Element {
   const frame = useStore((s) => s.browserFrame)
   const status = useStore((s) => s.browserMirror)
   useMirrorStream()
 
+  /* Remembered across launches: a size you set is a preference, and being made
+     to set it again every run would be worse than not offering the handle. */
+  const [height, setHeight] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(STORE_KEY))
+    return Number.isFinite(saved) && saved >= MIN_H && saved <= MAX_H ? saved : 300
+  })
+  const [dragging, setDragging] = useState(false)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+
+  /* Listeners on the WINDOW, not the handle: the pointer routinely leaves a
+     10px grip mid-drag, and a handler bound to the grip would drop the drag
+     the moment it did. */
+  const onGripDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = stageRef.current?.getBoundingClientRect().height ?? 300
+    setDragging(true)
+    const move = (ev: PointerEvent): void => {
+      const next = Math.min(MAX_H, Math.max(MIN_H, startH + (ev.clientY - startY)))
+      setHeight(next)
+    }
+    const up = (): void => {
+      setDragging(false)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(STORE_KEY, String(Math.round(height)))
+  }, [height])
+
   return (
-    <section className="lbs">
+    <section className="lbs" style={{ '--lbs-h': `${Math.round(height)}px` } as CSSProperties}>
       <div className="lbs-head">
         <span className="section-label">Live browser</span>
         <span className={status === 'live' ? 'lbs-dot is-on' : 'lbs-dot'} aria-hidden="true" />
       </div>
-      <div className="lbs-stage">
+      <div className="lbs-stage" ref={stageRef}>
         {frame ? (
           <img className="lbs-frame" src={frame.dataUrl} alt="the page the model is driving" />
         ) : (
@@ -87,6 +127,19 @@ function Strip(): JSX.Element {
           </p>
         )}
       </div>
+      {/* Keyboard-reachable as well as draggable: a resize that only exists for
+          a mouse is a resize half the people using it cannot perform. */}
+      <button
+        type="button"
+        className={dragging ? 'lbs-grip is-dragging' : 'lbs-grip'}
+        onPointerDown={onGripDown}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp') setHeight((h) => Math.max(MIN_H, h - 24))
+          if (e.key === 'ArrowDown') setHeight((h) => Math.min(MAX_H, h + 24))
+        }}
+        aria-label={`Resize the live browser (${Math.round(height)} pixels). Use the arrow keys.`}
+        title="Drag to resize"
+      />
     </section>
   )
 }

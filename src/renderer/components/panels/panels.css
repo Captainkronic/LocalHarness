@@ -1597,24 +1597,159 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Reserves its height before the first frame lands, so the panel below does
-     not jump down the moment the stream connects. */
+  /* Driven by --lbs-h, which the drag handle writes and the component restores
+     from localStorage. The floor reserves height before the first frame lands
+     so the panel below does not jump when the stream connects. */
+  height: var(--lbs-h, 300px);
   min-height: 132px;
   padding: var(--s1);
   border-radius: var(--r);
   border: 1px solid var(--line);
   background: var(--bg-void);
+  overflow: hidden;
 }
 
 .lbs-frame {
   max-width: 100%;
-  max-height: 260px;
+  max-height: 100%;
   object-fit: contain;
   border-radius: var(--r-sm);
+}
+
+/* A grip, not a scrollbar: this is a deliberate resize, and it should look
+   like one thing you can grab rather than a decoration on the edge. */
+.lbs-grip {
+  height: 10px;
+  margin-top: calc(var(--s1) * -1);
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+.lbs-grip::after {
+  content: '';
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.lbs-grip:hover::after,
+.lbs-grip.is-dragging::after {
+  background: var(--accent);
 }
 
 .lbs-idle {
   margin: 0;
   font-size: var(--fs-micro);
   color: var(--fg-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Run log — one prompt and everything it caused                       */
+/* ------------------------------------------------------------------ */
+
+.rl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.rl-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.rl-count {
+  color: var(--fg-faint);
+  font-size: var(--fs-micro);
+}
+
+.rl-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  /* Bounded: a long session must not push the sandbox and touched-files
+     lists off the panel. */
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.rl-run {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s2);
+  border-radius: var(--r);
+  border: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.rl-run.is-error {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.rl-run-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.rl-time {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+/* The headline number: how long you actually waited. */
+.rl-wall {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.rl-live {
+  font-size: var(--fs-micro);
+  color: var(--accent);
+}
+
+.rl-prompt {
+  margin: 0;
+  font-size: var(--fs-tiny);
+  color: var(--fg-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rl-split,
+.rl-facts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+}
+
+.rl-split {
+  color: var(--fg-muted);
+}
+
+.rl-sep {
+  color: var(--fg-faint);
+}
+
+.rl-error {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--danger);
 }
