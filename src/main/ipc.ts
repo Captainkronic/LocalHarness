@@ -147,7 +147,9 @@ export function registerIpc(d: IpcDeps): void {
           ...(m.depsOnDemand ? { cost: 'about 1.4 GB, downloaded after setup' } : {}),
           ...(COMFY_SERVERS.has(m.id) ? { requires: 'a ComfyUI server on your network' } : {}),
           ...(m.id === 'gmail' ? { requires: 'Node, and a Google sign-in' } : {}),
-          installed: existsSync(join(root, m.id))
+          /* The entry file, not the directory: a directory can exist because
+             something wrote a config into it. */
+          installed: existsSync(join(root, m.id, m.entry))
         })),
         credentials: CREDENTIAL_SPEC,
         states: credentialStates(root)
@@ -194,7 +196,7 @@ export function registerIpc(d: IpcDeps): void {
       /* The three servers that each hold their own inference URL are pointed
          at the server just verified. Without this they keep their localhost
          defaults and vision quietly answers from the wrong machine. */
-      applyServerUrl(root, choice.baseUrl)
+      applyServerUrl(root, choice.baseUrl, choice.installed)
       const patch: Partial<Settings> = {
         baseUrl: choice.baseUrl,
         nativeApiUrl: choice.nativeApiUrl,

@@ -10,7 +10,9 @@
  *   node scripts/setup-probe-test.mjs
  */
 import { build } from 'esbuild'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+
+const statSafe = (p) => existsSync(p)
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -108,6 +110,18 @@ const mode = statSync(join(root, 'flights', 'credentials.json')).mode & 0o777
 check('the credentials file is 0600', mode === 0o600, `got 0${mode.toString(8)}`)
 
 console.log('\nThe three servers that hold their own inference URL')
+/*
+ * Scoped to what is installed. Writing an env file for a server nobody chose
+ * creates its directory, and a directory was what "installed?" was answered
+ * with — so skipping image generation still listed it as installed, pointing
+ * at a folder holding one config file and no server. Found by counting
+ * directories after a real wizard run.
+ */
+const scoped = M.C.applyServerUrl(root, 'http://x/v1', ['playwright'])
+check('only touches servers that are actually installed', scoped.length === 1, scoped.join(', '))
+check('and leaves no directory behind for the others',
+  !statSafe(join(root, 'comfy-image')), 'comfy-image got a folder it should not have')
+
 const touched = M.C.applyServerUrl(root, 'http://studio:1235/v1')
 check('all three are pointed at the verified server', touched.length === 3, touched.join(', '))
 check('including the browser, which is the one that fails silently',

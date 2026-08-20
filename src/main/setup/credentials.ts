@@ -225,9 +225,16 @@ export function envFor(installRoot: string, serverId: string): Record<string, st
  * Called with whatever the wizard probed, so the three vision-capable servers
  * agree with the app instead of each defaulting to localhost.
  */
-export function applyServerUrl(installRoot: string, baseUrl: string): string[] {
+export function applyServerUrl(installRoot: string, baseUrl: string, installed?: string[]): string[] {
   const touched: string[] = []
   for (const server of CREDENTIAL_SPEC) {
+    /* Only servers that are actually here.
+     *
+     * Writing an env file for a server nobody installed CREATES its directory,
+     * and a directory is what "is this installed?" was being answered with —
+     * so a wizard run that skipped image generation still listed it as
+     * installed, pointing at a folder containing one env file and no server. */
+    if (installed && !installed.includes(server.serverId)) continue
     for (const field of server.fields) {
       if (!field.derivedFromServer) continue
       setCredential(installRoot, server.serverId, field.key, baseUrl)

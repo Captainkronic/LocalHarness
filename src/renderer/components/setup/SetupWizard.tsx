@@ -108,7 +108,8 @@ export default function SetupWizard({ onFinished }: Props): JSX.Element {
       baseUrl: probe.baseUrl,
       nativeApiUrl: probe.nativeApiUrl,
       modelId,
-      workspaceRoot: null
+      workspaceRoot: null,
+      installed: res?.installed ?? ids
     })
     setState(await invoke<SetupState>('setup:state'))
     setStep('done')

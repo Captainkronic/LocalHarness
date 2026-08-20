@@ -240,6 +240,8 @@ export interface IpcApi {
     nativeApiUrl: string
     modelId: string | null
     workspaceRoot: string | null
+    /** So per-server config is only written for servers that exist. */
+    installed: string[]
   }) => Promise<Settings>
 }
 
@@ -408,7 +410,8 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'event:liveExchange',
   'event:skills',
   'event:browserFrame',
-  'event:browserMirror'
+  'event:browserMirror',
+  'event:setupProgress'
 ]
 
 /** The surface the preload script exposes as `window.harness`. */
