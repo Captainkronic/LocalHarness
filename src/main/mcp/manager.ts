@@ -9,6 +9,13 @@
  * lands in that server's state rather than propagating.
  */
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { app } from 'electron'
+
+import { envFor } from '../setup/credentials'
+import { launchSpec, readManifest, resourcesRoot } from '../setup/provision'
 import { MCP_BY_ID, MCP_REGISTRY } from '@shared/mcp-registry'
 import type {
   McpServerSpec,
@@ -71,6 +78,25 @@ export class McpManager {
   /* ---------------------------------------------------------------- */
 
   /** Registry copies, with `estimatedTokens` refreshed from any live discovery. */
+  /**
+   * Where a server actually lives, when this machine was set up by the
+   * installer rather than by hand.
+   *
+   * Returns null in development, where the registry's paths are correct and
+   * there is no install root to consult.
+   */
+  private installedSpec(
+    id: string
+  ): { command: string; args: string[]; env: Record<string, string> } | null {
+    const root = join(app.getPath('userData'), 'servers')
+    const resources = resourcesRoot(process.resourcesPath, app.getAppPath())
+    const entry = readManifest(resources).find((m) => m.id === id)
+    if (!entry) return null
+    if (!existsSync(join(root, id, entry.entry))) return null
+    const spec = launchSpec(root, resources, entry)
+    return { ...spec, env: envFor(root, id) }
+  }
+
   specs(): McpServerSpec[] {
     return MCP_REGISTRY.map((spec) => {
       const state = this.stateById.get(spec.id)
@@ -156,11 +182,23 @@ export class McpManager {
     state.pid = undefined
     this.emit()
 
+    /*
+     * An installed server wins over the registry's baked-in path.
+     *
+     * MCP_REGISTRY describes the development machine: ~/.config/<id>-mcp, and
+     * /usr/bin/python3, which on macOS is 3.9.6. On a machine set up by the
+     * installer neither is true — the servers live in Application Support and
+     * run on the Python that shipped with the app — so a packaged install
+     * would look for every server somewhere it had never put one.
+     */
+    const installed = this.installedSpec(spec.id)
     const client = new McpClient({
       id: spec.id,
-      command: spec.command,
-      args: spec.args,
-      env: spec.env,
+      command: installed?.command ?? spec.command,
+      args: installed?.args ?? spec.args,
+      /* Credentials and the per-server inference URLs the wizard wrote. The
+         registry's own env is the base so a server keeps its defaults. */
+      env: { ...spec.env, ...(installed?.env ?? {}) },
       callTimeoutMs: spec.callTimeoutMs,
       onLog: (level, msg) => this.opts.onLog(level, `mcp:${spec.id}`, msg)
     })
