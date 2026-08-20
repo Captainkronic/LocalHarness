@@ -21,7 +21,10 @@
     "test": "npm run typecheck && npm run test:sandbox && npm run test:calibration && npm run test:activity && node scripts/typed-call-test.mjs && node scripts/trim-test.mjs && node scripts/skillroot-test.mjs && node scripts/classnames-test.mjs && node scripts/take-lineage-test.mjs && node scripts/edit-method-test.mjs && node scripts/starters-test.mjs && node scripts/artifact-store-test.mjs && node scripts/panel-layout-test.mjs && node scripts/avatar-builder-test.mjs && node scripts/voice-workflow-test.mjs && node scripts/flights-panel-test.mjs && node scripts/health-panel-test.mjs && node scripts/turn-gate-test.mjs && node scripts/prompt-elide-test.mjs && node scripts/runaway-retry-test.mjs && node scripts/browser-pane-test.mjs && node scripts/loop-breaker-test.mjs && node scripts/runs-test.mjs && node scripts/serve-dir-test.mjs && node scripts/touched-test.mjs && node scripts/prefill-rate-test.mjs && node scripts/comfy-models-test.mjs && node scripts/bundle-mcp.mjs --audit",
     "verify": "npm run test && npm run test:smoke",
     "package": "npm run build && electron-builder --mac --dir",
-    "dist": "npm run build && electron-builder --mac"
+    "dist": "npm run build && electron-builder --mac",
+    "runtime": "node scripts/fetch-runtime.mjs",
+    "bundle": "node scripts/fetch-runtime.mjs && node scripts/bundle-mcp.mjs --wheels",
+    "test:installer": "node scripts/installer-smoke.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

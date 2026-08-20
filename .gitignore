@@ -28,3 +28,4 @@ shots/
 *.bak-*
 /resources/mcp/
 /resources/wheels/
+/resources/runtime/

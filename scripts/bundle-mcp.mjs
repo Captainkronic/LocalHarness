@@ -242,6 +242,50 @@ console.log(`\nstaged ${manifest.length} server(s), ${bytes(sizeOf(STAGE))} tota
 console.log('audit clean — no credentials, venvs, profiles or captures')
 
 if (args.has('--wheels')) {
-  console.log('\nwheels: not yet implemented — needs the bundled runtime to resolve against')
-  console.log('        (a wheel built for 3.9 will not install into a 3.12 venv)')
+  const python = join(ROOT, 'resources', 'runtime', 'python', 'bin', 'python3')
+  if (!existsSync(python)) {
+    fail('no bundled runtime — run `node scripts/fetch-runtime.mjs` first.\n' +
+         '  Wheels must be resolved against the interpreter that will install them:\n' +
+         '  a wheel built for 3.9 does not install into a 3.12 venv.')
+  }
+
+  /*
+   * One shared wheelhouse, not one per server.
+   *
+   * docgen and playwright both depend on `playwright`, which is ~40 MB of
+   * wheel, and pillow appears twice as well. Per-server directories would ship
+   * every shared dependency once per dependant for no benefit — pip resolves
+   * happily from a common --find-links, and each server keeps its own
+   * requirements.txt to say which subset it actually wants.
+   */
+  rmSync(WHEELS, { recursive: true, force: true })
+  mkdirSync(WHEELS, { recursive: true })
+
+  const needing = manifest.filter((m) => m.requirements && !m.depsOnDemand)
+  console.log(`\ndownloading wheels for ${needing.length} server(s) into one shared pool`)
+  for (const m of needing) {
+    const req = join(STAGE, m.id, m.requirements)
+    try {
+      execFileSync(python, ['-m', 'pip', 'download', '--quiet', '-r', req, '-d', WHEELS], {
+        stdio: ['ignore', 'ignore', 'pipe']
+      })
+      console.log(`  ok    ${m.id}`)
+    } catch (err) {
+      const detail = err?.stderr?.toString().trim().split('\n').slice(-3).join('\n          ')
+      fail(`${m.id}: pip download failed\n          ${detail}`)
+    }
+  }
+
+  const files = walk(WHEELS)
+  const total = files.reduce((n, f) => n + statSync(join(WHEELS, f)).size, 0)
+  console.log(`\n${files.length} wheels, ${bytes(total)} shared`)
+
+  /* A source tarball means pip found no wheel for this interpreter and would
+     have to COMPILE it on the target — which needs Xcode and defeats an
+     offline install. Better to know at build time. */
+  const sdists = files.filter((f) => f.endsWith('.tar.gz') || f.endsWith('.zip'))
+  if (sdists.length > 0) {
+    console.log(`\n\x1b[33mwarning: ${sdists.length} source distribution(s) — these need a compiler on the target:\x1b[0m`)
+    for (const f of sdists) console.log(`  ${f}`)
+  }
 }
