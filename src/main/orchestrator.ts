@@ -45,6 +45,7 @@ import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import {
   callKeyFor,
   isActing,
+  loopAdvice,
   loopVerdict,
   shapeKeyFor,
   type LoopEntry
@@ -109,6 +110,14 @@ const LOOP_HISTORY = 32
  * costs another eighteen minutes to learn the same thing.
  */
 const MAX_REASONING_TRIPS = 3
+
+/**
+ * Loop trips answered with advice before the turn is actually ended.
+ *
+ * A model that is told why it is circling can usually get out of it; one that
+ * is told twice and circles anyway is not going to.
+ */
+const MAX_LOOP_NUDGES = 2
 
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
@@ -498,6 +507,8 @@ export class Orchestrator {
     /** The last tool call's identity, and how many times it has repeated. */
     /* Everything the breaker needs, oldest first; only the tail is read. */
     const loopHistory: LoopEntry[] = []
+    /** Loop trips so far this turn. The first few are corrections, not endings. */
+    let loopNudges = 0
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -792,20 +803,45 @@ export class Orchestrator {
       const verdict = loopVerdict(loopHistory, pending)
       if (verdict) {
         const why = verdict.why
+        loopNudges += 1
+        /*
+         * First trips are a NUDGE, not an ending.
+         *
+         * Ending the turn made the app's best advice unreachable: it was
+         * written to `assistant.error`, and only `content` is forwarded, so the
+         * model got the verdict without the diagnosis and a person had to type
+         * "continue" to restart something that then had no idea why it had
+         * stopped. Refusing the call and handing back the reason lets the turn
+         * recover on its own, which is what the advice was for.
+         */
+        const spent = loopNudges > MAX_LOOP_NUDGES
+        const advice = loopAdvice(verdict, calls[0]?.name ?? 'that tool')
         for (const call of calls) {
           call.status = 'error'
-          call.error = 'Stopped: this was going in circles.'
+          call.error = spent ? 'Stopped: this was going in circles.' : advice
           call.finishedAt = Date.now()
+          // The model asked for these; it needs a result for each or the next
+          // request is malformed.
+          this.appendToolResult(conv, call)
         }
+        this.log('warn', 'turn', `loop breaker (${verdict.rule}): ${why}`)
+
+        if (spent) {
+          assistant.streaming = false
+          assistant.error =
+            `stopped because ${why}. It was told twice and kept going, so the turn ends here. ` +
+            `Everything before this is intact.`
+          this.persist(conv, true)
+          finishedOnItsOwn = true
+          break
+        }
+
+        /* A clean slate, or the very next iteration trips on the same tail and
+           the model never gets to act on what it was just told. */
+        loopHistory.length = 0
         assistant.streaming = false
-        assistant.error =
-          `stopped because ${why}. Nothing is changing, so running it again cannot tell you ` +
-          `anything new. Everything before this is intact. Try something different — and if a ` +
-          `check keeps failing the same way, consider that the check itself may be wrong.`
-        this.log('warn', 'turn', `loop breaker: ${why}`)
         this.persist(conv, true)
-        finishedOnItsOwn = true
-        break
+        continue
       }
 
       meter.markToolPhase()

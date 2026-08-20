@@ -237,3 +237,44 @@ function nameOf(entry: LoopEntry): string {
   const first = entry.callKey.split(':', 1)[0]
   return first !== undefined && first !== '' ? first : 'a tool'
 }
+
+/**
+ * What to tell the MODEL when a rule fires.
+ *
+ * This is separate from the sentence shown to the user, and the distinction was
+ * earned. The user-facing text said "Try something different — and if a check
+ * keeps failing the same way, consider that the check itself may be wrong",
+ * which was exactly right: a run stopped here after reading one function five
+ * times because its edit "had not landed", when the edit had landed and the
+ * browser was simply still running the module it loaded before the edit.
+ *
+ * The model never saw a word of it. Only `content` is forwarded from an
+ * assistant message, and that advice lived on `assistant.error`. What the model
+ * got was "Stopped: this was going in circles." — the verdict without the
+ * diagnosis. So this text goes on the tool call's `error`, which IS forwarded,
+ * and it is written to be acted on rather than read.
+ */
+export function loopAdvice(verdict: LoopVerdict, toolName: string): string {
+  const head =
+    verdict.rule === 'identical'
+      ? `You have now called ${toolName} with the same arguments ${MAX_IDENTICAL_CALLS} times ` +
+        `and had the same answer every time. It will keep being the same answer.`
+      : verdict.rule === 'narrow'
+        ? `Your last ${CYCLE_WINDOW} calls produced only a handful of distinct outcomes between ` +
+          `them. You are circling.`
+        : `You have repeated the same short sequence of calls several times without writing a ` +
+          `file or running a command. Looking again is not going to change it.`
+
+  return [
+    head,
+    'Nothing before this was lost — every earlier result still stands.',
+    '',
+    'Do not repeat that call. Consider that what you are CHECKING may be the wrong thing:',
+    '- If you edited a file and a page still behaves the old way, RELOAD the page. An already-loaded',
+    '  script does not pick up edits to the file it came from, so the source can be correct and the',
+    '  running page still wrong.',
+    '- If a test keeps failing identically, suspect the test before the code.',
+    '- If you are reading a file to confirm an edit landed, the edit result already told you. Read',
+    '  something you have not read, or measure the behaviour instead of the source.'
+  ].join('\n')
+}
