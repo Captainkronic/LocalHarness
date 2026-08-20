@@ -13,6 +13,7 @@
  * mean upward and make the payload look free. The median ignores them.
  */
 
+import { PREFILL_CEILING_TPS } from './format'
 import type { LabRecord } from '@shared/types'
 
 /** Used only until something has actually been measured. */
@@ -43,7 +44,20 @@ export function prefillRate(
   residentModelId: string | null,
   live: { tps: number | null; estimated: boolean }
 ): PrefillRate {
-  const usable = labHistory.filter((r) => Number.isFinite(r.prefillTps) && r.prefillTps > 0)
+  /*
+   * Cached prefixes are excluded, not averaged in.
+   *
+   * prefillTps is promptTokens / ttft, so a request whose prefix the server
+   * already had reports tens of thousands of tokens per second for work it
+   * never did. A median polluted by those makes the payload cost below look
+   * FREE — "1.4k tokens adds 47ms to every turn" — when the real answer at a
+   * measured ~250 tok/s is nearer six seconds. Understating a cost is the
+   * worst direction to be wrong in for a number whose whole job is to let
+   * someone decide what to switch off.
+   */
+  const usable = labHistory.filter(
+    (r) => Number.isFinite(r.prefillTps) && r.prefillTps > 0 && r.prefillTps <= PREFILL_CEILING_TPS
+  )
   // Prefer records from the model actually loaded — rates differ enormously
   // between a 27B and a 1B, and mixing them describes neither.
   const forModel = residentModelId ? usable.filter((r) => r.model === residentModelId) : []
