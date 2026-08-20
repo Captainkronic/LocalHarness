@@ -36,10 +36,18 @@ import type { ConversationStore } from './store/conversations'
 import type { McpManager } from './mcp/manager'
 import type { ModelRegistry } from './llm/models'
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 
 import { CREDENTIAL_SPEC, applyServerUrl, credentialStates, setCredential } from './setup/credentials'
 import { probeServer } from './setup/probe'
-import { checkComfyModels, installHint, parseAudioModels, parseImageModels } from './setup/comfy-models'
+import {
+  checkComfyModels,
+  guidanceFor,
+  installHint,
+  parseAudioModels,
+  parseImageModels
+} from './setup/comfy-models'
+import { findComfyInstalls, inspectRoot, startComfy } from './setup/comfy-install'
 import { provision, readManifest, resourcesRoot } from './setup/provision'
 import type { ModelSlot } from '@shared/setup'
 import type { ApprovalBroker } from './agent/approval'
@@ -189,6 +197,30 @@ export function registerIpc(d: IpcDeps): void {
         present: withWhere(report.present),
         missing: withWhere(report.missing)
       }
+    },
+
+    'setup:findComfy': async () => findComfyInstalls(),
+
+    'setup:startComfy': async (root: string, host: string) => {
+      const install = inspectRoot(root)
+      if (!install) {
+        return { started: false, alreadyRunning: false, error: `No ComfyUI under ${root}.` }
+      }
+      return startComfy(install, host)
+    },
+
+    'setup:modelGuidance': async (host: string) => {
+      const resources = resourcesRoot(process.resourcesPath, app.getAppPath())
+      const required = [
+        ...readServerSource(resources, 'comfy-image', parseImageModels),
+        ...readServerSource(resources, 'comfy-audio', parseAudioModels)
+      ]
+      const report = await checkComfyModels(host, required)
+      /* The shared tree, not the install: that is where these actually go, and
+         a command writing into ComfyUI/models would put a 10 GB file somewhere
+         ComfyUI is not looking. */
+      const shared = join(homedir(), 'ComfyUI-Shared', 'models')
+      return guidanceFor(report.missing, shared)
     },
 
     'setup:finish': async (choice) => {

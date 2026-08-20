@@ -16,13 +16,16 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 
 import type {
+  ComfyInstall,
   CredentialState,
+  ModelGuidance,
   ModelReport,
   ProbeResult,
   ProvisionProgress,
   ServerCredentials,
   SetupServer,
-  SetupState
+  SetupState,
+  StartOutcome
 } from '@shared/setup'
 import './setup.css'
 
@@ -396,9 +399,6 @@ function CredentialsStep({
   onBack: () => void
   onNext: () => void
 }): JSX.Element {
-  const [comfyHost, setComfyHost] = useState('http://127.0.0.1:8188')
-  const [checking, setChecking] = useState(false)
-
   /* Only ask about servers actually being installed, and skip anything the
      wizard already filled in from the verified inference server. */
   const relevant = spec
@@ -450,53 +450,146 @@ function CredentialsStep({
         </section>
       ))}
 
-      {wantsComfy ? (
-        <section className="wz-group">
-          <div className="wz-group-head">
-            <span className="section-label">ComfyUI models</span>
-            <span className="wz-dim">
-              These servers start fine without them and fail at generation time, so it is worth
-              checking now.
-            </span>
-          </div>
-          <div className="wz-row">
-            <input
-              className="wz-input"
-              value={comfyHost}
-              spellCheck={false}
-              onChange={(e) => setComfyHost(e.target.value)}
-              aria-label="ComfyUI address"
-            />
-            <button
-              type="button"
-              className="btn"
-              disabled={checking}
-              onClick={() => {
-                setChecking(true)
-                void onCheckComfy(comfyHost).finally(() => setChecking(false))
-              }}
-            >
-              {checking ? 'Checking…' : 'Check models'}
-            </button>
-          </div>
-          {comfy ? <ComfyReport report={comfy} /> : null}
-        </section>
-      ) : null}
+      {wantsComfy ? <ComfySection comfy={comfy} onCheckComfy={onCheckComfy} /> : null}
 
       <Nav onBack={onBack} onNext={onNext} nextLabel="Install" />
     </div>
   )
 }
 
-function ComfyReport({ report }: { report: ModelReport }): JSX.Element {
+/**
+ * ComfyUI: is it here, does it run, does it have what it needs.
+ *
+ * Three separate questions that fail differently, so they are asked
+ * separately. "Not installed" wants a link; "installed but not running" wants
+ * a button; "running but empty" wants a download command. Collapsing them into
+ * one red box would send everyone to the wrong remedy.
+ */
+function ComfySection({
+  comfy,
+  onCheckComfy
+}: {
+  comfy: ModelReport | null
+  onCheckComfy: (host: string) => Promise<void>
+}): JSX.Element {
+  const [host, setHost] = useState('http://127.0.0.1:8188')
+  const [installs, setInstalls] = useState<ComfyInstall[] | null>(null)
+  const [busy, setBusy] = useState<'find' | 'start' | 'check' | null>(null)
+  const [started, setStarted] = useState<StartOutcome | null>(null)
+  const [guidance, setGuidance] = useState<ModelGuidance[] | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      setBusy('find')
+      setInstalls((await invoke<ComfyInstall[]>('setup:findComfy')) ?? [])
+      setBusy(null)
+    })()
+  }, [])
+
+  const pick = installs?.[0] ?? null
+
+  return (
+    <section className="wz-group">
+      <div className="wz-group-head">
+        <span className="section-label">ComfyUI</span>
+        <span className="wz-dim">Needed for image and audio generation.</span>
+      </div>
+
+      {busy === 'find' ? <p className="wz-dim">Looking for an install…</p> : null}
+
+      {installs !== null && installs.length === 0 ? (
+        <div className="wz-result is-warn">
+          <strong>Not found on this machine.</strong>
+          <p className="wz-without">
+            It does not have to be here — if you run one elsewhere, put its address below.
+            Otherwise the desktop app from comfy.org is the least work. This app expects a folder
+            containing <code>ComfyUI/main.py</code>, and wants the folder <em>containing</em>{' '}
+            ComfyUI, not ComfyUI itself.
+          </p>
+        </div>
+      ) : null}
+
+      {pick ? (
+        <div className={pick.canStart ? 'wz-result is-ok' : 'wz-result is-warn'}>
+          <strong>Found</strong> <code>{pick.root}</code>
+          {pick.note ? <p className="wz-without">{pick.note}</p> : null}
+          {pick.modelPathsYaml ? null : (
+            /* The single most expensive false positive here — see the module. */
+            <p className="wz-without">
+              No shared-model config found. If your models live outside the ComfyUI folder it will
+              report having none of them.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      <div className="wz-row">
+        <input
+          className="wz-input"
+          value={host}
+          spellCheck={false}
+          onChange={(e) => setHost(e.target.value)}
+          aria-label="ComfyUI address"
+        />
+        {pick?.canStart ? (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy !== null}
+            onClick={() => {
+              setBusy('start')
+              void invoke<StartOutcome>('setup:startComfy', pick.root, host)
+                .then(setStarted)
+                .finally(() => setBusy(null))
+            }}
+          >
+            {busy === 'start' ? 'Starting…' : 'Start it'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn"
+          disabled={busy !== null}
+          onClick={() => {
+            setBusy('check')
+            void Promise.all([
+              onCheckComfy(host),
+              invoke<ModelGuidance[]>('setup:modelGuidance', host).then(setGuidance)
+            ]).finally(() => setBusy(null))
+          }}
+        >
+          {busy === 'check' ? 'Checking…' : 'Check models'}
+        </button>
+      </div>
+
+      {started ? (
+        <div className={started.started ? 'wz-result is-ok' : 'wz-result is-bad'}>
+          {started.alreadyRunning
+            ? 'Already running.'
+            : started.started
+              ? `Started in ${Math.round((started.waitedMs ?? 0) / 1000)}s.`
+              : started.error}
+        </div>
+      ) : null}
+
+      {comfy ? <ComfyReport report={comfy} guidance={guidance} /> : null}
+    </section>
+  )
+}
+
+function ComfyReport({
+  report,
+  guidance
+}: {
+  report: ModelReport
+  guidance: ModelGuidance[] | null
+}): JSX.Element {
   if (!report.reachable) {
     return <div className="wz-result is-bad">Could not reach it: {report.error}</div>
   }
   if (report.missing.length === 0) {
     return (
-      <div className="wz-result is-ok">
-        All {report.present.length} required models are there.
-      </div>
+      <div className="wz-result is-ok">All {report.present.length} required models are there.</div>
     )
   }
   return (
@@ -505,18 +598,25 @@ function ComfyReport({ report }: { report: ModelReport }): JSX.Element {
         {report.missing.length} model{report.missing.length === 1 ? '' : 's'} missing.
       </strong>
       <ul className="wz-missing">
-        {report.missing.map((m) => (
-          <li key={m.where}>
-            <code>{m.where}</code>
-            <span className="wz-dim">for {m.feature}</span>
+        {(guidance ?? report.missing.map((m) => ({ ...m, advice: '', where: m.where }))).map((g) => (
+          <li key={g.where} className="wz-guide">
+            <div>
+              <code>{g.where}</code>
+              <span className="wz-dim">
+                for {g.feature}
+                {'sizeGb' in g && g.sizeGb ? ` · ${g.sizeGb} GB` : ''}
+              </span>
+            </div>
+            {'command' in g && g.command ? (
+              /* Selectable, because the only useful thing to do with it is copy
+                 it into a terminal. */
+              <code className="wz-cmd">{g.command}</code>
+            ) : null}
+            {'advice' in g && g.advice ? <p className="wz-without">{g.advice}</p> : null}
           </li>
         ))}
       </ul>
-      {/* Not a blocker: everything else installs, and the models can be
-          dropped in later without touching this app. */}
-      <p className="wz-without">
-        You can install these into ComfyUI later — nothing else is held up by it.
-      </p>
+      <p className="wz-without">Nothing else is held up by this — the rest installs regardless.</p>
     </div>
   )
 }

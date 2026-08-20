@@ -100,6 +100,36 @@ export interface ModelReport {
   unknownSlots: ModelSlot[]
 }
 
+/** A ComfyUI found on this machine. */
+export interface ComfyInstall {
+  /** What COMFY_ROOT must be set to — the PARENT of the ComfyUI folder. */
+  root: string
+  dir: string
+  python: string | null
+  canStart: boolean
+  note?: string
+  /** Without this ComfyUI reports zero models even when they are all present. */
+  modelPathsYaml: string | null
+}
+
+export interface StartOutcome {
+  started: boolean
+  alreadyRunning: boolean
+  error?: string
+  waitedMs?: number
+}
+
+/** How to obtain one missing model, when that is actually known. */
+export interface ModelGuidance {
+  file: string
+  where: string
+  feature: string
+  /** Absent when the source is not recorded — deliberately, rather than guessed. */
+  command?: string
+  sizeGb?: number
+  advice: string
+}
+
 export interface SetupState {
   /** True until setup is completed once. */
   firstRun: boolean

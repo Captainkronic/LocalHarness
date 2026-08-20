@@ -265,3 +265,34 @@
   padding-top: var(--s2);
   border-top: 1px solid var(--line-subtle);
 }
+
+/* One missing model: where it goes, and the command that gets it.
+   The command is selectable text rather than a button because the only useful
+   thing to do with it is paste it into a terminal — and because a button that
+   silently starts a ten-gigabyte download is not a kindness. */
+.wz-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.wz-guide:last-child {
+  border-bottom: none;
+}
+
+.wz-cmd {
+  display: block;
+  padding: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  white-space: pre;
+  user-select: all;
+}

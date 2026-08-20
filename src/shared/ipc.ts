@@ -49,12 +49,15 @@ import type {
   SamplingOverrides
 } from './types'
 import type {
+  ComfyInstall,
   CredentialState,
+  ModelGuidance,
   ModelReport,
   ProbeResult,
   ProvisionProgress,
   ProvisionResult,
-  SetupState
+  SetupState,
+  StartOutcome
 } from './setup'
 
 export interface IpcApi {
@@ -234,6 +237,12 @@ export interface IpcApi {
   'setup:setCredential': (serverId: string, key: string, value: string) => Promise<CredentialState[]>
   /** Does the ComfyUI at this host have the models the servers need? */
   'setup:checkComfyModels': (host: string) => Promise<ModelReport>
+  /** Look for a ComfyUI installed on this machine. */
+  'setup:findComfy': () => Promise<ComfyInstall[]>
+  /** Start one and wait for it to answer. Long: ComfyUI takes tens of seconds. */
+  'setup:startComfy': (root: string, host: string) => Promise<StartOutcome>
+  /** How to obtain the models that are missing, where that is known. */
+  'setup:modelGuidance': (host: string) => Promise<ModelGuidance[]>
   /** Write the chosen server settings and mark setup done. */
   'setup:finish': (choice: {
     baseUrl: string
