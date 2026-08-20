@@ -52,7 +52,7 @@ const WHEELS = join(ROOT, 'resources', 'wheels')
  * never appears — it is not excluded so much as never invited.
  *
  * `tier` drives what the wizard pre-ticks. `deps` says whether a venv is needed
- * at all; six of these are pure standard library and need only the runtime.
+ * at all; seven of these are pure standard library and need only the runtime.
  */
 const SERVERS = [
   { id: 'websearch',   dir: 'websearch-mcp',  files: ['server.py'], tier: 'core', deps: false },
