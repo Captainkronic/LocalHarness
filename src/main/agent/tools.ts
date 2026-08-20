@@ -130,6 +130,20 @@ const SPECS: ToolSpec[] = [
       required: ['command'],
       additionalProperties: false
     }
+  },
+  {
+    id: 'serve_dir',
+    mutating: false,
+    description:
+      'Serve a directory over HTTP on localhost, returning its URL and one per page in it. Always open local pages this way, never as file://: modules, fetch and workers are blocked on file:// origins, so the page fails for a reason that is not in your code. Serving the same directory twice returns the same URL, and nothing is cached, so a reload shows your latest edit.',
+    schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: `Directory to serve. ${PATH_HINT} Defaults to the workspace root.` }
+      },
+      required: [],
+      additionalProperties: false
+    }
   }
 ]
 

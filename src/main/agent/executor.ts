@@ -25,12 +25,15 @@ import type {
   Artifact,
   FileOpKind,
   NativeToolId,
-  Settings
+  ServeResultFacts,
+  Settings,
+  ShellResultFacts
 } from '@shared/types'
 
 import { augmentedPath, isInsideAny } from '../store/paths'
 import { changedLinesFromDiff, type ActivityInput } from './activity'
 import { diffStat, unifiedDiff } from './diff'
+import { listServed, serveDirectory } from './static-server'
 import { nativeToolInfo } from './tools'
 
 export type LogFn = (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
@@ -39,6 +42,15 @@ export interface ToolResult {
   text: string
   artifacts: Artifact[]
   isError: boolean
+  /**
+   * Machine-readable facts about the result, when the tool has any.
+   *
+   * The `text` is written for the model to read; a card that parsed it would be
+   * coupled to a sentence that exists to be reworded. MCP results have carried
+   * this for a while — native ones now can too, so the UI can state an exit
+   * code without knowing how the executor phrased it.
+   */
+  structured?: unknown
 }
 
 export interface ToolExecutorOptions {
@@ -124,7 +136,8 @@ const ACTIVITY_KIND: Record<NativeToolId, FileOpKind> = {
   list_dir: 'list',
   glob: 'glob',
   grep: 'grep',
-  run_shell: 'shell'
+  run_shell: 'shell',
+  serve_dir: 'serve'
 }
 
 /**
@@ -139,6 +152,20 @@ function activityTarget(toolId: NativeToolId, args: unknown): string {
   if (toolId === 'run_shell') return pick('command')
   if (toolId === 'glob' || toolId === 'grep') return pick('pattern') || pick('path')
   return pick('path')
+}
+
+/** First line with something on it, for a one-line summary of a shell run. */
+function firstMeaningfulLine(text: string): string {
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line !== '') return line.length > 160 ? `${line.slice(0, 160)}…` : line
+  }
+  return ''
+}
+
+function countOutputLines(text: string): number {
+  const trimmed = text.replace(/\n+$/, '')
+  return trimmed === '' ? 0 : trimmed.split('\n').length
 }
 
 function firstLine(text: string): string {
@@ -507,6 +534,9 @@ export class ToolExecutor {
           break
         case 'run_shell':
           result = await this.runShell(record, settings, conversationId)
+          break
+        case 'serve_dir':
+          result = await this.serveDir(record, settings)
           break
         default:
           return fail(`Unknown native tool "${String(toolId)}".`)
@@ -1290,11 +1320,101 @@ export class ToolExecutor {
       stderr.trimEnd() === '' ? '(empty)' : stderr.trimEnd()
     ]
 
+    const failed = run.timedOut || run.code !== 0
+    /* On a failure stderr is what the person needs; on success it is usually
+       progress chatter and stdout is the answer. */
+    const preferStderr = failed && stderr.trim() !== ''
+    const headline =
+      (preferStderr ? firstMeaningfulLine(stderr) : '') ||
+      firstMeaningfulLine(stdout) ||
+      firstMeaningfulLine(stderr)
+
+    const facts: ShellResultFacts = {
+      kind: 'shell',
+      exitCode: run.code ?? null,
+      timedOut: run.timedOut,
+      headline,
+      headlineFromStderr: preferStderr && headline === firstMeaningfulLine(stderr),
+      stdoutLines: countOutputLines(stdout),
+      stderrLines: countOutputLines(stderr)
+    }
+
     return {
       text: sections.join('\n'),
       artifacts: [],
-      isError: run.timedOut || run.code !== 0
+      isError: failed,
+      structured: facts
     }
+  }
+
+  /**
+   * Give a folder an HTTP origin.
+   *
+   * Not marked mutating: it writes nothing, and every file it can hand out is
+   * one the model may already read. Making it ask for approval would defeat the
+   * point, which is that reaching for it should be cheaper than reasoning about
+   * why file:// failed.
+   */
+  private async serveDir(args: Record<string, unknown>, settings: Settings): Promise<ToolResult> {
+    const raw = optString(args, 'path') ?? '.'
+    const dir = await this.resolve(raw, settings, 'path', 'read')
+    const shown = await this.display(dir, settings)
+
+    const info = await statOrNull(dir)
+    if (!info) return fail(`No such directory: ${shown}.`)
+    if (!info.isDirectory()) {
+      return fail(`${shown} is a file, not a directory. Serve the folder that contains it.`)
+    }
+
+    const before = listServed().some((s) => s.root === dir)
+
+    let served
+    try {
+      served = await serveDirectory(dir)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return fail(`Could not start a server for ${shown}: ${message}`)
+    }
+
+    /* Naming the pages is the difference between one call and three. The model
+       knows the folder, not which file is the entry point, and guessing
+       index.html is wrong most of the time in a workspace like this. */
+    let pages: string[] = []
+    try {
+      const entries = await fsp.readdir(dir, { withFileTypes: true })
+      pages = entries
+        .filter((e) => e.isFile() && /\.html?$/i.test(e.name))
+        .map((e) => e.name)
+        .sort()
+        .slice(0, 12)
+        .map((name) => `${served.origin}/${encodeURIComponent(name)}`)
+    } catch {
+      pages = []
+    }
+
+    const facts: ServeResultFacts = {
+      kind: 'serve',
+      origin: served.origin,
+      displayPath: shown,
+      pages,
+      reused: before
+    }
+
+    const lines = [
+      `${before ? 'Already serving' : 'Serving'} ${shown} at ${served.origin}/`,
+      ''
+    ]
+    if (pages.length > 0) {
+      lines.push('Pages:', ...pages.map((u) => `  ${u}`))
+    } else {
+      lines.push('No .html files at the top level of this directory.')
+    }
+    lines.push(
+      '',
+      'Open these URLs in the browser instead of file:// paths. Responses are never cached, so reload after an edit to see it.'
+    )
+
+    return { text: lines.join('\n'), artifacts: [], isError: false, structured: facts }
   }
 }
 

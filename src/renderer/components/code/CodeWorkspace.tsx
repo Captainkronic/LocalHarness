@@ -607,6 +607,13 @@ function KindIcon({ kind }: { kind: FileOpKind }): JSX.Element {
           <path d="M10.2 10.2L14 14" />
         </Svg>
       )
+    case 'serve':
+      return (
+        <Svg>
+          <circle cx="8" cy="8" r="6.2" />
+          <path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z" />
+        </Svg>
+      )
     case 'shell':
     default:
       return (

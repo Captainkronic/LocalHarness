@@ -558,7 +558,8 @@ and if it is not true, do not say it.`,
       'list_dir',
       'glob',
       'grep',
-      'run_shell'
+      'run_shell',
+      'serve_dir'
     ],
     panel: 'files',
     systemPrompt: `${BASE_PROMPT}
@@ -581,6 +582,13 @@ This matters more here than it looks: thinking is billed from the same budget as
 the answer, so a turn that deliberates long enough returns nothing at all — not
 a worse answer, no answer. Reaching for a tool is nearly always better than
 thinking for another paragraph.
+
+A LOCAL PAGE NEEDS AN ORIGIN
+
+Call serve_dir on the folder and open the http:// URL it gives you. Never open a
+local page as a file:// path. Modules, fetch, workers and textures are all
+blocked on file:// origins, and the failure looks exactly like a bug in your own
+code, so you can spend an hour fixing something that was never wrong.
 
 LOOKING AT A PAGE: PICK THE CHEAP INSTRUMENT
 

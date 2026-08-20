@@ -870,6 +870,8 @@ export class Orchestrator {
         )
         call.result = result.text
         call.artifacts = result.artifacts
+        // Same contract as MCP below: facts for the card, prose for the model.
+        call.structured = result.structured
         call.status = result.isError ? 'error' : 'ok'
         if (result.isError) call.error = result.text
       } else {

@@ -36,6 +36,7 @@ import { LiveSession } from './live/session'
 import { SpeechServices } from './live/speech'
 import { EditPipeline } from './edit/pipeline'
 import { EditJobStore } from './edit/store'
+import { stopAllServed } from './agent/static-server'
 import { ToolExecutor } from './agent/executor'
 import { ApprovalBroker } from './agent/approval'
 import { ActivityTracker } from './agent/activity'
@@ -396,6 +397,9 @@ app.whenReady().then(async () => {
     // parent.
     await speech.stop().catch(() => undefined)
     await mcp.shutdown().catch(() => undefined)
+    // Any folder the agent gave an HTTP origin to. In-process, so nothing is
+    // orphaned, but the listeners would hold the event loop open on quit.
+    stopAllServed()
   }
 
   // MCP children are spawned with detached:false, which does NOT kill them when

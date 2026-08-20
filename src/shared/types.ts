@@ -258,6 +258,40 @@ export type NativeToolId =
   | 'glob'
   | 'grep'
   | 'run_shell'
+  | 'serve_dir'
+
+/**
+ * What a shell run actually did, separate from how the result was worded.
+ *
+ * Carried on the tool call so a collapsed card can say "exit 1" without
+ * scraping the text block written for the model. A shell-heavy run was
+ * previously unreadable at a glance: sixteen identical grey rows, every one of
+ * which had to be expanded to find out whether it worked.
+ */
+export interface ShellResultFacts {
+  kind: 'shell'
+  /** Null when the process was killed rather than exiting. */
+  exitCode: number | null
+  timedOut: boolean
+  /** The most informative single line: an error if there was one, else output. */
+  headline: string
+  /** True when `headline` came from stderr, so the card can colour it. */
+  headlineFromStderr: boolean
+  stdoutLines: number
+  stderrLines: number
+}
+
+/** What `serve_dir` started, for the card and the workspace panel. */
+export interface ServeResultFacts {
+  kind: 'serve'
+  origin: string
+  /** Directory being served, relative to the workspace root when possible. */
+  displayPath: string
+  /** Absolute URLs of the HTML pages found at the top level. */
+  pages: string[]
+  /** True when this directory was already being served. */
+  reused: boolean
+}
 
 export type ApprovalMode = 'always_ask' | 'auto_read' | 'auto_all'
 
@@ -674,6 +708,7 @@ export type FileOpKind =
   | 'glob'
   | 'grep'
   | 'shell'
+  | 'serve'
 
 export type FileOpPhase = 'start' | 'progress' | 'done' | 'error'
 
