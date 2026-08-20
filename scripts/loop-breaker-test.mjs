@@ -14,6 +14,8 @@
  *   node scripts/loop-breaker-test.mjs
  */
 const MAX_IDENTICAL_CALLS = 6
+const CYCLE_WINDOW = 12
+const CYCLE_DISTINCT = 3
 
 /**
  * Mirrors the orchestrator: takes [call, result] pairs, returns the 1-based
@@ -23,12 +25,19 @@ function firstTrip(sequence) {
   let lastCall = null
   let lastResult = null
   let repeats = 0
+  const recent = []
   for (let i = 0; i < sequence.length; i++) {
     const [call, result] = sequence[i]
-    if (call === lastCall && repeats + 1 >= MAX_IDENTICAL_CALLS) return i + 1
+    const repeating = call === lastCall && repeats + 1 >= MAX_IDENTICAL_CALLS
+    const cycling =
+      recent.length >= CYCLE_WINDOW &&
+      new Set(recent.slice(-CYCLE_WINDOW)).size <= CYCLE_DISTINCT
+    if (repeating || cycling) return i + 1
     repeats = call === lastCall && result === lastResult ? repeats + 1 : 0
     lastCall = call
     lastResult = result
+    recent.push(`${call}=>${result}`)
+    if (recent.length > CYCLE_WINDOW * 2) recent.shift()
   }
   return null
 }
@@ -63,6 +72,23 @@ check('one different call resets the count',
 check('same result from a DIFFERENT call does not count',
   firstTrip(Array.from({ length: 10 }, (_, i) => [`call-${i}`, 'same'])) === null,
   'progress can legitimately keep returning the same value')
+
+/* The three-hour golf run: two calls, two outcomes, forever. Consecutive
+   checking is blind to it because neither ever repeats back to back. */
+const cycle = (pairs, n) =>
+  Array.from({ length: n }, (_, i) => pairs[i % pairs.length])
+check('A TWO-CALL CYCLE IS CAUGHT', firstTrip(cycle([['ls', 'unchanged'], ['test', 'AssertionError']], 40)) === 13,
+  'ran 124 calls over three hours before this existed')
+check('a three-call cycle is caught',
+  firstTrip(cycle([['a', '1'], ['b', '2'], ['c', '3']], 40)) === 13)
+check('a four-call cycle is allowed',
+  firstTrip(cycle([['a', '1'], ['b', '2'], ['c', '3'], ['d', '4']], 40)) === null,
+  'four distinct outcomes is work, not a circle')
+check('varied work never trips',
+  firstTrip(Array.from({ length: 60 }, (_, i) => [`call-${i % 9}`, `r-${i}`])) === null)
+check('a short alternation is allowed to finish',
+  firstTrip(cycle([['a', '1'], ['b', '2']], 11)) === null,
+  'the window has to fill before it can judge')
 
 check('an empty turn does not trip', firstTrip([]) === null)
 check('a single call does not trip', firstTrip([['a', '1']]) === null)

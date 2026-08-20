@@ -111,6 +111,31 @@ const MAX_ITERATIONS = 500
  */
 const MAX_IDENTICAL_CALLS = 6
 
+/**
+ * A cycle is a loop that alternates, and the rule above cannot see one.
+ *
+ * "Six IDENTICAL in a row" needs two the same back to back. A model bouncing
+ * between two calls — check the file, run the test, check the file, run the
+ * test — never repeats consecutively, so it sails straight through and can do
+ * it for hours.
+ *
+ * Measured: a golf build ran 124 shell calls over three hours in a perfect
+ * two-call cycle, writing nothing to the workspace for the last two and a half.
+ * The last twelve calls contained exactly TWO distinct outcomes: a directory
+ * listing that had not changed since 05:55, and its own verification script
+ * failing with the same AssertionError every time. The file it was verifying
+ * was valid the whole time; the test was the broken thing.
+ *
+ * So: look at a window rather than at neighbours. Twelve outcomes carrying
+ * three or fewer distinct results is a cycle whatever its period, and this
+ * generalises the consecutive rule (six identical is one distinct outcome)
+ * rather than replacing it. Real work does not revisit the same three outcomes
+ * twelve times running; polling a live page does not either, because the page
+ * keeps answering differently.
+ */
+const CYCLE_WINDOW = 12
+const CYCLE_DISTINCT = 3
+
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
 /** Live metric pushes. Fast enough to feel live, slow enough not to churn React. */
@@ -476,6 +501,8 @@ export class Orchestrator {
     let lastCallKey = ''
     let lastResultKey = ''
     let repeatCount = 0
+    /** Recent (call, result) outcomes, newest last, for cycle detection. */
+    const recentOutcomes: string[] = []
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -724,20 +751,27 @@ export class Orchestrator {
        * that has already given the same answer every time.
        */
       const callKey = calls.map((c) => `${c.name}:${c.arguments}`).join('|')
-      if (callKey === lastCallKey && repeatCount + 1 >= MAX_IDENTICAL_CALLS) {
+      const repeating = callKey === lastCallKey && repeatCount + 1 >= MAX_IDENTICAL_CALLS
+      const cycling =
+        recentOutcomes.length >= CYCLE_WINDOW &&
+        new Set(recentOutcomes.slice(-CYCLE_WINDOW)).size <= CYCLE_DISTINCT
+      if (repeating || cycling) {
         const name = calls[0]?.name ?? 'a tool'
+        const why = repeating
+          ? `${name} returned the same result ${repeatCount + 1} times in a row`
+          : `the last ${CYCLE_WINDOW} tool calls produced only ` +
+            `${new Set(recentOutcomes.slice(-CYCLE_WINDOW)).size} different outcomes between them`
         for (const call of calls) {
           call.status = 'error'
-          call.error = 'Stopped: this call kept returning the same answer.'
+          call.error = 'Stopped: this was going in circles.'
           call.finishedAt = Date.now()
         }
         assistant.streaming = false
         assistant.error =
-          `stopped after ${name} returned the same result ${repeatCount + 1} times in a row. ` +
-          `Nothing is changing, so asking again cannot tell you anything new. Everything before ` +
-          `this is intact; try a different approach, or check whether the thing you are watching ` +
-          `is actually running.`
-        this.log('warn', 'turn', `loop breaker: ${name} unchanged ${repeatCount + 1}x`)
+          `stopped because ${why}. Nothing is changing, so running it again cannot tell you ` +
+          `anything new. Everything before this is intact. Try something different — and if a ` +
+          `check keeps failing the same way, consider that the check itself may be wrong.`
+        this.log('warn', 'turn', `loop breaker: ${why}`)
         this.persist(conv, true)
         finishedOnItsOwn = true
         break
@@ -765,6 +799,8 @@ export class Orchestrator {
       repeatCount = callKey === lastCallKey && resultKey === lastResultKey ? repeatCount + 1 : 0
       lastCallKey = callKey
       lastResultKey = resultKey
+      recentOutcomes.push(`${callKey}=>${resultKey}`)
+      if (recentOutcomes.length > CYCLE_WINDOW * 2) recentOutcomes.shift()
     }
 
     /*
