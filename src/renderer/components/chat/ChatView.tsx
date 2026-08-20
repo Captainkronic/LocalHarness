@@ -60,10 +60,19 @@ export default function ChatView() {
    * a warning that cries wolf about a twenty-second eviction is worse than none.
    */
   const swap = useMemo(() => {
-    const want = conversationModelId ?? defaultModelId ?? workflow.preferredModel
-    if (!want || !residentModelId || residentModelId === want) return null
+    /* Mirrors Orchestrator.resolveModel exactly, including that a RESIDENT
+       model outranks the workflow's preference. Anything else and this banner
+       warns about an eviction that is not going to happen — which it did,
+       every time a model was loaded by hand. */
+    const want = conversationModelId ?? defaultModelId
+    if (!want || !residentModelId) {
+      /* No pin: whatever is loaded is what gets used, so nothing is evicted.
+         Only an empty box lets the workflow's preference decide. */
+      return null
+    }
+    if (residentModelId === want) return null
     return { from: residentModelId, to: want }
-  }, [conversationModelId, defaultModelId, workflow, residentModelId])
+  }, [conversationModelId, defaultModelId, residentModelId])
 
   const applySuggestion = useCallback((s: string) => {
     setDraft(s)

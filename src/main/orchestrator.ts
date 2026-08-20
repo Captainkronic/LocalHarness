@@ -1046,19 +1046,34 @@ export class Orchestrator {
     }
     const residentId = this.d.models.residentModelId()
 
-    // The workflow's preferred model wins whether or not it is loaded —
-    // `ensurePreferredModel` makes it resident first. Adam runs one model at a
-    // time by necessity, so swapping is the expected cost of changing the kind
-    // of work, not something to avoid.
+    /*
+     * A model the user LOADED outranks a model this app merely prefers.
+     *
+     * This used to be the other way round, and the reasoning was that swapping
+     * is the expected cost of changing the kind of work. That holds when the
+     * app is choosing between models nobody has an opinion about. It does not
+     * hold when someone has just deliberately loaded a particular build to try
+     * it: the workflow's preference silently evicted it and spent twenty
+     * seconds loading a different quantisation of the same model, which is not
+     * a cost, it is the app overruling the person using it.
+     *
+     * Observed exactly that: a Q4_K_XL build loaded by hand, replaced on the
+     * first message by the stock Q4_K_M named in this workflow's definition.
+     *
+     * Order now: what this conversation pins, then what the settings pin, then
+     * WHATEVER IS ALREADY THERE, and only if the box is empty does the
+     * workflow's preference decide what to load. Swapping still happens — it
+     * just no longer happens over the top of a choice someone made.
+     */
+    if (residentId) {
+      const resident = models.find((m) => m.id === residentId)
+      if (resident) return resident
+    }
+
     const preferred = this.workflow(conv.workflowId).preferredModel
     if (preferred) {
       const match = models.find((m) => m.id === preferred)
       if (match) return match
-    }
-
-    if (residentId) {
-      const resident = models.find((m) => m.id === residentId)
-      if (resident) return resident
     }
     // Nothing resident: fall back to any tool-capable model so a first request
     // can JIT-load one rather than refusing outright.
