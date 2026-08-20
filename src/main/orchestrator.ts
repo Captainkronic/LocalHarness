@@ -101,6 +101,15 @@ const MAX_ITERATIONS = 500
 /** Enough tail for the widest rule (a period-4 cycle needs twelve). */
 const LOOP_HISTORY = 32
 
+/**
+ * Spirals a single turn is allowed before thinking is taken away for good.
+ *
+ * One is a stumble and deserves the thinking back. Three is a turn that cannot
+ * deliberate on this particular problem, and handing it back a fourth time
+ * costs another eighteen minutes to learn the same thing.
+ */
+const MAX_REASONING_TRIPS = 3
+
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
 /** Live metric pushes. Fast enough to feel live, slow enough not to churn React. */
@@ -461,9 +470,31 @@ export class Orchestrator {
       high: 0.75
     }
     const reasoningCap = Math.floor(sampling.maxTokens * (REASONING_SHARE[effort ?? 'low'] ?? 0.5))
+    /**
+     * Reset per REQUEST, not per turn.
+     *
+     * Counting across a whole turn conflates two different things: a single
+     * request spiralling, and a long turn that has legitimately thought a lot
+     * across thirty steps. Only the first is a fault, and only the first should
+     * be stopped.
+     */
     let reasoningSoFar = 0
-    let reasoningTripped = false
-    let reasoningRetried = false
+    /**
+     * How many requests in this turn have spiralled.
+     *
+     * Was a one-shot boolean, and the hole that left was measured the moment
+     * the retry stopped poisoning the rest of the run: request 5 spiralled and
+     * was retried, request 6 came back with thinking restored, spiralled again
+     * — and sailed straight through, because `tripped` was already true. It
+     * spent all 16,384 tokens and EIGHTEEN MINUTES reasoning, and returned
+     * nothing.
+     *
+     * The old bug hid this. With thinking stuck off for the rest of the turn no
+     * second spiral was possible, so a broken brake looked like a working one.
+     */
+    let reasoningTrips = 0
+    /** Set once a turn has spiralled too often to be trusted with thinking. */
+    let effortLatchedOff = false
     /** The last tool call's identity, and how many times it has repeated. */
     /* Everything the breaker needs, oldest first; only the tail is read. */
     const loopHistory: LoopEntry[] = []
@@ -489,8 +520,12 @@ export class Orchestrator {
       /* Consumed here, once. The retry sets it and continues; taking it at the
          top of the next iteration and clearing it in the same breath is what
          stops one spiral from silencing the rest of the run. */
-      const requestEffort = effortThisRequest ?? effort
+      const requestEffort = effortLatchedOff ? 'none' : (effortThisRequest ?? effort)
       effortThisRequest = undefined
+      /* Both per-REQUEST: the spiral counter measures this request, and the cap
+         applies to it alone. */
+      reasoningSoFar = 0
+      let trippedThisRequest = false
 
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
         budget,
@@ -568,17 +603,26 @@ export class Orchestrator {
             // seconds; letting it run costs the whole budget and returns
             // nothing.
             if (
-              !reasoningTripped &&
+              !trippedThisRequest &&
               reasoningSoFar > reasoningCap &&
               assistant.content === '' &&
               pendingCalls.size === 0
             ) {
-              reasoningTripped = true
+              trippedThisRequest = true
+              reasoningTrips += 1
+              /* Past this many spirals the turn has shown it cannot deliberate
+                 on this problem, so thinking stays off for the rest of it
+                 rather than being handed back to spiral again. An escalation
+                 on repeated evidence, not a verdict on the first stumble. */
+              const giveUp = reasoningTrips >= MAX_REASONING_TRIPS
               this.log(
                 'warn',
                 'llm',
                 `stopped a runaway: ${reasoningSoFar} reasoning tokens with no answer and no tool call ` +
-                  `(cap ${reasoningCap}). Retrying once with thinking off.`
+                  `(cap ${reasoningCap}, spiral ${reasoningTrips}). ` +
+                  (giveUp
+                    ? 'Thinking stays off for the rest of this turn.'
+                    : 'Retrying that request with thinking off.')
               )
               controller.abort()
             }
@@ -622,18 +666,21 @@ export class Orchestrator {
         }
       )
 
-      // The other half of the circuit breaker. Aborting a runaway only helps if
-
-      // something comes back — otherwise the user has waited and still has
-
-      // nothing. One retry with thinking off, which is measured to answer this
-
-      // model's questions completely, and only ever once per turn so a
-
-      // genuinely hard request cannot ping-pong.
-
-      if (reasoningTripped && !reasoningRetried) {
-        reasoningRetried = true
+      /*
+       * The other half of the circuit breaker. Aborting a runaway only helps if
+       * something comes back — otherwise the user has waited and still has
+       * nothing. So the aborted request is resent with thinking off, which is
+       * measured to answer this model's questions completely.
+       *
+       * Re-armable, unlike the one-shot this replaces. That version handed
+       * thinking back and could never fire again, which was survivable only
+       * while a second bug left thinking off for the rest of the turn anyway.
+       * With that fixed, request 6 of a real run spiralled a second time and
+       * ran unchecked for eighteen minutes on a budget of 16,384 tokens,
+       * returning nothing. After MAX_REASONING_TRIPS spirals the turn stops
+       * getting thinking back at all.
+       */
+      if (trippedThisRequest) {
         // Take the abandoned message OUT, rather than blanking it and moving on.
         //
         // The retry pushes its own assistant message on the next iteration, so
@@ -659,7 +706,10 @@ export class Orchestrator {
          *
          * The retry is a way out of one spiral, not a verdict on the setting.
          */
+        /* Off for the retry. Once the turn has spiralled MAX_REASONING_TRIPS
+           times, `effortForRest` latches so it stays off — see the counter. */
         effortThisRequest = 'none'
+        if (reasoningTrips >= MAX_REASONING_TRIPS) effortLatchedOff = true
 
         // A fresh signal, or the retry inherits the abort that caused it.
         controller = new AbortController()

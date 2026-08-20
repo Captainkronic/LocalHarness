@@ -43,8 +43,8 @@ check(
 )
 
 const retryBlock = code.slice(
-  code.indexOf('reasoningTripped && !reasoningRetried'),
-  code.indexOf('reasoningTripped && !reasoningRetried') + 700
+  code.indexOf('if (trippedThisRequest) {'),
+  code.indexOf('if (trippedThisRequest) {') + 900
 )
 check('the retry block exists', retryBlock.length > 50)
 check(
@@ -81,7 +81,7 @@ check(
 )
 check(
   'the override is consumed and cleared in the same breath',
-  /const requestEffort = effortThisRequest \?\? effort\s*\n\s*effortThisRequest = undefined/.test(code),
+  /const requestEffort = .*effortThisRequest \?\? effort.*\n\s*effortThisRequest = undefined/.test(code),
   'the per-request override is not cleared where it is read, so it can leak'
 )
 check(
@@ -93,11 +93,48 @@ check(
   /setReasoningEffort\(requestEffort\)/.test(code),
   'metrics would claim an effort the request never used'
 )
-check('and retries at most once', /reasoningRetried = true/.test(retryBlock))
+/*
+ * The brake must be able to fire more than once in a turn, and this is the
+ * assertion that would have caught the eighteen-minute spiral. The one-shot
+ * version handed thinking back and could never fire again; it looked correct
+ * only because a second bug left thinking off for the rest of the turn anyway,
+ * so no second spiral was reachable. Fixing that exposed this one immediately.
+ */
+check(
+  'the brake is not one-shot',
+  !/reasoningRetried/.test(code),
+  'a one-shot retry flag is back — the second spiral in a turn runs unchecked'
+)
+check(
+  'it counts spirals rather than latching on the first',
+  /reasoningTrips \+= 1/.test(code),
+  'no spiral counter'
+)
+check(
+  'and stops handing thinking back after too many',
+  /reasoningTrips >= MAX_REASONING_TRIPS/.test(code) && /effortLatchedOff = true/.test(code),
+  'nothing escalates — a turn could ping-pong between spiral and retry forever'
+)
+check(
+  'the latch actually suppresses the effort',
+  /effortLatchedOff \? 'none' :/.test(code),
+  'the latch is set but never read'
+)
+
+/*
+ * Per REQUEST, not per turn. Counting across a turn conflates one request
+ * spiralling with a long turn that has legitimately thought across thirty
+ * steps; only the first is a fault.
+ */
+check(
+  'the reasoning counter resets each request',
+  /reasoningSoFar = 0\n\s*let trippedThisRequest = false/.test(code),
+  'reasoningSoFar accumulates across the turn, so a long turn trips on its own history'
+)
 
 /* The breaker only fires with nothing written and no tool pending — otherwise
    it would abort turns that are making progress. */
-const trip = code.slice(code.indexOf('!reasoningTripped &&'), code.indexOf('!reasoningTripped &&') + 260)
+const trip = code.slice(code.indexOf('!trippedThisRequest &&'), code.indexOf('!trippedThisRequest &&') + 260)
 check('the breaker requires an empty answer', /assistant\.content === ''/.test(trip))
 check('and no tool call in flight', /pendingCalls\.size === 0/.test(trip))
 
