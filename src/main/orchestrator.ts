@@ -87,6 +87,24 @@ const CONTEXT_SAFETY_FRACTION = 0.05
  */
 const MAX_ITERATIONS = 500
 
+/**
+ * Identical tool calls in a row before the turn is stopped.
+ *
+ * A step budget does not catch a model that is stuck, only one that is slow.
+ * Measured: a Tetris play-test issued the SAME call — browse_act
+ * {"action":"press","value":"ArrowLeft"} — thirty consecutive times into a
+ * game-over screen, and would have spent its remaining 300 steps doing it. The
+ * turn before that spent ninety calls the same way. Nothing in the transcript
+ * distinguished either from ordinary slow progress.
+ *
+ * Identical means the name AND the arguments, so a legitimate repeat with a
+ * different target is untouched — pressing ArrowLeft, then ArrowRight, then
+ * ArrowLeft again never trips it. Six is high enough that no real sequence of
+ * identical calls is plausible: if the same call with the same arguments has
+ * produced the same result six times, the seventh will too.
+ */
+const MAX_IDENTICAL_CALLS = 6
+
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
 /** Live metric pushes. Fast enough to feel live, slow enough not to churn React. */
@@ -448,6 +466,9 @@ export class Orchestrator {
     let reasoningSoFar = 0
     let reasoningTripped = false
     let reasoningRetried = false
+    /** The last tool call's identity, and how many times it has repeated. */
+    let lastCallKey = ''
+    let repeatCount = 0
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -684,6 +705,34 @@ export class Orchestrator {
             'The model hit its output cap while still reasoning and produced no answer. Raise max tokens for this workflow, or ask something narrower.'
           this.persist(conv, true)
         }
+        finishedOnItsOwn = true
+        break
+      }
+
+      /*
+       * Stop a model that is stuck rather than working.
+       *
+       * Checked here, before the calls run, so the repeated call is not
+       * executed a seventh time — with a browser act that means not sending a
+       * seventh keypress into a page that has already answered six times.
+       */
+      const callKey = calls.map((c) => `${c.name}:${c.arguments}`).join('|')
+      repeatCount = callKey === lastCallKey ? repeatCount + 1 : 0
+      lastCallKey = callKey
+      if (repeatCount + 1 >= MAX_IDENTICAL_CALLS) {
+        const name = calls[0]?.name ?? 'a tool'
+        for (const call of calls) {
+          call.status = 'error'
+          call.error = 'Stopped: this call had already run with identical arguments.'
+          call.finishedAt = Date.now()
+        }
+        assistant.streaming = false
+        assistant.error =
+          `stopped after calling ${name} ${repeatCount + 1} times in a row with identical ` +
+          `arguments. That is a loop, not progress — the same call cannot produce a different ` +
+          `result. Everything before this is intact; say what to try instead.`
+        this.log('warn', 'turn', `loop breaker: ${name} repeated ${repeatCount + 1}x`)
+        this.persist(conv, true)
         finishedOnItsOwn = true
         break
       }
