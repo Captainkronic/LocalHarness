@@ -177,3 +177,84 @@ function optionsFrom(payload: unknown, node: string, field: string): string[] | 
 export function installHint(model: RequiredModel): string {
   return `${LOADER[model.slot].folder}/${model.file}`
 }
+
+/**
+ * Where a model can actually be got, for the ones whose source is recorded.
+ *
+ * Taken from comfy-mcp's own fetch-audio-models.sh, which is the only place in
+ * this system that records a download location. The image models' sources are
+ * NOT written down anywhere, and a plausible-looking Hugging Face repo invented
+ * here would send someone to a 404 and cost them their trust in every other
+ * instruction on the screen. So they are listed as "source not recorded" and
+ * pointed at ComfyUI Manager, which can search for them properly.
+ */
+const MODEL_SOURCES: Record<string, { repo: string; path: string; gb: number }> = {
+  'ace_step_1.5_turbo_aio.safetensors': {
+    repo: 'Comfy-Org/ace_step_1.5_ComfyUI_files',
+    path: 'checkpoints/ace_step_1.5_turbo_aio.safetensors',
+    gb: 10
+  },
+  'stable-audio-open-1.0.safetensors': {
+    repo: 'Comfy-Org/stable-audio-open-1.0_repackaged',
+    path: 'stable-audio-open-1.0.safetensors',
+    gb: 4.85
+  },
+  't5-base.safetensors': {
+    repo: 'ComfyUI-Wiki/t5-base',
+    path: 't5-base.safetensors',
+    gb: 0.9
+  }
+}
+
+export interface ModelGuidance {
+  file: string
+  where: string
+  feature: string
+  /** A command that will actually work, when the source is known. */
+  command?: string
+  sizeGb?: number
+  /** What to do instead, when it is not. */
+  advice: string
+}
+
+export function guidanceFor(missing: RequiredModel[], modelsDir: string): ModelGuidance[] {
+  return missing.map((m) => {
+    const src = MODEL_SOURCES[m.file]
+    const where = installHint(m)
+    if (!src) {
+      return {
+        file: m.file,
+        where,
+        feature: m.feature,
+        advice:
+          `Install through ComfyUI Manager, or drop the file into ${modelsDir}/${where}. ` +
+          `Its download location is not recorded anywhere in this setup, so no command is ` +
+          `offered rather than a guessed one.`
+      }
+    }
+    return {
+      file: m.file,
+      where,
+      feature: m.feature,
+      sizeGb: src.gb,
+      /* -C - so an interrupted download resumes rather than restarting, which
+         matters a great deal at ten gigabytes. */
+      command:
+        `curl -fL -C - --retry 5 -o "${modelsDir}/${where}" ` +
+        `"https://huggingface.co/${src.repo}/resolve/main/${src.path}"`,
+      advice: `About ${src.gb} GB. Resumable — re-run the same command if it stops.`
+    }
+  })
+}
+
+/** What to say when no ComfyUI could be found at all. */
+export const NO_COMFY_ADVICE = [
+  'No ComfyUI was found on this machine.',
+  '',
+  'Image and audio generation need one running somewhere reachable — it does not have to be',
+  'this machine. If you already have one elsewhere, put its address in the field above.',
+  '',
+  'To install one here, the desktop app from comfy.org is the least work. This app expects the',
+  'layout it produces: a folder containing ComfyUI/main.py and ComfyUI/.venv/bin/python.',
+  'Point the field above at the folder CONTAINING ComfyUI, not at ComfyUI itself.'
+].join('\n')
