@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Attachment, ChatMessage } from '@shared/types'
 import { WORKFLOW_BY_ID } from '@shared/workflows'
-import { basename, formatMs, formatTokens, formatTps } from '@renderer/lib/format'
+import { basename, formatMs, formatTokens, formatTps, formatPrefill } from '@renderer/lib/format'
 import { useStore } from '@renderer/state/store'
 import Markdown from './Markdown'
 import ToolCallCard from './ToolCallCard'
@@ -40,6 +40,14 @@ function UserMessage({ message }: { message: ChatMessage }) {
         </div>
       ) : null}
       {message.content !== '' ? <div className="msg-bubble">{message.content}</div> : null}
+      {/* The clock a run is measured from. Without it the wall-clock figure in
+          the Runs panel has no anchor you can see in the transcript. */}
+      <span className="msg-at tnum" title={new Date(message.createdAt).toLocaleString()}>
+        {new Date(message.createdAt).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit'
+        })}
+      </span>
     </div>
   )
 }
@@ -104,7 +112,7 @@ function AssistantMessage({
         <div className="msg-error">{message.error}</div>
       ) : null}
 
-      {message.metrics ? <Metrics metrics={message.metrics} /> : null}
+      {message.metrics ? <Metrics metrics={message.metrics} at={message.createdAt} /> : null}
     </div>
   )
 }
@@ -251,9 +259,23 @@ function Reasoning({
   )
 }
 
-function Metrics({ metrics }: { metrics: NonNullable<ChatMessage['metrics']> }) {
+function Metrics({
+  metrics,
+  at
+}: {
+  metrics: NonNullable<ChatMessage['metrics']>
+  /** The message's createdAt, so the line says when as well as how long. */
+  at?: number
+}) {
   return (
     <div className="msg-metrics tnum">
+      {/* When, not just how long. Two runs of the same prompt are only
+          comparable if you can tell which was which. */}
+      {at !== undefined ? (
+        <span className="mm-at" title={new Date(at).toLocaleString()}>
+          {new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ) : null}
       <span className="mm-model" title={metrics.modelId}>
         {basename(metrics.modelId)}
       </span>
@@ -277,7 +299,7 @@ function Metrics({ metrics }: { metrics: NonNullable<ChatMessage['metrics']> }) 
       </span>
       <span className="mm mm-prefill">
         <span className="mm-k">prefill</span>
-        <span className="mm-v">{formatTps(metrics.prefillTps)} tok/s</span>
+        <span className="mm-v">{formatPrefill(metrics.prefillTps)}</span>
       </span>
       <span className="mm mm-decode">
         <span className="mm-k">decode</span>

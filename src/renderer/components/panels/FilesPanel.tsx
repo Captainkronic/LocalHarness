@@ -4,6 +4,7 @@ import { useStore } from '@renderer/state/store'
 import { basename, relativeTime, shortenPath } from '@renderer/lib/format'
 import LiveBrowserStrip from './LiveBrowserStrip'
 import './panels.css'
+import { RunLog } from './RunLog'
 
 /**
  * The code workflow's panel: what the agent is allowed to touch, and what it
@@ -91,6 +92,7 @@ export function FilesPanel(): JSX.Element {
       {/* Above the workspace, because while it is there it is the thing you
           are watching — and it is only there while the model is driving. */}
       <LiveBrowserStrip />
+      <RunLog />
       <section className="fil-block">
         <div className="fil-block-head">
           <span className="section-label">Sandbox</span>
@@ -161,8 +163,12 @@ export function FilesPanel(): JSX.Element {
                   <button
                     type="button"
                     className="fil-main"
-                    title={`${f.path}\n${relativeTime(f.at)}`}
+                    title={`${f.path}\n${relativeTime(f.at)}\nRight-click for more`}
                     onClick={() => void window.harness.invoke('artifacts:reveal', f.path)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      void window.harness.invoke('files:contextMenu', f.path)
+                    }}
                   >
                     <span className="fil-name">{basename(f.path)}</span>
                     <span className="fil-path">{shortenPath(dir, 2)}</span>

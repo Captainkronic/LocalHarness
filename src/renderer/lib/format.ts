@@ -9,6 +9,46 @@ export function formatTokens(n: number | null | undefined): string {
   return `${Math.round(n / 1000)}k`
 }
 
+/**
+ * The fastest prefill this hardware can actually do, tokens/sec.
+ *
+ * Measured, not guessed: across 61 conversations the FIRST request of each —
+ * the only guaranteed cache miss — clusters between 1,700 and 4,600 tok/s. And
+ * even those are flattered, because the system prompt and tool schemas are
+ * byte-identical across conversations, so their first few thousand tokens are
+ * already in the server's cache too.
+ *
+ * Anything above this did not happen. See formatPrefill.
+ */
+export const PREFILL_CEILING_TPS = 5000
+
+/**
+ * Prefill throughput, or "cached" when the number is impossible.
+ *
+ * `promptTokens / ttft` silently measures three different things: real prefill,
+ * a prompt-cache hit where the prefix was never reprocessed, and — when a turn
+ * is composing a tool call — minutes of wire silence that had nothing to do
+ * with reading the prompt. Across one conversation the reported figure ranged
+ * from 127 to 27,076 tok/s, a 213x spread, and 27,000 tok/s on a 27B model on
+ * this box is not slow measurement, it is arithmetic on a divisor that
+ * represents no work.
+ *
+ * In an agentic loop this is the COMMON case, not the exception: every request
+ * re-sends the whole history, so almost all of them are near-total cache hits.
+ * Saying "cached" is both truer and more useful than a fictional rate — it
+ * tells you the prompt did not have to be read again.
+ *
+ * The server offers no help here: LM Studio's usage carries prompt_tokens,
+ * completion_tokens and reasoning_tokens, and no cached_tokens field, so how
+ * much was actually processed cannot be known. Only that it cannot have been
+ * all of it.
+ */
+export function formatPrefill(tps: number | null | undefined): string {
+  if (tps === null || tps === undefined || !Number.isFinite(tps) || tps <= 0) return '—'
+  if (tps > PREFILL_CEILING_TPS) return 'cached'
+  return `${formatTps(tps)} tok/s`
+}
+
 /** Tokens per second, one decimal under 100. */
 export function formatTps(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n) || n <= 0) return '—'
