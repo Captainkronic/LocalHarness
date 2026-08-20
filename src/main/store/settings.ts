@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shellAllowlist: ['pwd', 'git status', 'git diff', 'git log', 'npm run typecheck', 'node -v'],
   contextWarnFraction: 0.75,
   theme: 'dark',
-  modelPollMs: 15000,
+  modelPollMs: 600000,
   // Adam's MLX server with multi-token prediction, alongside LM Studio's own.
   // Model ids collide between the two, which is why endpoints are first-class.
   extraEndpoints: [
