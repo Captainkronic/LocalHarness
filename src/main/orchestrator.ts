@@ -41,6 +41,13 @@ import type { LmStudioControl } from './llm/control'
 import { streamChat, type WireMessage } from './llm/client'
 import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
+import {
+  callKeyFor,
+  isActing,
+  loopVerdict,
+  shapeKeyFor,
+  type LoopEntry
+} from './agent/loopbreak'
 import { nativeWireTools, NATIVE_TOOLS } from './agent/tools'
 import { runSkillTool, skillTools } from './agent/skilltool'
 import { estimateTokens } from './mcp/tokens'
@@ -87,54 +94,11 @@ const CONTEXT_SAFETY_FRACTION = 0.05
  */
 const MAX_ITERATIONS = 500
 
-/**
- * Identical call AND identical result, in a row, before the turn is stopped.
- *
- * A step budget does not catch a model that is stuck, only one that is slow.
- * Measured: a Tetris play-test issued the SAME call — browse_act
- * {"action":"press","value":"ArrowLeft"} — thirty consecutive times into a
- * game-over screen, and would have spent its remaining 300 steps doing it. The
- * turn before that spent ninety calls the same way. Nothing in the transcript
- * distinguished either from ordinary slow progress.
- *
- * Identical means the name, the arguments AND what came back. Arguments alone
- * is not enough, and a run caught that the hard way: a model polling a canvas
- * with getImageData to watch a game evolve issued the same expression over and
- * over, which is exactly right — a live page answers differently each time.
- * Stopping it for repeating itself would have stopped it for doing the job
- * properly. (That particular game happened to be frozen, so the readings really
- * were identical and stopping was correct, but it was correct by luck.)
- *
- * Comparing results makes the rule mean what it always should have: stop when
- * nothing is being LEARNED, not when nothing is being varied. Polling a moving
- * page never trips. Polling a dead one trips in six.
- */
-const MAX_IDENTICAL_CALLS = 6
+/* The loop breaker lives in agent/loopbreak.ts: three rules, each added
+   after a real run got past the ones before it. */
 
-/**
- * A cycle is a loop that alternates, and the rule above cannot see one.
- *
- * "Six IDENTICAL in a row" needs two the same back to back. A model bouncing
- * between two calls — check the file, run the test, check the file, run the
- * test — never repeats consecutively, so it sails straight through and can do
- * it for hours.
- *
- * Measured: a golf build ran 124 shell calls over three hours in a perfect
- * two-call cycle, writing nothing to the workspace for the last two and a half.
- * The last twelve calls contained exactly TWO distinct outcomes: a directory
- * listing that had not changed since 05:55, and its own verification script
- * failing with the same AssertionError every time. The file it was verifying
- * was valid the whole time; the test was the broken thing.
- *
- * So: look at a window rather than at neighbours. Twelve outcomes carrying
- * three or fewer distinct results is a cycle whatever its period, and this
- * generalises the consecutive rule (six identical is one distinct outcome)
- * rather than replacing it. Real work does not revisit the same three outcomes
- * twelve times running; polling a live page does not either, because the page
- * keeps answering differently.
- */
-const CYCLE_WINDOW = 12
-const CYCLE_DISTINCT = 3
+/** Enough tail for the widest rule (a period-4 cycle needs twelve). */
+const LOOP_HISTORY = 32
 
 /** Conversation pushes are coalesced to this interval while streaming. */
 const CONV_EMIT_MS = 60
@@ -498,11 +462,8 @@ export class Orchestrator {
     let reasoningTripped = false
     let reasoningRetried = false
     /** The last tool call's identity, and how many times it has repeated. */
-    let lastCallKey = ''
-    let lastResultKey = ''
-    let repeatCount = 0
-    /** Recent (call, result) outcomes, newest last, for cycle detection. */
-    const recentOutcomes: string[] = []
+    /* Everything the breaker needs, oldest first; only the tail is read. */
+    const loopHistory: LoopEntry[] = []
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
     const budget = this.historyBudget(
@@ -750,17 +711,15 @@ export class Orchestrator {
        * with a browser act that means not sending another keypress into a page
        * that has already given the same answer every time.
        */
-      const callKey = calls.map((c) => `${c.name}:${c.arguments}`).join('|')
-      const repeating = callKey === lastCallKey && repeatCount + 1 >= MAX_IDENTICAL_CALLS
-      const cycling =
-        recentOutcomes.length >= CYCLE_WINDOW &&
-        new Set(recentOutcomes.slice(-CYCLE_WINDOW)).size <= CYCLE_DISTINCT
-      if (repeating || cycling) {
-        const name = calls[0]?.name ?? 'a tool'
-        const why = repeating
-          ? `${name} returned the same result ${repeatCount + 1} times in a row`
-          : `the last ${CYCLE_WINDOW} tool calls produced only ` +
-            `${new Set(recentOutcomes.slice(-CYCLE_WINDOW)).size} different outcomes between them`
+      const pending: LoopEntry = {
+        callKey: callKeyFor(calls),
+        shapeKey: shapeKeyFor(calls),
+        resultKey: '',
+        acting: isActing(calls)
+      }
+      const verdict = loopVerdict(loopHistory, pending)
+      if (verdict) {
+        const why = verdict.why
         for (const call of calls) {
           call.status = 'error'
           call.error = 'Stopped: this was going in circles.'
@@ -796,11 +755,8 @@ export class Orchestrator {
       const resultKey = calls
         .map((c) => `${c.status}:${(c.result ?? c.error ?? '').length}:${(c.result ?? c.error ?? '').slice(0, 200)}`)
         .join('|')
-      repeatCount = callKey === lastCallKey && resultKey === lastResultKey ? repeatCount + 1 : 0
-      lastCallKey = callKey
-      lastResultKey = resultKey
-      recentOutcomes.push(`${callKey}=>${resultKey}`)
-      if (recentOutcomes.length > CYCLE_WINDOW * 2) recentOutcomes.shift()
+      loopHistory.push({ ...pending, resultKey })
+      if (loopHistory.length > LOOP_HISTORY) loopHistory.shift()
     }
 
     /*
