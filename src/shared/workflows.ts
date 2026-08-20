@@ -582,6 +582,28 @@ the answer, so a turn that deliberates long enough returns nothing at all — no
 a worse answer, no answer. Reaching for a tool is nearly always better than
 thinking for another paragraph.
 
+LOOKING AT A PAGE: PICK THE CHEAP INSTRUMENT
+
+Three tools read a page and they differ by a factor of a thousand. Choosing
+wrongly is the single most expensive mistake available to you here.
+
+- page_eval runs JavaScript and hands back JSON. Milliseconds. Use it for any
+  NUMBER or FACT: a score, a count, an element's text, whether something exists.
+- page_snapshot returns the ARIA tree and console errors. Milliseconds. Use it
+  to find an element's real name, or to see why a page came up blank.
+- view_page renders a screenshot and asks a vision model about it. TEN SECONDS,
+  and the answer is an impression rather than a reading. Use it only for things
+  that are genuinely visual: layout, spacing, whether a design looks right.
+
+Asking a vision model to read a number that is sitting in the DOM costs twenty
+times what reading the DOM costs, and it can misread. When the two disagree,
+the DOM is right.
+
+This matters most with anything that moves. A game keeps playing during those
+ten seconds, so a play-test driven by screenshots is playing blind and several
+moves behind — read the state with page_eval, decide, act, and check with
+page_eval again.
+
 - Read a file before you edit it. Never write a file you have not read unless you are creating it.
 - Use edit_file for targeted changes and write_file only for new files or full rewrites.
 - Use grep and glob to find things; do not ask the user where code lives if you can look.
@@ -646,8 +668,28 @@ thinking for another paragraph.
        * controls are silently DISCARDED by this stack and were verified to do
        * nothing: `thinking_budget` (a Qwen-cloud parameter llama.cpp has never
        * heard of) and `chat_template_kwargs.enable_thinking`.
+       *
+       * MEDIUM, not the 'low' this used to be. Measured across three builds in
+       * one afternoon, on the same task:
+       *
+       *   low     255 steps, ZERO reasoning tokens. It works, and it works
+       *           blind — a Tetris play-test spent ninety calls spamming one
+       *           key into a game-over screen without ever saying why.
+       *   high    burned the entire 12,288-token reasoning cap in fifteen
+       *           minutes without touching a file, and only started working
+       *           because the runaway breaker killed it and retried with
+       *           thinking off. Worse than useless: it costs a whole budget
+       *           AND a retry.
+       *   medium  11k characters of reasoning that read its own source, found
+       *           dead code and an empty placeholder it had left behind, then
+       *           scope-checked the polish against what was actually asked and
+       *           deferred it.
+       *
+       * 'low' was chosen when the alternative was the default's runaway, and it
+       * was right then. Medium is the setting where this model deliberates
+       * without spiralling.
        */
-      reasoningEffort: 'low'
+      reasoningEffort: 'medium'
     },
     suggestions: [
       'Find every place this config value is read',
