@@ -1630,3 +1630,11 @@
   color: var(--fg-faint);
   opacity: 0.75;
 }
+
+/* Thinking level actually used, called out when it is OFF.
+   A runaway retry can lower it, and when it does the sidebar control no longer
+   describes what is being sent — so the per-request truth is printed here and
+   the one value worth noticing is coloured. */
+.mm-nothink .mm-v {
+  color: var(--warn);
+}

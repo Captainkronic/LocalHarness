@@ -20,6 +20,7 @@ import type {
   McpServerState,
   ModelInfo,
   NativeToolId,
+  ReasoningEffort,
   SendMessageRequest,
   ToolCall,
   WireTool,
@@ -426,8 +427,10 @@ export class Orchestrator {
       ...(this.d.settings.get().workflowSampling[conv.workflowId] ?? {})
     }
 
-    let effort =
+    const effort =
       this.d.settings.get().workflowReasoning[conv.workflowId] ?? wf.sampling.reasoningEffort
+    /** Set only by the runaway retry, and cleared the moment that request ends. */
+    let effortThisRequest: ReasoningEffort | undefined
 
     /**
      * How much thinking counts as a spiral rather than deliberation.
@@ -483,6 +486,12 @@ export class Orchestrator {
         break
       }
 
+      /* Consumed here, once. The retry sets it and continues; taking it at the
+         top of the next iteration and clearing it in the same breath is what
+         stops one spiral from silencing the rest of the run. */
+      const requestEffort = effortThisRequest ?? effort
+      effortThisRequest = undefined
+
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
         budget,
         onTrim: (info) => this.noteTrim(conv, model.id, info)
@@ -533,7 +542,7 @@ export class Orchestrator {
           // spend the entire answer budget thinking — qwen once used all 8,192
           // of Code's and returned nothing after eleven minutes. The user's
           // per-workflow choice wins over the profile's default.
-          reasoningEffort: effort,
+          reasoningEffort: requestEffort,
           signal: controller.signal
         },
         {
@@ -637,7 +646,20 @@ export class Orchestrator {
         if (ghost !== -1) conv.messages.splice(ghost, 1)
         assistant.reasoning = undefined
         assistant.content = ''
-        effort = 'none'
+        /*
+         * ONE request without thinking, not the rest of the turn.
+         *
+         * This used to assign to `effort` itself, which is declared for the
+         * whole turn — so a single spiral at request 13 of a 90-request run
+         * turned thinking off for the other 77 AND every turn that followed,
+         * while the sidebar went on saying "Med". The model spent the rest of
+         * that session doing exactly what this workflow's own notes say
+         * thinking-off does: working blind, re-reading the same page and never
+         * reasoning about what it saw.
+         *
+         * The retry is a way out of one spiral, not a verdict on the setting.
+         */
+        effortThisRequest = 'none'
 
         // A fresh signal, or the retry inherits the abort that caused it.
         controller = new AbortController()
@@ -650,7 +672,7 @@ export class Orchestrator {
 
       assistant.streaming = false
       meter.setToolSchemaTokens(this.toolTokens(tools))
-      meter.setReasoningEffort(effort)
+      meter.setReasoningEffort(requestEffort)
       const turnMetrics = meter.finish(usage, finishReason)
       assistant.metrics = turnMetrics
 

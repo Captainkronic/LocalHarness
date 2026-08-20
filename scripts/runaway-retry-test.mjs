@@ -57,7 +57,42 @@ check(
   /this\.active.*controller = controller/.test(retryBlock),
   'this.active.controller left pointing at the dead one'
 )
-check('it turns thinking off for the retry', /effort = 'none'/.test(retryBlock))
+check(
+  'it turns thinking off for the retry',
+  /effortThisRequest = 'none'/.test(retryBlock),
+  'the retry must lower thinking somehow'
+)
+
+/*
+ * The scope of that downgrade is the whole point, and getting it wrong is
+ * invisible: the sidebar goes on saying "Med" while every request after the
+ * spiral is sent with thinking off. Measured on a real run — one spiral at
+ * request 13 of 90 silenced the remaining 77 and every turn after it.
+ */
+check(
+  'the turn-level effort is a const, so nothing can reassign it',
+  /\n\s*const effort =\s*\n/.test(code),
+  'effort is `let` again — a retry can now silence the rest of the turn'
+)
+check(
+  'the retry does NOT touch the turn-level effort',
+  !/[^a-zA-Z]effort = '/.test(code),
+  'something assigns to `effort` directly'
+)
+check(
+  'the override is consumed and cleared in the same breath',
+  /const requestEffort = effortThisRequest \?\? effort\s*\n\s*effortThisRequest = undefined/.test(code),
+  'the per-request override is not cleared where it is read, so it can leak'
+)
+check(
+  'what is SENT is the per-request value',
+  /reasoningEffort: requestEffort/.test(code)
+)
+check(
+  'and what is REPORTED is the same value, not the setting',
+  /setReasoningEffort\(requestEffort\)/.test(code),
+  'metrics would claim an effort the request never used'
+)
 check('and retries at most once', /reasoningRetried = true/.test(retryBlock))
 
 /* The breaker only fires with nothing written and no tool pending — otherwise

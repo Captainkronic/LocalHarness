@@ -309,6 +309,28 @@ function Metrics({
         <span className="mm-k">total</span>
         <span className="mm-v">{formatMs(metrics.totalMs)}</span>
       </span>
+      {/*
+          What thinking level this REQUEST actually ran at.
+          Always shown, because the alternative was measured and it is bad: a
+          runaway retry lowered the effort and the sidebar went on advertising
+          "Med" for another sixty-seven requests. The number was recorded in
+          metrics the whole time and rendered nowhere, so nothing on screen
+          disagreed with a control that was no longer true. 'none' is called out
+          because that is the one where the model is working blind.
+      */}
+      {metrics.reasoningEffortUsed !== undefined ? (
+        <span
+          className={metrics.reasoningEffortUsed === 'none' ? 'mm mm-nothink' : 'mm'}
+          title={
+            metrics.reasoningEffortUsed === 'none'
+              ? 'This request ran with thinking OFF — the model did not reason before answering'
+              : 'Thinking level this request actually ran at'
+          }
+        >
+          <span className="mm-k">thinking</span>
+          <span className="mm-v">{metrics.reasoningEffortUsed}</span>
+        </span>
+      ) : null}
       {metrics.finishReason !== undefined && metrics.finishReason !== 'stop' ? (
         <span className="mm-flag" title="Generation did not stop naturally">
           {metrics.finishReason}
