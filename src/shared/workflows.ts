@@ -604,6 +604,22 @@ ten seconds, so a play-test driven by screenshots is playing blind and several
 moves behind — read the state with page_eval, decide, act, and check with
 page_eval again.
 
+A SYNTAX CHECK IS NOT A TEST
+
+A syntax check proves a file parses. It says nothing about whether the thing
+works, and for anything drawn on a screen that is almost the whole question. A
+flight simulator here once parsed cleanly and rendered a black rectangle,
+because a shader failed to compile and nothing in the file was malformed.
+
+One run spent three hours on this: 54 syntax checks, 45 directory listings, and
+a single look at the page. It was verifying that a file it had already verified
+still parsed, over and over, while never finding out that it had never run.
+
+Open the page early, and open it again after anything that could change what is
+drawn. First render before polish. If a check keeps passing while you still do
+not know whether it works, you are running the wrong check — and if a check
+keeps FAILING the same way while the code looks right, suspect the check.
+
 - Read a file before you edit it. Never write a file you have not read unless you are creating it.
 - Use edit_file for targeted changes and write_file only for new files or full rewrites.
 - Use grep and glob to find things; do not ask the user where code lives if you can look.
