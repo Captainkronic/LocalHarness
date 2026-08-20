@@ -88,7 +88,7 @@ const CONTEXT_SAFETY_FRACTION = 0.05
 const MAX_ITERATIONS = 500
 
 /**
- * Identical tool calls in a row before the turn is stopped.
+ * Identical call AND identical result, in a row, before the turn is stopped.
  *
  * A step budget does not catch a model that is stuck, only one that is slow.
  * Measured: a Tetris play-test issued the SAME call — browse_act
@@ -97,11 +97,17 @@ const MAX_ITERATIONS = 500
  * turn before that spent ninety calls the same way. Nothing in the transcript
  * distinguished either from ordinary slow progress.
  *
- * Identical means the name AND the arguments, so a legitimate repeat with a
- * different target is untouched — pressing ArrowLeft, then ArrowRight, then
- * ArrowLeft again never trips it. Six is high enough that no real sequence of
- * identical calls is plausible: if the same call with the same arguments has
- * produced the same result six times, the seventh will too.
+ * Identical means the name, the arguments AND what came back. Arguments alone
+ * is not enough, and a run caught that the hard way: a model polling a canvas
+ * with getImageData to watch a game evolve issued the same expression over and
+ * over, which is exactly right — a live page answers differently each time.
+ * Stopping it for repeating itself would have stopped it for doing the job
+ * properly. (That particular game happened to be frozen, so the readings really
+ * were identical and stopping was correct, but it was correct by luck.)
+ *
+ * Comparing results makes the rule mean what it always should have: stop when
+ * nothing is being LEARNED, not when nothing is being varied. Polling a moving
+ * page never trips. Polling a dead one trips in six.
  */
 const MAX_IDENTICAL_CALLS = 6
 
@@ -468,6 +474,7 @@ export class Orchestrator {
     let reasoningRetried = false
     /** The last tool call's identity, and how many times it has repeated. */
     let lastCallKey = ''
+    let lastResultKey = ''
     let repeatCount = 0
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
@@ -710,28 +717,27 @@ export class Orchestrator {
       }
 
       /*
-       * Stop a model that is stuck rather than working.
+       * Stop a model that is learning nothing.
        *
-       * Checked here, before the calls run, so the repeated call is not
-       * executed a seventh time — with a browser act that means not sending a
-       * seventh keypress into a page that has already answered six times.
+       * Checked BEFORE the calls run, so the pointless call is not made again —
+       * with a browser act that means not sending another keypress into a page
+       * that has already given the same answer every time.
        */
       const callKey = calls.map((c) => `${c.name}:${c.arguments}`).join('|')
-      repeatCount = callKey === lastCallKey ? repeatCount + 1 : 0
-      lastCallKey = callKey
-      if (repeatCount + 1 >= MAX_IDENTICAL_CALLS) {
+      if (callKey === lastCallKey && repeatCount + 1 >= MAX_IDENTICAL_CALLS) {
         const name = calls[0]?.name ?? 'a tool'
         for (const call of calls) {
           call.status = 'error'
-          call.error = 'Stopped: this call had already run with identical arguments.'
+          call.error = 'Stopped: this call kept returning the same answer.'
           call.finishedAt = Date.now()
         }
         assistant.streaming = false
         assistant.error =
-          `stopped after calling ${name} ${repeatCount + 1} times in a row with identical ` +
-          `arguments. That is a loop, not progress — the same call cannot produce a different ` +
-          `result. Everything before this is intact; say what to try instead.`
-        this.log('warn', 'turn', `loop breaker: ${name} repeated ${repeatCount + 1}x`)
+          `stopped after ${name} returned the same result ${repeatCount + 1} times in a row. ` +
+          `Nothing is changing, so asking again cannot tell you anything new. Everything before ` +
+          `this is intact; try a different approach, or check whether the thing you are watching ` +
+          `is actually running.`
+        this.log('warn', 'turn', `loop breaker: ${name} unchanged ${repeatCount + 1}x`)
         this.persist(conv, true)
         finishedOnItsOwn = true
         break
@@ -749,6 +755,16 @@ export class Orchestrator {
         await this.runToolCall(conv, call)
         this.persist(conv, true)
       }
+
+      /* Results are compared by a bounded digest: a screenshot result is
+         hundreds of kilobytes of base64, and holding two of those per iteration
+         to answer "was it the same?" is a lot of memory for one boolean. */
+      const resultKey = calls
+        .map((c) => `${c.status}:${(c.result ?? c.error ?? '').length}:${(c.result ?? c.error ?? '').slice(0, 200)}`)
+        .join('|')
+      repeatCount = callKey === lastCallKey && resultKey === lastResultKey ? repeatCount + 1 : 0
+      lastCallKey = callKey
+      lastResultKey = resultKey
     }
 
     /*
