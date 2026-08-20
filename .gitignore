@@ -26,3 +26,5 @@ shots/
 # Scratch backups made before hand-edits — never part of the tree.
 *.bak
 *.bak-*
+/resources/mcp/
+/resources/wheels/
