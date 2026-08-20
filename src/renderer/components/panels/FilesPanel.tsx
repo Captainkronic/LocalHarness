@@ -1,7 +1,7 @@
 import { useMemo, useState, type JSX } from 'react'
-import type { ToolCall } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename, relativeTime, shortenPath } from '@renderer/lib/format'
+import { deriveTouched } from '@renderer/lib/touched'
 import LiveBrowserStrip from './LiveBrowserStrip'
 import './panels.css'
 import { RunLog } from './RunLog'
@@ -14,39 +14,6 @@ import { RunLog } from './RunLog'
  * than tracked separately, so it can never disagree with the transcript.
  */
 
-type Op = 'read' | 'write' | 'edit'
-
-const FILE_TOOLS: Record<string, Op> = {
-  read_file: 'read',
-  write_file: 'write',
-  edit_file: 'edit'
-}
-
-/** Executors report changes as "(+12 -3)"; pick that up when it is there. */
-const STAT_RE = /\+(\d+)\s*[,/]?\s*-(\d+)/
-
-interface Touched {
-  path: string
-  ops: Op[]
-  added: number
-  removed: number
-  at: number
-  failed: boolean
-}
-
-function pathArg(call: ToolCall): string | null {
-  try {
-    const parsed: unknown = JSON.parse(call.arguments)
-    if (parsed && typeof parsed === 'object' && 'path' in parsed) {
-      const p = (parsed as { path: unknown }).path
-      if (typeof p === 'string' && p.trim() !== '') return p
-    }
-  } catch {
-    // Arguments can still be a partial JSON fragment mid-stream. Nothing to show.
-  }
-  return null
-}
-
 export function FilesPanel(): JSX.Element {
   const roots = useStore((s) => s.settings.workspaceRoots)
   const addWorkspaceRoot = useStore((s) => s.addWorkspaceRoot)
@@ -54,38 +21,7 @@ export function FilesPanel(): JSX.Element {
   const [adding, setAdding] = useState(false)
   const conversation = useStore((s) => s.conversation)
 
-  const touched = useMemo(() => {
-    const byPath = new Map<string, Touched>()
-    for (const msg of conversation?.messages ?? []) {
-      for (const call of msg.toolCalls ?? []) {
-        if (call.origin !== 'native') continue
-        const op = FILE_TOOLS[call.name]
-        if (!op) continue
-        const path = pathArg(call)
-        if (!path) continue
-
-        const existing = byPath.get(path) ?? {
-          path,
-          ops: [],
-          added: 0,
-          removed: 0,
-          at: 0,
-          failed: false
-        }
-        if (!existing.ops.includes(op)) existing.ops.push(op)
-        existing.at = Math.max(existing.at, call.finishedAt ?? call.startedAt ?? msg.createdAt)
-        if (call.status === 'error' || call.status === 'denied') existing.failed = true
-
-        const stat = STAT_RE.exec(call.result ?? '')
-        if (stat) {
-          existing.added += Number(stat[1])
-          existing.removed += Number(stat[2])
-        }
-        byPath.set(path, existing)
-      }
-    }
-    return [...byPath.values()].sort((a, b) => b.at - a.at)
-  }, [conversation])
+  const touched = useMemo(() => deriveTouched(conversation?.messages ?? []), [conversation])
 
   return (
     <div className="fil-wrap">
