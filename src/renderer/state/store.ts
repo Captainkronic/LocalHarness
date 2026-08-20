@@ -381,6 +381,9 @@ export const useStore = create<AppState>()((set, get) => {
     'event:avatarBuild': (progress) => {
       set({ avatarBuild: progress })
     },
+    /* The wizard subscribes to this directly and renders it; the store only
+       has to satisfy the handler map. */
+    'event:setupProgress': () => undefined,
     'event:conversationUpdated': (conv) => {
       const active = get().activeConversationId
       // Adopt when nothing is selected yet; otherwise only the active thread

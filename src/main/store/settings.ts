@@ -274,13 +274,27 @@ export class SettingsStore {
   private current: Settings
   private readonly listeners = new Set<(s: Settings) => void>()
 
+  /**
+   * True when there was no settings file when this process started.
+   *
+   * The constructor has always known this; it just kept it to itself. The
+   * setup wizard is the thing that needs it, and asking "does the file exist"
+   * later is the wrong question — by then the constructor has written one.
+   */
+  private readonly firstRun: boolean
+
   /** @param dir the app's userData directory. */
   constructor(dir: string) {
     this.file = join(expandTilde(dir), 'settings.json')
     const existed = existsSync(this.file)
+    this.firstRun = !existed
     this.current = this.load()
     // Seed the file on first run so there is something to hand-edit.
     if (!existed) this.persist()
+  }
+
+  isFirstRun(): boolean {
+    return this.firstRun
   }
 
   get(): Settings {

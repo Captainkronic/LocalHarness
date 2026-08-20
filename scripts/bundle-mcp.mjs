@@ -142,17 +142,41 @@ function walk(dir, base = dir, out = []) {
   return out
 }
 
+/**
+ * Secrets allowed to ship, named one by one.
+ *
+ * The alternative — relaxing the rules so a credential stops being flagged —
+ * would also stop flagging the credential nobody meant to include, which is
+ * the entire thing the audit exists for. So the allowance is per file, and
+ * every build PRINTS what it let through. A DMG carrying a live token should
+ * say so out loud each time, not once in a commit message six weeks ago.
+ */
+const ALLOWED_SECRETS = new Set([
+  /* Empty, and worth keeping that way. The Duffel token was going to ship here
+     and is collected in the wizard instead, which is better: the DMG stays
+     something that can be handed to anyone. */
+])
+
 function audit(stageDir) {
   if (!existsSync(stageDir)) fail(`nothing staged at ${stageDir}`)
   const problems = []
+  const allowed = []
   for (const rel of walk(stageDir)) {
     for (const rule of FORBIDDEN_PATHS) {
       if (rule.re.test(rel)) problems.push(`${rel} — ${rule.why}`)
+    }
+    if (ALLOWED_SECRETS.has(rel)) {
+      allowed.push(rel)
+      continue
     }
     if (CONFIGISH.test(rel) && SECRET_NAME.test(rel)) {
       problems.push(`${rel} — named like a credentials file`)
     }
     problems.push(...contentProblems(stageDir, rel))
+  }
+  if (allowed.length > 0) {
+    console.log(`\n\x1b[33mshipping ${allowed.length} secret(s) by explicit allowance:\x1b[0m`)
+    for (const rel of allowed) console.log(`  ${rel} — anyone with this DMG has this credential`)
   }
   return problems
 }

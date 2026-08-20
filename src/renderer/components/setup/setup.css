@@ -1,0 +1,267 @@
+/* First-run wizard.
+   A full-window card rather than a panel: nothing else in the app is usable
+   until it has a server to talk to, and a dialog floating over a dead UI
+   invites people to try clicking the dead UI. */
+.wz {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--s4);
+  background: var(--bg-void);
+  overflow-y: auto;
+}
+
+.wz-card {
+  width: min(720px, 100%);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.wz-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-raised);
+}
+
+.wz-glyph {
+  font-size: 22px;
+  color: var(--accent);
+}
+
+.wz-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wz-sub {
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.wz-dots {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.wz-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.wz-dot.is-on {
+  background: var(--accent);
+}
+
+.wz-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+
+.wz-lead {
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--fg-muted);
+}
+
+.wz-row {
+  display: flex;
+  gap: var(--s2);
+}
+
+.wz-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.wz-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Results carry their own colour because the difference between "answered" and
+   "did not" is the single most important thing on this screen. */
+.wz-result {
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.wz-result.is-ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.wz-result.is-bad {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--fg);
+}
+
+.wz-result.is-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.wz-note {
+  margin-top: var(--s1);
+  color: var(--fg-dim);
+}
+
+.wz-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.wz-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.wz-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wz-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.wz-pick:hover {
+  background: var(--bg-hover);
+}
+
+.wz-pick.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.wz-pick-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--fg);
+}
+
+.wz-dim {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.wz-tag {
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-subtle);
+  white-space: nowrap;
+}
+
+.wz-tag.is-ok {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+
+.wz-tag.is-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.wz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wz-field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+/* What still works without it — the line that makes a field genuinely
+   optional rather than nominally optional. */
+.wz-without {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  line-height: 1.45;
+}
+
+.wz-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: var(--s2) 0;
+}
+
+.wz-missing li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.wz-missing code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg);
+}
+
+.wz-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2);
+}
+
+.wz-tick {
+  width: 14px;
+  text-align: center;
+  color: var(--fg-faint);
+}
+
+.wz-tick.is-on {
+  color: var(--ok);
+}
+
+.wz-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line-subtle);
+}

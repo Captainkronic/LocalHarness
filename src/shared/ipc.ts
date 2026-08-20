@@ -48,6 +48,14 @@ import type {
   AvatarBuildProgress,
   SamplingOverrides
 } from './types'
+import type {
+  CredentialState,
+  ModelReport,
+  ProbeResult,
+  ProvisionProgress,
+  ProvisionResult,
+  SetupState
+} from './setup'
 
 export interface IpcApi {
   /* ---- app ---- */
@@ -211,6 +219,28 @@ export interface IpcApi {
   /** The full SKILL.md body, for the panel's preview. */
   'skills:read': (path: string) => Promise<string | null>
   'skills:reveal': (path: string) => Promise<void>
+
+  /* ---- first-run setup ---- */
+  /** Everything the wizard and the credentials panel render from. */
+  'setup:state': () => Promise<SetupState>
+  /**
+   * Ask a host whether it is actually an inference server, before anything is
+   * written. Both ports are tried; only the API one is required.
+   */
+  'setup:probe': (host: string) => Promise<ProbeResult>
+  /** Build the chosen servers. Progress arrives on 'event:setupProgress'. */
+  'setup:install': (ids: string[]) => Promise<ProvisionResult>
+  /** Store one credential. Returns the new states, values still withheld. */
+  'setup:setCredential': (serverId: string, key: string, value: string) => Promise<CredentialState[]>
+  /** Does the ComfyUI at this host have the models the servers need? */
+  'setup:checkComfyModels': (host: string) => Promise<ModelReport>
+  /** Write the chosen server settings and mark setup done. */
+  'setup:finish': (choice: {
+    baseUrl: string
+    nativeApiUrl: string
+    modelId: string | null
+    workspaceRoot: string | null
+  }) => Promise<Settings>
 }
 
 export interface IpcEvents {
@@ -227,6 +257,8 @@ export interface IpcEvents {
   'event:artifact': Artifact
   'event:log': { level: 'info' | 'warn' | 'error'; scope: string; message: string }
   'event:avatarBuild': AvatarBuildProgress
+  /** Per-server progress while the wizard is building environments. */
+  'event:setupProgress': ProvisionProgress
   /**
    * Main asking the renderer to do something the user invoked from the native
    * menu or the tray.

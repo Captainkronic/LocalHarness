@@ -18,6 +18,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import type { ProvisionProgress, ProvisionResult } from '@shared/setup'
+
 const run = promisify(execFile)
 
 export interface ServerManifestEntry {
@@ -30,19 +32,7 @@ export interface ServerManifestEntry {
   entry: string
 }
 
-export interface ProvisionProgress {
-  id: string
-  phase: 'copying' | 'creating-env' | 'installing' | 'done' | 'failed'
-  /** Present on 'failed'. */
-  error?: string
-}
 
-export interface ProvisionResult {
-  installed: string[]
-  failed: { id: string; error: string }[]
-  /** Where the servers ended up, for the registry to resolve against. */
-  root: string
-}
 
 /**
  * Where the bundled payload lives.

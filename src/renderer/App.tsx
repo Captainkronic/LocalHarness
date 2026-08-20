@@ -22,6 +22,7 @@ import type { ModelInfo, ServerHealth } from '@shared/types'
 
 // Default imports throughout: every sibling exports its component as the module
 // default, and only some of them also export it by name.
+import SetupWizard from '@renderer/components/setup/SetupWizard'
 import MetricsHud from '@renderer/components/metrics/MetricsHud'
 import WorkflowRail from '@renderer/components/workflow/WorkflowRail'
 import Sidebar from '@renderer/components/workflow/Sidebar'
@@ -52,6 +53,24 @@ export default function App(): ReactElement {
   const selectWorkflow = useStore((s) => s.selectWorkflow)
   const updateSettings = useStore((s) => s.updateSettings)
   const cancel = useStore((s) => s.cancel)
+
+  /*
+   * The wizard owns the whole window until it is done.
+   *
+   * Checked once, from the value the settings store computed at construction —
+   * asking "is there a settings file" any later is the wrong question, because
+   * the store writes one immediately on first run.
+   */
+  const [setupDone, setSetupDone] = useState(false)
+  const [firstRun, setFirstRun] = useState<boolean | null>(null)
+  useEffect(() => {
+    void (async () => {
+      const state = await window.harness
+        .invoke('setup:state')
+        .catch(() => null) as { firstRun?: boolean } | null
+      setFirstRun(state?.firstRun === true)
+    })()
+  }, [])
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
@@ -134,6 +153,27 @@ export default function App(): ReactElement {
   )
 
   if (!ready) return <BootScreen />
+
+  if (firstRun === true && !setupDone) {
+    return (
+      <SetupWizard
+        onFinished={() => {
+          setSetupDone(true)
+          /*
+           * Reload rather than re-bootstrap.
+           *
+           * The wizard has changed the inference server, the default model and
+           * which MCP servers exist on disk. bootstrap() memoises its promise
+           * so calling it again returns the ORIGINAL answer, and unpicking
+           * every subscription by hand for a once-per-machine event is a lot of
+           * moving parts to get subtly wrong. A reload is the honest way to
+           * start from what was just written.
+           */
+          window.location.reload()
+        }}
+      />
+    )
+  }
 
   return (
     <div

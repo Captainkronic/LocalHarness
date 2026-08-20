@@ -35,6 +35,13 @@ import type { SettingsStore } from './store/settings'
 import type { ConversationStore } from './store/conversations'
 import type { McpManager } from './mcp/manager'
 import type { ModelRegistry } from './llm/models'
+import { existsSync, readFileSync } from 'node:fs'
+
+import { CREDENTIAL_SPEC, applyServerUrl, credentialStates, setCredential } from './setup/credentials'
+import { probeServer } from './setup/probe'
+import { checkComfyModels, installHint, parseAudioModels, parseImageModels } from './setup/comfy-models'
+import { provision, readManifest, resourcesRoot } from './setup/provision'
+import type { ModelSlot } from '@shared/setup'
 import type { ApprovalBroker } from './agent/approval'
 import type { LabFeed } from './telemetry/lab'
 import type { LmStudioControl } from './llm/control'
@@ -95,8 +102,109 @@ const IGNORED_DIRS = new Set([
   '__pycache__', '.next', 'build', 'target', '.cache'
 ])
 
+/** Servers that talk to ComfyUI and therefore need its address and models. */
+const COMFY_SERVERS = new Set(['comfy-image', 'comfy-audio'])
+
+/**
+ * Where installed servers live.
+ *
+ * Application Support, not inside the .app: the installer replaces the bundle
+ * wholesale on upgrade, and an environment that took two minutes to build —
+ * or a token someone typed in — should survive that.
+ */
+function installRoot(): string {
+  return join(app.getPath('userData'), 'servers')
+}
+
+/** Read a staged server's source so its model requirements can be parsed. */
+function readServerSource<T>(resources: string, id: string, parse: (src: string) => T[]): T[] {
+  const file = join(resources, 'mcp', id, 'server.py')
+  if (!existsSync(file)) return []
+  try {
+    return parse(readFileSync(file, 'utf8'))
+  } catch {
+    return []
+  }
+}
+
 export function registerIpc(d: IpcDeps): void {
   const handlers: Handlers = {
+
+    /* ---- first-run setup ---- */
+    'setup:state': async () => {
+      const root = installRoot()
+      const resources = resourcesRoot(process.resourcesPath, app.getAppPath())
+      const manifest = readManifest(resources)
+      const specs = d.mcp.specs()
+      return {
+        firstRun: d.settings.isFirstRun(),
+        servers: manifest.map((m) => ({
+          id: m.id,
+          label: specs.find((s) => s.id === m.id)?.label ?? m.id,
+          blurb: specs.find((s) => s.id === m.id)?.blurb ?? '',
+          tier: m.tier,
+          /* Stated plainly rather than discovered halfway through an install. */
+          ...(m.depsOnDemand ? { cost: 'about 1.4 GB, downloaded after setup' } : {}),
+          ...(COMFY_SERVERS.has(m.id) ? { requires: 'a ComfyUI server on your network' } : {}),
+          ...(m.id === 'gmail' ? { requires: 'Node, and a Google sign-in' } : {}),
+          installed: existsSync(join(root, m.id))
+        })),
+        credentials: CREDENTIAL_SPEC,
+        states: credentialStates(root)
+      }
+    },
+
+    'setup:probe': async (host: string) => probeServer(host),
+
+    'setup:install': async (ids: string[]) => {
+      const resources = resourcesRoot(process.resourcesPath, app.getAppPath())
+      return provision(ids, {
+        resources,
+        installRoot: installRoot(),
+        onProgress: (p) => d.emit('event:setupProgress', p)
+      })
+    },
+
+    'setup:setCredential': async (serverId: string, key: string, value: string) => {
+      const root = installRoot()
+      setCredential(root, serverId, key, value)
+      return credentialStates(root)
+    },
+
+    'setup:checkComfyModels': async (host: string) => {
+      const resources = resourcesRoot(process.resourcesPath, app.getAppPath())
+      const required = [
+        ...readServerSource(resources, 'comfy-image', parseImageModels),
+        ...readServerSource(resources, 'comfy-audio', parseAudioModels)
+      ]
+      const report = await checkComfyModels(host, required)
+      /* `where` is carried over the wire so the renderer never has to know
+         about ComfyUI's folder layout to render an actionable message. */
+      const withWhere = <T extends { slot: ModelSlot }>(list: T[]) =>
+        list.map((m) => ({ ...m, where: installHint(m as never) }))
+      return {
+        ...report,
+        present: withWhere(report.present),
+        missing: withWhere(report.missing)
+      }
+    },
+
+    'setup:finish': async (choice) => {
+      const root = installRoot()
+      /* The three servers that each hold their own inference URL are pointed
+         at the server just verified. Without this they keep their localhost
+         defaults and vision quietly answers from the wrong machine. */
+      applyServerUrl(root, choice.baseUrl)
+      const patch: Partial<Settings> = {
+        baseUrl: choice.baseUrl,
+        nativeApiUrl: choice.nativeApiUrl,
+        labUrl: choice.nativeApiUrl,
+        ...(choice.modelId ? { defaultModelId: choice.modelId } : {}),
+        ...(choice.workspaceRoot ? { workspaceRoots: [choice.workspaceRoot] } : {})
+      }
+      return d.settings.update(patch)
+    },
+
     /* ---- app ---- */
     'app:getBootstrap': async (): Promise<BootstrapPayload> => ({
       settings: d.settings.get(),
