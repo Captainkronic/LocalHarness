@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useReducer, useState } from 'react'
 import type { Artifact, ToolCall } from '@shared/types'
 import { basename, formatChars, formatMs } from '@renderer/lib/format'
+import { outcomeDetail, toolOutcome } from '@renderer/lib/toolFacts'
 import './chat.css'
 
 export interface ToolCallCardProps {
@@ -43,6 +44,11 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
       ? formatMs(call.finishedAt - call.startedAt)
       : null
 
+  /* What the run actually did, when the tool reported it in a form worth
+     trusting. Collapsed only: once the card is open the full result is right
+     there and a summary of it is just a duplicate. */
+  const outcome = useMemo(() => toolOutcome(call.structured), [call.structured])
+
   const cls = ['tool', blocked ? 'tool-blocked' : '', failed ? 'tool-failed' : '']
     .filter(Boolean)
     .join(' ')
@@ -73,6 +79,25 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
           progressMessage={call.progressMessage}
         />
       </button>
+
+      {!open && outcome !== null ? (
+        <button
+          type="button"
+          className="tool-outcome"
+          onClick={() => setOpen(true)}
+          title="Show the full result"
+        >
+          <span className={outcome.tone === 'bad' ? 'tool-oc-stat is-bad' : 'tool-oc-stat'}>
+            {outcome.status}
+          </span>
+          <span
+            className={outcome.detailIsError ? 'tool-oc-detail is-err' : 'tool-oc-detail'}
+          >
+            {outcomeDetail(outcome)}
+          </span>
+          {outcome.note !== '' ? <span className="tool-oc-note">{outcome.note}</span> : null}
+        </button>
+      ) : null}
 
       {open ? (
         <div className="tool-body">

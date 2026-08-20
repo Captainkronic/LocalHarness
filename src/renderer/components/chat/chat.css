@@ -1571,3 +1571,62 @@
 .mm-at {
   color: var(--fg-faint);
 }
+
+/* Collapsed result line
+   ---------------------
+   A shell-heavy run is a wall of identical rows, and the one thing a person
+   wants from each — did it work, and what did it say — was hidden behind a
+   click. This puts it on the row, aligned under the command it belongs to so
+   the pair reads as one unit rather than two entries. */
+.tool-outcome {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  width: 100%;
+  /* Indented past the chevron so it sits under the command, not under the
+     disclosure arrow, which would read as a separate item. */
+  padding: 0 var(--s2) var(--s1) calc(var(--s2) + 16px + var(--s2));
+  text-align: left;
+  min-width: 0;
+}
+
+.tool-outcome:hover .tool-oc-detail {
+  color: var(--fg-dim);
+}
+
+.tool-oc-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+  /* Fixed width so the details below each other line up into a column even
+     when one run exits 0 and the next times out. */
+  min-width: 5.5ch;
+}
+
+.tool-oc-stat.is-bad {
+  color: var(--danger);
+}
+
+.tool-oc-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.tool-oc-detail.is-err {
+  color: color-mix(in srgb, var(--danger) 70%, var(--fg-faint));
+}
+
+.tool-oc-note {
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  opacity: 0.75;
+}
