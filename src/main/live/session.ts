@@ -89,6 +89,10 @@ export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
 /** Live captions would otherwise push a status object per token. */
 const STATUS_PUSH_MS = 120
 
+/* Same 60ms the Orchestrator coalesces conversation pushes at, so a streaming
+   spoken reply arrives on screen at the same cadence as a typed one. */
+const CONV_EMIT_MS = 60
+
 /** Telemetry cadence. Fast enough that the elapsed clock does not visibly
  *  stutter, slow enough that it is not a render per token. */
 const METRIC_EMIT_MS = 250
@@ -161,6 +165,20 @@ export interface LiveSessionOptions {
   onStatus: (s: LiveSessionStatus) => void
   onAudio: (c: LiveAudioChunk) => void
   onExchange: (e: LiveExchange) => void
+  /**
+   * The conversation changed — push it to the window.
+   *
+   * Without this a spoken turn is invisible. session.ts writes straight into
+   * `conv.messages` and calls `conversations.save`, which persists it to disk
+   * and tells nobody: the renderer keeps its OWN copy of the conversation and
+   * only ever learns about a change from `event:conversationUpdated`, which
+   * until now only the Orchestrator emitted. So typed turns appeared and
+   * spoken ones did not — the answer had been generated, spoken aloud and
+   * saved, and the transcript on screen simply did not have it. Measured on a
+   * real call: 32 messages on disk, 29 on screen, the missing three being the
+   * spoken exchange.
+   */
+  onConversation: (c: Conversation, structural: boolean) => void
   /**
    * Per-request telemetry, at ~4Hz.
    *
@@ -238,6 +256,17 @@ export class LiveSession {
   private turnActive = false
   private abort: AbortController | null = null
   private lastStatusAt = 0
+  private lastConvEmitAt = 0
+  /**
+   * The id the in-flight reply will be committed under.
+   *
+   * Minted before the model starts and reused when the message is finally
+   * pushed, so the streaming bubble and the saved message are the same message
+   * to the renderer rather than one replacing the other. Without it React sees
+   * the key change at the end of every turn and remounts the bubble, which
+   * reads as a flicker exactly when the answer settles.
+   */
+  private draftId = randomUUID()
   /** So a text-only model is complained about once per session, not per turn. */
   private warnedNoVision = false
 
@@ -539,8 +568,11 @@ export class LiveSession {
       throw new Error('No model is available on the server to answer with')
     }
 
+    /* What was heard, in the thread, before the model has said anything. This
+       is the first thing that proves the utterance landed. */
     conv.messages.push(chatMessage('user', userText))
-    this.o.conversations.save(conv)
+    this.draftId = randomUUID()
+    this.persist(conv, true)
 
     const frame = this.frameFor(frameDataUrl, model)
     // Hoisted above the message build: the schemas are part of what the window
@@ -646,6 +678,7 @@ export class LiveSession {
             this.assistantText = content
             meter.countCompletionToken()
             this.pushStatusThrottled()
+            this.emitDraft(conv, content, reasoning)
             /* ---- 3. speak each sentence as it completes ---- */
             for (const sentence of splitter.push(delta)) this.enqueueSpeech(turn, sentence)
           },
@@ -659,6 +692,7 @@ export class LiveSession {
             this.reasoningText = reasoning
             meter.countReasoningToken()
             this.pushStatusThrottled()
+            this.emitDraft(conv, content, reasoning)
           },
           onToolCallDelta: (index, id, name, argsDelta) => {
             let call = pendingCalls.get(index)
@@ -711,8 +745,13 @@ export class LiveSession {
       if (preamble !== null) this.enqueueSpeech(turn, preamble)
 
       const assistantCall = chatMessage('assistant', content)
+      /* Takes over the draft's id: whatever has been streaming into the thread
+         IS this message, now committed. The next round gets a fresh draft. */
+      assistantCall.id = this.draftId
       assistantCall.toolCalls = calls
       conv.messages.push(assistantCall)
+      this.draftId = randomUUID()
+      this.persist(conv, true)
       // Committed to a message of its own, so it must not accumulate into the
       // next round — but it still belongs in the turn's record.
       if (content.trim() !== '') spokenAll += (spokenAll === '' ? '' : ' ') + content.trim()
@@ -805,6 +844,7 @@ export class LiveSession {
     this.turnCount += 1
 
     const assistant = chatMessage('assistant', spoken)
+    assistant.id = this.draftId
     if (reasoning.length > 0) assistant.reasoning = reasoning
     assistant.metrics = this.metricsFor({
       model,
@@ -817,7 +857,7 @@ export class LiveSession {
       toolSchemaTokens: toolSchemaCost
     })
     conv.messages.push(assistant)
-    this.o.conversations.save(conv)
+    this.persist(conv, true)
 
     const exchange: LiveExchange = {
       id: turn.turnId,
@@ -975,6 +1015,54 @@ export class LiveSession {
   private pushStatusThrottled(): void {
     if (Date.now() - this.lastStatusAt < STATUS_PUSH_MS) return
     this.pushStatus()
+  }
+
+  /**
+   * Save the conversation AND put it on screen.
+   *
+   * Mirrors Orchestrator.persist: `structural` marks a change that must not be
+   * dropped — a new message, a finished tool call — and bypasses the coalescing
+   * that keeps mid-stream updates from flooding the bridge.
+   *
+   * Every mutation of `conv.messages` in this file goes through here. Calling
+   * `conversations.save` on its own is what made spoken turns invisible, so the
+   * two are deliberately no longer separable.
+   */
+  private persist(conv: Conversation, structural: boolean): void {
+    conv.updatedAt = Date.now()
+    const now = Date.now()
+    if (!structural && now - this.lastConvEmitAt < CONV_EMIT_MS) return
+    this.lastConvEmitAt = now
+    this.o.onConversation(conv, structural)
+    if (structural) this.o.conversations.save(conv)
+  }
+
+  /**
+   * Show the reply as it is being spoken, not after.
+   *
+   * Adam's requirement for this workflow was that a spoken turn and a typed one
+   * look the same, and a typed one streams. The assistant message is not pushed
+   * until the turn finishes — it cannot be, since a tool round may still split
+   * it — so what goes out here is a DERIVED conversation: the real one plus a
+   * draft message. It is emitted and never saved, so nothing partial can reach
+   * disk, and no channel exists for the renderer to hand it back.
+   *
+   * The draft carries the same id the committed message will take, so the
+   * bubble is updated rather than replaced when the turn lands.
+   */
+  private emitDraft(conv: Conversation, content: string, reasoning: string): void {
+    if (content === '' && reasoning === '') return
+    const now = Date.now()
+    if (now - this.lastConvEmitAt < CONV_EMIT_MS) return
+    this.lastConvEmitAt = now
+    const draft: ChatMessage = {
+      id: this.draftId,
+      role: 'assistant',
+      content,
+      createdAt: now
+    }
+    if (reasoning.length > 0) draft.reasoning = reasoning
+    this.o.onConversation({ ...conv, messages: [...conv.messages, draft] }, false)
   }
 
   private remember(exchange: LiveExchange): void {
@@ -1210,7 +1298,7 @@ export class LiveSession {
       content: text.length > 0 ? text : '(no output)',
       createdAt: Date.now()
     })
-    this.o.conversations.save(conv)
+    this.persist(conv, true)
     this.o.onLog(
       call.status === 'error' ? 'warn' : 'info',
       SCOPE,

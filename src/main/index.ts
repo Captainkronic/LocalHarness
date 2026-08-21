@@ -275,6 +275,14 @@ app.whenReady().then(async () => {
     onStatus: (s: LiveSessionStatus) => emit('event:liveStatus', s),
     onAudio: (c: LiveAudioChunk) => emit('event:liveAudio', c),
     onExchange: (e: LiveExchange) => emit('event:liveExchange', e),
+    /* The same channel the Orchestrator pushes typed turns down, so the chat
+       view does not know or care which kind of turn produced a message. The
+       list is refreshed only on structural changes — a mid-stream draft would
+       otherwise rewrite every sidebar row at 16Hz to change nothing. */
+    onConversation: (c, structural) => {
+      emit('event:conversationUpdated', c)
+      if (structural) emit('event:conversationList', conversations.list())
+    },
     // The same channel the Orchestrator uses, so the instrument strip does not
     // care which kind of turn is running — it just stops being idle.
     onMetrics: (m) => emit('event:liveMetrics', m),
