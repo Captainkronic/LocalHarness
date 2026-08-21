@@ -1,6 +1,5 @@
-/* Converse: the two input surfaces, one above the other in the stacking sense.
-   Both stay mounted so a toggle does not tear down audio capture or lose the
-   transcript's scroll position; only one is visible. */
+/* Converse: the conversation, and a bar that lets you speak into it.
+   The transcript is never hidden — that was the point of the rewrite. */
 .cv {
   display: flex;
   flex-direction: column;
@@ -8,54 +7,84 @@
   height: 100%;
 }
 
-.cv-switch {
-  display: flex;
-  align-items: center;
-  gap: var(--s1);
-  padding: var(--s2) var(--s3);
-  border-bottom: 1px solid var(--line-subtle);
-  background: var(--bg-raised);
-  flex: none;
-}
-
-.cv-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px var(--s2);
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  font-size: var(--fs-small);
-  color: var(--fg-dim);
-}
-
-.cv-tab:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.cv-tab.is-on {
-  color: var(--fg);
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-}
-
-/* Pushed right and kept quiet: it explains, it does not instruct. */
-.cv-note {
-  margin-left: auto;
-  font-size: var(--fs-micro);
-  color: var(--fg-faint);
-}
-
-.cv-pane {
+.cv-thread {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
 }
 
-/* `display: none` rather than visibility or opacity: a hidden pane must not
-   take part in layout, and must not be reachable by tab. */
-.cv-pane.is-hidden {
-  display: none;
+/* Under the composer rather than above it: the composer is the primary input,
+   and the bar is the alternative to it. */
+.cv-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line-subtle);
+  background: var(--bg-raised);
+  flex: none;
+  min-height: 0;
+}
+
+.cv-call {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+  background: var(--bg-input);
+  flex: none;
+}
+
+.cv-call:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.cv-call.is-on {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.cv-level {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+  flex: none;
+}
+
+.cv-level-fill {
+  display: block;
+  height: 100%;
+  background: var(--fg-faint);
+  transition: width 90ms linear;
+}
+
+/* Only while speech is actually detected, so the colour means something rather
+   than tracking room noise. */
+.cv-level-fill.is-hot {
+  background: var(--accent);
+}
+
+.cv-say {
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.cv-heard {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }

@@ -1,107 +1,103 @@
 /**
- * One conversation, two front doors.
+ * One conversation you can type into or talk into, without changing screens.
  *
- * Chat and Live were never separate threads. The live session pushes into
- * `conv.messages` and composes its requests with the same `buildMessages` a
- * typed turn uses, so the model has always seen one history. The only real
- * difference is the input surface — a composer or a microphone — and the app
- * made you switch WORKFLOW to switch between them, which files the conversation
- * elsewhere and loses your place.
+ * Chat and Live were never separate threads. The live session pushes plain user
+ * and assistant messages into `conv.messages` and composes its requests with the
+ * same `buildMessages` a typed turn uses, so a spoken turn is already an
+ * ordinary message in the transcript. Nothing had to be merged; it only had to
+ * stop being hidden.
  *
- * So this holds both and swaps only the surface. Say something, switch to
- * typing, and the model still knows what you said.
+ * Which is what the first version of this got wrong. It toggled between the
+ * chat view and the live workspace, so speaking HID the conversation in order
+ * to show a microphone — and seeing the two interleaved is the entire thing
+ * that makes them feel like one thread. The transcript now always stays and
+ * only the input changes.
  *
- * The one thing it will not do is leave both live at once. A microphone open
- * behind a text composer is a running cost and a privacy surprise — every
- * utterance is transcribed and sent — so moving to text ends the call, visibly
- * and on purpose rather than as a side effect.
+ * There is deliberately no mode to be in. The composer is always live and the
+ * call button is always there, so replying to something you heard by typing is
+ * just typing, with nothing to switch first.
  */
 
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, type JSX } from 'react'
 
 import ChatView from '@renderer/components/chat/ChatView'
-import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
 import { useStore } from '@renderer/state/store'
 import './converse.css'
 
-type Mode = 'text' | 'voice'
+/**
+ * What each session state means to someone looking at the bar.
+ *
+ * Spelled out rather than shown as a status word, because during a spoken turn
+ * the only other signal is silence, and silence reads as a crash.
+ */
+const SAYS: Record<string, string> = {
+  off: 'Type, or press Talk and say it out loud.',
+  starting: 'Opening the microphone…',
+  listening: 'Listening — just talk.',
+  capturing: 'Hearing you…',
+  transcribing: 'Working out what you said…',
+  thinking: 'Thinking…',
+  tool: 'Looking something up…',
+  speaking: 'Speaking — say anything to interrupt.',
+  error: 'The voice session stopped.'
+}
 
 export default function ConverseWorkspace(): JSX.Element {
-  const [mode, setMode] = useState<Mode>('text')
   const liveStatus = useStore((s) => s.liveStatus)
+  const startLive = useStore((s) => s.startLive)
   const stopLive = useStore((s) => s.stopLive)
 
-  /* 'off' is the idle state — there is no 'idle'. Anything else means the
+  /* 'off' is the idle state; there is no 'idle'. Anything else means the
      microphone is open or a turn is in flight. */
-  const callRunning = liveStatus.state !== 'off'
+  const state = liveStatus.state
+  const running = state !== 'off'
 
-  const toText = useCallback(() => {
-    setMode('text')
-    /* Ending the call is the point, not a cleanup detail — see the header. */
-    if (callRunning) void stopLive()
-  }, [callRunning, stopLive])
-
-  /*
-   * If a call ends by itself — the workspace's own Stop, or a dropped session —
-   * come back to text rather than leaving a dead orb with no way to type.
-   *
-   * On the TRANSITION out of a running call, not on the state being 'off'. The
-   * first version tested `state === 'off'` and so fired the instant you pressed
-   * Talk, before any call had started: the mode flipped to voice and was
-   * yanked straight back, and the button looked broken. Switching to voice is
-   * exactly when there is no call yet.
-   */
-  const wasRunning = useRef(false)
-  useEffect(() => {
-    const running = liveStatus.state !== 'off'
-    if (mode === 'voice' && wasRunning.current && !running) setMode('text')
-    wasRunning.current = running
-  }, [liveStatus.state, mode])
+  const toggleCall = useCallback(() => {
+    if (running) void stopLive()
+    else void startLive()
+  }, [running, startLive, stopLive])
 
   return (
     <div className="cv">
-      <div className="cv-switch" role="tablist" aria-label="Input mode">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'text'}
-          className={mode === 'text' ? 'cv-tab is-on' : 'cv-tab'}
-          onClick={toText}
-        >
-          <span aria-hidden="true">⌨</span> Type
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'voice'}
-          className={mode === 'voice' ? 'cv-tab is-on' : 'cv-tab'}
-          onClick={() => setMode('voice')}
-        >
-          <span aria-hidden="true">🎙</span> Talk
-        </button>
-        {/* Said here rather than left to be discovered: the reason to switch is
-            that nothing is lost by switching. */}
-        <span className="cv-note">
-          {callRunning
-            ? 'Listening — switching to Type will end the call.'
-            : 'Same conversation either way.'}
-        </span>
-      </div>
-
-      {/*
-        Both are mounted, and only one is shown.
-
-        Unmounting the live workspace would tear down its audio capture and
-        device permissions on every toggle, which is slow and re-prompts; and
-        unmounting the chat view loses scroll position in a transcript the voice
-        turns are still being appended to. Hiding costs a little memory and
-        keeps both honest.
-      */}
-      <div className={mode === 'text' ? 'cv-pane' : 'cv-pane is-hidden'} aria-hidden={mode !== 'text'}>
+      {/* The conversation, always. Spoken turns arrive here as ordinary
+          messages, so there is nothing to switch to in order to read them. */}
+      <div className="cv-thread">
         <ChatView />
       </div>
-      <div className={mode === 'voice' ? 'cv-pane' : 'cv-pane is-hidden'} aria-hidden={mode !== 'voice'}>
-        <LiveWorkspace />
+
+      <div className="cv-bar">
+        <button
+          type="button"
+          className={running ? 'cv-call is-on' : 'cv-call'}
+          onClick={toggleCall}
+          aria-pressed={running}
+          title={running ? 'End the voice session' : 'Start talking'}
+        >
+          <span aria-hidden="true">{running ? '■' : '🎙'}</span>
+          {running ? 'Stop' : 'Talk'}
+        </button>
+
+        {/* A level meter only while there is a level. A dead bar beside an idle
+            microphone reads as broken hardware. */}
+        {running ? (
+          <span className="cv-level" aria-hidden="true">
+            <span
+              className={liveStatus.userSpeaking ? 'cv-level-fill is-hot' : 'cv-level-fill'}
+              style={{ width: `${Math.round(Math.min(1, Math.max(0, liveStatus.level)) * 100)}%` }}
+            />
+          </span>
+        ) : null}
+
+        <span className="cv-say">{SAYS[state] ?? state}</span>
+
+        {running && liveStatus.lastUserText ? (
+          /* What it thought it heard, next to what you said. A misheard word is
+             the usual explanation for a strange answer, and without this the
+             answer simply looks wrong. */
+          <span className="cv-heard" title="What was transcribed">
+            “{liveStatus.lastUserText}”
+          </span>
+        ) : null}
       </div>
     </div>
   )
