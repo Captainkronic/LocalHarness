@@ -93,6 +93,22 @@ export interface AppState {
   /** Live filesystem effects for the Code workspace, newest last. */
   fileActivity: FileActivity[]
   liveStatus: LiveSessionStatus
+  /**
+   * The microphone, right now — and the one number here that does NOT come
+   * from the main process.
+   *
+   * liveStatus.level is set to 0 when a session starts and never updated
+   * again: the level is computed in the RENDERER, by the audio worklet, and
+   * main has no idea what it is. Anything outside LiveWorkspace that read
+   * liveStatus.level was therefore reading a constant zero, which is exactly
+   * what a meter pinned to its floor looks like.
+   *
+   * Published here from the capture loop so any component can show it without
+   * a round trip through IPC, which would add latency to the one number whose
+   * entire job is to be immediate.
+   */
+  micLevel: number
+  setMicLevel: (level: number) => void
   liveExchanges: LiveExchange[]
   liveSettings: LiveSettings
   usage: ContextUsage
@@ -546,6 +562,8 @@ export const useStore = create<AppState>()((set, get) => {
     editJobs: [],
     fileActivity: [],
     liveStatus: IDLE_LIVE_SESSION,
+    micLevel: 0,
+    setMicLevel: (micLevel) => set({ micLevel }),
     liveExchanges: [],
     liveSettings: DEFAULT_LIVE_SETTINGS,
     usage: EMPTY_USAGE,

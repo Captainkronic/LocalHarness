@@ -267,21 +267,37 @@ export function LiveWorkspace(): JSX.Element {
 
   /* ---- one publish loop for the orb -------------------------------- */
 
+  const publishLevel = useStore((s) => s.setMicLevel)
+
   useEffect(() => {
-    if (!inCall) return
+    if (!inCall) {
+      /* Or the meter freezes at whatever it was showing when the call ended,
+         which reads as a microphone still open. */
+      publishLevel(0)
+      return
+    }
     let raf = 0
     const tick = (): void => {
       const source =
         statusRef.current.state === 'speaking' ? readLevel() : micLevelRef.current
       setLevel((prev) => (Math.abs(prev - source) >= LEVEL_STEP ? source : prev))
+      /* Out to the store as well, on the same frame.
+         LiveWorkspace is mounted hidden in Converse for its microphone, so
+         this loop already runs there — it just had nowhere to put the number.
+         Anything else showing the level (the composer's meter) reads it from
+         here rather than from liveStatus, which never carries it. */
+      publishLevel(source)
       // Rides the same loop as the level, and only commits on a CHANGE, so
       // holding through a two-second pause costs one render rather than 120.
       setPausing((prev) => (prev === pausingRef.current ? prev : pausingRef.current))
       raf = window.requestAnimationFrame(tick)
     }
     raf = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(raf)
-  }, [inCall, readLevel])
+    return () => {
+      window.cancelAnimationFrame(raf)
+      publishLevel(0)
+    }
+  }, [inCall, readLevel, publishLevel])
 
   /* ---- settings ---------------------------------------------------- */
 

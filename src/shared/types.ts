@@ -557,7 +557,19 @@ export type LiveSessionState =
 
 export interface LiveSessionStatus {
   state: LiveSessionState
-  /** Mic level 0..1, for the meter. */
+  /**
+   * Always 0. Do NOT draw a meter from this.
+   *
+   * It reads like the mic level and is not: the level is measured in the
+   * RENDERER by the audio worklet, and main never learns it, so this is set to
+   * 0 when a session starts and never touched again. Two separate meters were
+   * built against it — the panel orb and the composer's bars — and both sat
+   * perfectly still through entire calls while looking like working code.
+   *
+   * The live value is `micLevel` in the renderer store, published from the
+   * capture loop. Kept here rather than deleted because it is part of the
+   * status wire shape, but named as the trap it is.
+   */
   level: number
   /** True while speech is detected above the threshold. */
   userSpeaking: boolean

@@ -14,124 +14,155 @@
   min-height: 0;
 }
 
-/* Only present while a call is up — see the component. */
-.cv-bar {
+
+/* The microphone, in the composer's own control row beside Send.
+   Given a visible label as well as an icon: an unlabelled mic glyph in a row
+   that already has a paperclip and an arrow is one more thing to decode, and
+   the whole complaint was that this control could not be found. */
+/* ------------------------------------------------------------------ */
+/* The live control row                                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * One row, idle or live.
+ *
+ * The orb used to sit stacked above the button, which cost a whole row of the
+ * window and grew the composer by 29px the moment the workflow opened. Laying
+ * these out in a line means starting and ending a call changes what the row
+ * SAYS without changing how tall it is, so the text box never jumps under the
+ * cursor mid-sentence.
+ */
+.cv-controls {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s2) var(--s3);
-  border-top: 1px solid var(--line-subtle);
-  background: var(--bg-raised);
   flex: none;
-  min-height: 0;
+  align-self: flex-end;
+  margin-bottom: 2px;
+  /* Reserved, not added on transition. The lit pill below only changes the
+     COLOUR of this border and background — if it introduced them, the composer
+     would grow 8px the instant a call started, moving the text box out from
+     under the cursor. Measured: 46px idle, 54px live, before this. */
+  padding: 3px 3px 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
 }
 
-.cv-call {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px var(--s2);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  font-size: var(--fs-small);
-  color: var(--fg-muted);
-  background: var(--bg-input);
-  flex: none;
+/* Live, the pair becomes a single lit object rather than two loose controls —
+   the clearest way to say "a call is up" without a banner saying so. */
+.cv-controls.is-live {
+  border-color: var(--cv-hue, var(--accent-line));
+  background: color-mix(in srgb, var(--cv-hue, var(--accent)) 10%, transparent);
+  animation: cv-breathe 3.2s var(--ease) infinite;
 }
 
-.cv-call:hover {
-  color: var(--fg);
-  background: var(--bg-hover);
+/*
+ * One hue per phase, so the row is readable from the corner of an eye.
+ *
+ * Cyan while it is your turn, indigo while it is thinking, brighter cyan while
+ * it talks back. Not the theme's semantic red/amber/green: this is a phase of a
+ * conversation, not a severity, and green-for-listening would read as a health
+ * light rather than a microphone.
+ */
+.cv-controls[data-state='listening'] { --cv-hue: #4fc3ff; }
+.cv-controls[data-state='capturing'] { --cv-hue: #7fe3ff; }
+.cv-controls[data-state='transcribing'] { --cv-hue: #37abe9; }
+.cv-controls[data-state='thinking'],
+.cv-controls[data-state='tool'] { --cv-hue: #6f8cff; }
+.cv-controls[data-state='speaking'] { --cv-hue: #7fe3ff; }
+.cv-controls[data-state='starting'] { --cv-hue: #2e8fc4; }
+.cv-controls[data-state='error'] { --cv-hue: var(--danger); }
+
+@keyframes cv-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cv-hue) 30%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cv-hue) 0%, transparent); }
 }
 
-.cv-call.is-on {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-
-.cv-level {
-  width: 56px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-  flex: none;
-}
-
-.cv-level-fill {
-  display: block;
-  height: 100%;
-  background: var(--fg-faint);
-  transition: width 90ms linear;
-}
-
-/* Only while speech is actually detected, so the colour means something rather
-   than tracking room noise. */
-.cv-level-fill.is-hot {
-  background: var(--accent);
-}
-
+/* What it is doing, in two words, beside the thing doing it. */
 .cv-say {
   font-size: var(--fs-micro);
-  color: var(--fg-dim);
+  color: var(--cv-hue, var(--fg-dim));
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
+/* ---- the meter ---- */
+
+.cvi {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  flex: none;
+}
+
+.cvi-bar {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--cv-hue, var(--accent));
+  transform-origin: center;
+  /* No transition. The level is republished every animation frame, so the
+     browser is already drawing 60 steps a second — a transition on top of that
+     is a second smoothing pass, and two of them is what "not realtime enough"
+     feels like. */
+}
+
+/*
+ * The unmetered states.
+ *
+ * Nothing real is arriving during transcription, thinking or a tool call, so
+ * the bars run a wave rather than pretending to be a meter. The per-bar delay
+ * is set inline, which is what turns five identical animations into one thing
+ * travelling across the row.
+ */
+.cv-controls[data-state='transcribing'] .cvi-bar,
+.cv-controls[data-state='thinking'] .cvi-bar,
+.cv-controls[data-state='tool'] .cvi-bar,
+.cv-controls[data-state='starting'] .cvi-bar {
+  animation: cv-wave 1.1s var(--ease) infinite;
+}
+
+@keyframes cv-wave {
+  0%, 100% { transform: scaleY(0.28); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+/*
+ * Motion is the entire message here, so it cannot simply be switched off: a
+ * still row is exactly the state this was built to remove. Reduced motion gets
+ * the meter — which is data, not decoration — and a slow opacity pulse in place
+ * of the travelling wave.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cv-controls.is-live {
+    animation: none;
+  }
+  .cv-controls[data-state='transcribing'] .cvi-bar,
+  .cv-controls[data-state='thinking'] .cvi-bar,
+  .cv-controls[data-state='tool'] .cvi-bar,
+  .cv-controls[data-state='starting'] .cvi-bar {
+    animation: cv-fade 1.8s ease-in-out infinite;
+  }
+  @keyframes cv-fade {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+}
+
+/* What it thought it heard, under the composer. Only when there is something
+   to show, so it costs nothing until the first sentence lands. */
 .cv-heard {
+  padding: var(--s1) var(--s4) 0;
   font-size: var(--fs-micro);
   color: var(--fg-faint);
   font-style: italic;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
 }
 
-
-/* Orb over button, as one control. align-self:flex-end keeps the pair sitting
-   on the composer's baseline while the textarea grows upward above it. */
-.cv-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  align-self: flex-end;
-  margin-bottom: 2px;
-}
-
-/*
- * The orb at a glanceable size.
- *
- * --lv-orb is declared on .lv, so it has to be set wherever the orb is used
- * outside the live workspace — left undefined, .orb-svg's width and height
- * resolve to auto and it draws at its intrinsic 71px, which here would be
- * three times the height of the button under it.
- */
-.cv-orb-mini {
-  --lv-orb: 26px;
-  line-height: 0;
-}
-
-/* The label is a sentence; the dial, ticks and brackets are hairlines at 200
-   units that fall below a pixel at 26. All four are noise at this size, and the
-   status line under the composer already carries the words. */
-.cv-orb-mini .orb-label,
-.cv-orb-mini .orb-dial,
-.cv-orb-mini .orb-ticks,
-.cv-orb-mini .orb-brackets {
-  display: none;
-}
-
-.cv-orb-mini .orb {
-  gap: 0;
-}
-
-/* The microphone, in the composer's own control row beside Send.
-   Given a visible label as well as an icon: an unlabelled mic glyph in a row
-   that already has a paperclip and an arrow is one more thing to decode, and
-   the whole complaint was that this control could not be found. */
 .cv-mic {
   display: inline-flex;
   align-items: center;

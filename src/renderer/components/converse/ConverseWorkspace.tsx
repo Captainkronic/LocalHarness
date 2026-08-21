@@ -22,7 +22,7 @@ import { useCallback, type JSX } from 'react'
 
 import ChatView from '@renderer/components/chat/ChatView'
 import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
-import VoiceOrb from '@renderer/components/live/VoiceOrb'
+import VoiceIndicator from './VoiceIndicator'
 import { useStore } from '@renderer/state/store'
 import './converse.css'
 
@@ -33,15 +33,17 @@ import './converse.css'
  * the only other signal is silence, and silence reads as a crash.
  */
 const SAYS: Record<string, string> = {
-  off: 'Type, or press Talk and say it out loud.',
-  starting: 'Opening the microphone…',
-  listening: 'Listening — just talk.',
-  capturing: 'Hearing you…',
-  transcribing: 'Working out what you said…',
-  thinking: 'Thinking…',
-  tool: 'Looking something up…',
-  speaking: 'Speaking — say anything to interrupt.',
-  error: 'The voice session stopped.'
+  /* Short, because these now sit inside the composer's control row rather
+     than on a line of their own. Two or three words each. */
+  off: '',
+  starting: 'Starting…',
+  listening: 'Listening',
+  capturing: 'Hearing you',
+  transcribing: 'Got that…',
+  thinking: 'Thinking',
+  tool: 'Looking it up',
+  speaking: 'Speaking',
+  error: 'Stopped'
 }
 
 export default function ConverseWorkspace(): JSX.Element {
@@ -71,40 +73,45 @@ export default function ConverseWorkspace(): JSX.Element {
           where the first one already is. */}
       <ChatView
         composerAccessory={
-          <div className="cv-controls">
-            {/*
-              The orb, directly above the control it belongs to.
+          /*
+            One row in both states, because the orb's own row was a row spent
+            on a dot that never changed.
 
-              It was in the right-hand panel, which put the one thing that shows
-              what the microphone is doing at the far side of the window from
-              the button that opens it. Here it is where you already are: you
-              press Talk and the state changes an inch above your cursor.
-
-              Scaled down to a glance rather than a display — the tick ring,
-              the dial marks and the corner brackets are all hidden below,
-              because at this size they are mush rather than detail. What
-              survives is the part that carries the state: colour, the level
-              arc, and the glyph in the middle.
-
-              aria-hidden because it is a picture of state, not the state
-              itself. The button's own label already says what pressing it
-              does, and the status line under the composer says what the
-              session is doing in words.
-            */}
-            <div className="cv-orb-mini" aria-hidden="true">
-              <VoiceOrb state={state} level={liveStatus.level} />
-            </div>
-            <button
-              type="button"
-              className={running ? 'cv-mic is-on' : 'cv-mic'}
-              onClick={toggleCall}
-              aria-pressed={running}
-              title={running ? 'Stop talking (end the voice session)' : 'Talk instead of typing'}
-              aria-label={running ? 'Stop the voice session' : 'Talk instead of typing'}
-            >
-              <MicIcon speaking={running && liveStatus.userSpeaking} stop={running} />
-              <span className="cv-mic-label">{running ? 'Stop' : 'Talk'}</span>
-            </button>
+            Idle it is just the button. Live it becomes the status: the meter
+            moves with your voice, the word says what is happening, and Stop is
+            the way out. Nothing appears or disappears above the text box, so
+            the composer does not jump height when a call starts.
+          */
+          <div className={running ? 'cv-controls is-live' : 'cv-controls'} data-state={state}>
+            {running ? (
+              <>
+                <VoiceIndicator state={state} />
+                <span className="cv-say" role="status">
+                  {SAYS[state] ?? state}
+                </span>
+                <button
+                  type="button"
+                  className="cv-mic is-on"
+                  onClick={toggleCall}
+                  title="End the voice session"
+                  aria-label="End the voice session"
+                >
+                  <MicIcon speaking={false} stop />
+                  <span className="cv-mic-label">Stop</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="cv-mic"
+                onClick={toggleCall}
+                title="Talk instead of typing"
+                aria-label="Talk instead of typing"
+              >
+                <MicIcon speaking={false} stop={false} />
+                <span className="cv-mic-label">Talk</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -140,24 +147,19 @@ export default function ConverseWorkspace(): JSX.Element {
         running this whole row is absent rather than empty, because a permanent
         strip saying "idle" is a strip of wasted screen.
       */}
-      {running ? (
-        <div className="cv-bar" role="status">
-          <span className="cv-level" aria-hidden="true">
-            <span
-              className={liveStatus.userSpeaking ? 'cv-level-fill is-hot' : 'cv-level-fill'}
-              style={{ width: `${Math.round(Math.min(1, Math.max(0, liveStatus.level)) * 100)}%` }}
-            />
-          </span>
-          <span className="cv-say">{SAYS[state] ?? state}</span>
-          {liveStatus.lastUserText ? (
-            /* What it thought it heard. A misheard word is the usual
-               explanation for a strange answer; without this the answer simply
-               looks wrong. */
-            <span className="cv-heard" title="What was transcribed">
-              “{liveStatus.lastUserText}”
-            </span>
-          ) : null}
-        </div>
+      {/*
+        What it thought it heard, and only that.
+
+        The state used to be spelled out down here as well, which meant a
+        second row appearing under the composer the moment a call started and
+        saying the same thing the control now says. This is the part that row
+        had which the control cannot: a misheard word is the usual explanation
+        for a strange answer, and without seeing it the answer just looks wrong.
+      */}
+      {running && liveStatus.lastUserText !== '' ? (
+        <p className="cv-heard" title="What was transcribed">
+          heard “{liveStatus.lastUserText}”
+        </p>
       ) : null}
     </div>
   )
