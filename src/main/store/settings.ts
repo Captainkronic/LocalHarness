@@ -55,9 +55,12 @@ export const DEFAULT_SETTINGS: Settings = {
   modelPollMs: 600000,
   // Adam's MLX server with multi-token prediction, alongside LM Studio's own.
   // Model ids collide between the two, which is why endpoints are first-class.
-  extraEndpoints: [
-    { id: 'mtp', label: 'MTP MLX', baseUrl: 'http://127.0.0.1:1236/v1' }
-  ],
+  /* Empty by design. This carried an "MTP MLX" entry on :1236 — a second
+     inference server whose models collided by id with LM Studio's own, so the
+     picker listed every model twice with only a faint source label to tell them
+     apart. Removed at Adam's request; the field stays because pointing at an
+     extra endpoint is still a reasonable thing to want. */
+  extraEndpoints: [],
   workflowReasoning: {},
   workflowSampling: {},
   workflowMcpOverrides: {},
