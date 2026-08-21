@@ -76,6 +76,11 @@ console.log('\n\x1b[1mScope\x1b[0m')
 check('TypeScript is skipped, not mis-parsed',
   (await syntaxWarning('/x/a.ts', 'const x: number = 1;\n')) === null,
   'type annotations are not valid JavaScript — checking them would report every .ts file as broken')
+check('JSX is skipped — it is not JavaScript',
+  (await syntaxWarning('/x/Home.jsx', 'export default () => <div className="a">hi</div>\n')) === null,
+  'every React component would come back "DOES NOT PARSE" at the first angle bracket')
+check('TSX is skipped too',
+  (await syntaxWarning('/x/Home.tsx', 'const a: number = 1; export default () => <p>{a}</p>\n')) === null)
 check('css is skipped', (await syntaxWarning('/x/a.css', 'body { color: red }')) === null)
 check('html is skipped', (await syntaxWarning('/x/a.html', '<!doctype html><p>hi')) === null)
 check('broken JSON is caught', typeof (await syntaxWarning('/x/a.json', '{"a": 1,}')) === 'string')

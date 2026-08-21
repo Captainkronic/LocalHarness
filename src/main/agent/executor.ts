@@ -155,10 +155,21 @@ function activityTarget(toolId: NativeToolId, args: unknown): string {
 }
 
 /**
- * Extensions worth parsing after a write. JavaScript only — a .ts file is not
- * valid JavaScript, so checking it would report type annotations as errors.
+ * Extensions worth parsing after a write. Plain JavaScript ONLY.
+ *
+ * Everything that needs a transform first is excluded, and the list is short
+ * for a reason: a false warning is worse than no warning, because it sends a
+ * model rewriting code that was already correct.
+ *
+ * `.ts`/`.tsx` are out because type annotations are not JavaScript. `.jsx` was
+ * in this set and should never have been — JSX is not JavaScript either, so
+ * every React component came back "DOES NOT PARSE" at the first `<div>`. Caught
+ * by the model rather than by me: it read the warning, checked the file, and
+ * wrote "this warning was a false positive from the tool parsing .jsx as plain
+ * JavaScript" — correct, and a cost it should never have had to pay. A less
+ * careful reader would have "fixed" working code.
  */
-const SYNTAX_CHECK_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx'])
+const SYNTAX_CHECK_EXT = new Set(['.js', '.mjs', '.cjs'])
 
 /**
  * Parse a file we just wrote and report the error, if it has one.
