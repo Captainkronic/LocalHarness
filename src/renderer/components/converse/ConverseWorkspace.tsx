@@ -22,6 +22,7 @@ import { useCallback, type JSX } from 'react'
 
 import ChatView from '@renderer/components/chat/ChatView'
 import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
+import VoiceOrb from '@renderer/components/live/VoiceOrb'
 import { useStore } from '@renderer/state/store'
 import './converse.css'
 
@@ -70,17 +71,41 @@ export default function ConverseWorkspace(): JSX.Element {
           where the first one already is. */}
       <ChatView
         composerAccessory={
-          <button
-            type="button"
-            className={running ? 'cv-mic is-on' : 'cv-mic'}
-            onClick={toggleCall}
-            aria-pressed={running}
-            title={running ? 'Stop talking (end the voice session)' : 'Talk instead of typing'}
-            aria-label={running ? 'Stop the voice session' : 'Talk instead of typing'}
-          >
-            <MicIcon speaking={running && liveStatus.userSpeaking} stop={running} />
-            <span className="cv-mic-label">{running ? 'Stop' : 'Talk'}</span>
-          </button>
+          <div className="cv-controls">
+            {/*
+              The orb, directly above the control it belongs to.
+
+              It was in the right-hand panel, which put the one thing that shows
+              what the microphone is doing at the far side of the window from
+              the button that opens it. Here it is where you already are: you
+              press Talk and the state changes an inch above your cursor.
+
+              Scaled down to a glance rather than a display — the tick ring,
+              the dial marks and the corner brackets are all hidden below,
+              because at this size they are mush rather than detail. What
+              survives is the part that carries the state: colour, the level
+              arc, and the glyph in the middle.
+
+              aria-hidden because it is a picture of state, not the state
+              itself. The button's own label already says what pressing it
+              does, and the status line under the composer says what the
+              session is doing in words.
+            */}
+            <div className="cv-orb-mini" aria-hidden="true">
+              <VoiceOrb state={state} level={liveStatus.level} />
+            </div>
+            <button
+              type="button"
+              className={running ? 'cv-mic is-on' : 'cv-mic'}
+              onClick={toggleCall}
+              aria-pressed={running}
+              title={running ? 'Stop talking (end the voice session)' : 'Talk instead of typing'}
+              aria-label={running ? 'Stop the voice session' : 'Talk instead of typing'}
+            >
+              <MicIcon speaking={running && liveStatus.userSpeaking} stop={running} />
+              <span className="cv-mic-label">{running ? 'Stop' : 'Talk'}</span>
+            </button>
+          </div>
         }
       />
 

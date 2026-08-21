@@ -89,6 +89,45 @@
 }
 
 
+/* Orb over button, as one control. align-self:flex-end keeps the pair sitting
+   on the composer's baseline while the textarea grows upward above it. */
+.cv-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 2px;
+}
+
+/*
+ * The orb at a glanceable size.
+ *
+ * --lv-orb is declared on .lv, so it has to be set wherever the orb is used
+ * outside the live workspace — left undefined, .orb-svg's width and height
+ * resolve to auto and it draws at its intrinsic 71px, which here would be
+ * three times the height of the button under it.
+ */
+.cv-orb-mini {
+  --lv-orb: 26px;
+  line-height: 0;
+}
+
+/* The label is a sentence; the dial, ticks and brackets are hairlines at 200
+   units that fall below a pixel at 26. All four are noise at this size, and the
+   status line under the composer already carries the words. */
+.cv-orb-mini .orb-label,
+.cv-orb-mini .orb-dial,
+.cv-orb-mini .orb-ticks,
+.cv-orb-mini .orb-brackets {
+  display: none;
+}
+
+.cv-orb-mini .orb {
+  gap: 0;
+}
+
 /* The microphone, in the composer's own control row beside Send.
    Given a visible label as well as an icon: an unlabelled mic glyph in a row
    that already has a paperclip and an arrow is one more thing to decode, and
@@ -98,8 +137,6 @@
   align-items: center;
   gap: 5px;
   flex: none;
-  align-self: flex-end;
-  margin-bottom: 2px;
   padding: 4px 9px;
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-line);
