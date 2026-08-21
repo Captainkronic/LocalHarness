@@ -21,6 +21,7 @@
  * removes an entire category of false conclusion.
  */
 
+import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
@@ -130,6 +131,29 @@ interface Entry extends ServedDir {
  */
 const SERVED = new Map<string, Entry>()
 
+/**
+ * The port this folder should get, derived from its path.
+ *
+ * `listen(0)` hands out whatever is free, which is fine until the app restarts:
+ * the folder gets served again on a DIFFERENT port, and every URL the model is
+ * carrying in its context — the one it just wrote into a test, the one in the
+ * page it is iterating on — points at nothing. Observed exactly that way after
+ * a rebuild: a run kept loading a dead `:65095` and read the empty result as a
+ * broken page rather than a moved server.
+ *
+ * Hashing the path instead means the same folder comes back on the same origin
+ * across restarts, so those URLs keep working. The range is the IANA dynamic
+ * range, which is where an ephemeral port would have come from anyway.
+ *
+ * Collisions are handled by falling back to 0 rather than by being clever: two
+ * folders hashing together is rare, and one of them getting an arbitrary port
+ * is exactly the behaviour we had before.
+ */
+function preferredPort(root: string): number {
+  const digest = createHash('sha256').update(root).digest()
+  return 49152 + (digest.readUInt16BE(0) % 16000)
+}
+
 export async function serveDirectory(root: string): Promise<ServedDir> {
   const existing = SERVED.get(root)
   if (existing) return publicView(existing)
@@ -141,9 +165,21 @@ export async function serveDirectory(root: string): Promise<ServedDir> {
   /* Loopback only. This is a build aid, not a way to publish the workspace to
      whatever network the laptop is on. */
   await new Promise<void>((resolve, reject) => {
-    const onError = (err: Error): void => reject(err)
-    server.once('error', onError)
-    server.listen(0, '127.0.0.1', () => {
+    let triedPreferred = false
+    const onError = (err: Error): void => {
+      /* Something else already holds the derived port — another app, or a
+         previous instance of this one that has not let go yet. Fall back to an
+         ephemeral port rather than refusing to serve at all. */
+      if (!triedPreferred) return reject(err)
+      triedPreferred = false
+      server.listen(0, '127.0.0.1', () => {
+        server.removeListener('error', onError)
+        resolve()
+      })
+    }
+    server.on('error', onError)
+    triedPreferred = true
+    server.listen(preferredPort(root), '127.0.0.1', () => {
       server.removeListener('error', onError)
       resolve()
     })

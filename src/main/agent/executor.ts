@@ -154,6 +154,96 @@ function activityTarget(toolId: NativeToolId, args: unknown): string {
   return pick('path')
 }
 
+/**
+ * Extensions worth parsing after a write. JavaScript only — a .ts file is not
+ * valid JavaScript, so checking it would report type annotations as errors.
+ */
+const SYNTAX_CHECK_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx'])
+
+/**
+ * Parse a file we just wrote and report the error, if it has one.
+ *
+ * The write still succeeds — this is a warning appended to the result, not a
+ * refusal. The file on disk is what the model asked for; it just cannot run.
+ *
+ * Why this earns its keep: an edit that duplicated a block left sim.js with
+ * three functions declared twice, so the module never evaluated. Every symptom
+ * pointed somewhere else — window.__sim was missing, every probe returned
+ * nothing, the page looked dead — and roughly twenty minutes went into hunting
+ * a ReferenceError in code that had never run. `node --check` answers that in
+ * 50ms. A model cannot see a parse error any other way: the browser reports it
+ * to a console the model is not reading, and reading the file back shows source
+ * that looks perfectly reasonable line by line.
+ *
+ * Uses Electron's own binary in node mode, so there is no dependency on a node
+ * being installed alongside the app.
+ */
+export async function syntaxWarning(target: string, content: string): Promise<string | null> {
+  const ext = nodePath.extname(target).toLowerCase()
+
+  if (ext === '.json') {
+    try {
+      JSON.parse(content)
+      return null
+    } catch (err) {
+      return `the file was written, but it is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    }
+  }
+  if (!SYNTAX_CHECK_EXT.has(ext)) return null
+  // Cheap guard: a huge bundle is not what an agent is hand-editing, and
+  // parsing one would cost more than it saves.
+  if (content.length > 512 * 1024) return null
+
+  const isModule = /^\s*(import|export)\b/m.test(content) || ext === '.mjs'
+  const args = isModule ? ['--input-type=module', '--check'] : ['--input-type=commonjs', '--check']
+
+  return await new Promise<string | null>((resolve) => {
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(process.execPath, args, {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: ['pipe', 'ignore', 'pipe']
+      })
+    } catch {
+      return resolve(null) // never let the check itself break a write
+    }
+    let err = ''
+    const done = setTimeout(() => {
+      child.kill('SIGKILL')
+      resolve(null)
+    }, 5000)
+    child.stderr?.on('data', (d: Buffer) => {
+      if (err.length < 4000) err += d.toString()
+    })
+    child.on('error', () => {
+      clearTimeout(done)
+      resolve(null)
+    })
+    child.on('close', (code) => {
+      clearTimeout(done)
+      if (code === 0) return resolve(null)
+      /* Report the SyntaxError line, not node's stack into its own internals. */
+      const line =
+        err
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => /SyntaxError|ReferenceError/.test(l)) ?? err.split('\n')[0]?.trim() ?? 'it does not parse'
+      const where = err.match(/\[stdin\]:(\d+)/)
+      resolve(
+        `the file was written, but it DOES NOT PARSE: ${line}` +
+          (where ? ` (around line ${where[1]})` : '') +
+          '. Nothing in it will run until that is fixed.'
+      )
+    })
+    child.stdin?.end(content)
+  })
+}
+
+/** True for a path the executor will resolve against the workspace root. */
+function rawIsRelative(p: string): boolean {
+  return p !== '' && !nodePath.isAbsolute(p) && !p.startsWith('~')
+}
+
 /** First line with something on it, for a one-line summary of a shell run. */
 function firstMeaningfulLine(text: string): string {
   for (const raw of text.split('\n')) {
@@ -199,16 +289,57 @@ function asRecord(value: unknown): Record<string, unknown> {
   return v as Record<string, unknown>
 }
 
+/**
+ * Names a small model reaches for when it means `path`.
+ *
+ * Accepting these is not politeness, it is arithmetic. `Argument "path" is
+ * required` was one of the most common tool failures in a day of agentic runs,
+ * and every instance was a call that knew perfectly well which file it wanted —
+ * it had just labelled it `file_path` or `filename`. The alternative to
+ * accepting the synonym is a wasted round trip through a 27B model at 18 tok/s.
+ *
+ * Only aliases whose meaning is unambiguous. Nothing here could plausibly be a
+ * different argument of the same tool.
+ */
+const ARG_ALIASES: Record<string, readonly string[]> = {
+  path: ['file_path', 'filepath', 'file', 'filename', 'file_name', 'dir', 'directory'],
+  old_string: ['oldString', 'old', 'old_text', 'search'],
+  new_string: ['newString', 'new', 'new_text', 'replace'],
+  content: ['contents', 'text', 'body', 'data'],
+  pattern: ['glob', 'regex', 'query', 'search'],
+  command: ['cmd', 'shell', 'script']
+}
+
+/** The value under `key`, or under a recognised synonym for it. */
+function readAliased(o: Record<string, unknown>, key: string): unknown {
+  if (typeof o[key] === 'string') return o[key]
+  for (const alias of ARG_ALIASES[key] ?? []) {
+    if (typeof o[alias] === 'string') return o[alias]
+  }
+  return o[key]
+}
+
 function reqString(o: Record<string, unknown>, key: string): string {
-  const v = o[key]
+  const v = readAliased(o, key)
   if (typeof v !== 'string') {
-    throw new ToolError(`Argument "${key}" is required and must be a string.`)
+    /* Say what DID arrive. "Argument path is required" sent the model looking
+       for a spelling mistake in a call whose real fault was that it passed the
+       whole object under one key, or sent nothing at all. */
+    const got = Object.keys(o)
+    const seen =
+      got.length === 0
+        ? 'no arguments were supplied at all'
+        : `the arguments supplied were: ${got.map((k) => `"${k}"`).join(', ')}`
+    throw new ToolError(
+      `Argument "${key}" is required and must be a string — ${seen}.` +
+        (ARG_ALIASES[key] ? ` (${ARG_ALIASES[key]!.map((a) => `"${a}"`).join(', ')} are accepted too.)` : '')
+    )
   }
   return v
 }
 
 function optString(o: Record<string, unknown>, key: string): string | undefined {
-  const v = o[key]
+  const v = readAliased(o, key)
   if (v === undefined || v === null || v === '') return undefined
   if (typeof v !== 'string') throw new ToolError(`Argument "${key}" must be a string.`)
   return v
@@ -477,6 +608,89 @@ interface GateOptions {
   args: Record<string, unknown>
   diff?: string
   command?: string
+}
+
+/**
+ * Locate `needle` in `hay` allowing each line's indentation and trailing
+ * whitespace to differ. Returns exact character offsets, or null when there
+ * is no match or more than one.
+ *
+ * Why this exists: `old_string was not found` was the single most common tool
+ * failure in a day of agentic runs — more than sandbox refusals, bad paths and
+ * shell quoting combined. Almost none of them were the model wanting the wrong
+ * text. They were the model retyping text it had read minutes earlier and
+ * getting the indentation slightly wrong, which an exact indexOf cannot
+ * forgive. The cost is not one failed call: the model re-reads the file, burns
+ * context, and often re-reads it again.
+ *
+ * Deliberately conservative. It never guesses between candidates — two
+ * possible matches is an ambiguity the model must resolve, exactly as a
+ * duplicate exact match already is. And it only relaxes WHITESPACE; every
+ * non-space character still has to match, so it cannot silently edit
+ * something else.
+ */
+export function fuzzyRange(hay: string, needle: string): [number, number] | null {
+  const endsWithNewline = /\n$/.test(needle)
+  const needleLines = needle.split('\n')
+  if (endsWithNewline) needleLines.pop()
+  if (needleLines.length === 0) return null
+
+  const hayLines = hay.split('\n')
+  const want = needleLines.map((l) => l.trim())
+  /* A needle whose lines are ALL blank once trimmed would match any run of
+     blank lines. Refuse rather than pick one. */
+  if (want.every((l) => l === '')) return null
+
+  // Offset of the first character of each line, for converting back.
+  const lineStart: number[] = new Array(hayLines.length)
+  let at = 0
+  for (let i = 0; i < hayLines.length; i++) {
+    lineStart[i] = at
+    at += hayLines[i]!.length + 1
+  }
+
+  const hits: Array<[number, number]> = []
+  for (let i = 0; i + want.length <= hayLines.length; i++) {
+    let ok = true
+    for (let j = 0; j < want.length && ok; j++) {
+      if (hayLines[i + j]!.trim() !== want[j]) ok = false
+    }
+    if (!ok) continue
+    const last = i + want.length - 1
+    let end = lineStart[last]! + hayLines[last]!.length
+    // Consume the newline too, so a needle that ended with one is replaced
+    // by a new_string that also ends with one rather than joining lines.
+    if (endsWithNewline && end < hay.length) end += 1
+    hits.push([lineStart[i]!, end])
+    if (hits.length > 1) return null
+  }
+  return hits.length === 1 ? hits[0]! : null
+}
+
+/** The file line that looks most like the needle's first line, for the error. */
+export function nearestLine(hay: string, needle: string): string | null {
+  const first = (needle.split('\n')[0] ?? '').trim()
+  if (first.length < 4) return null
+  const lines = hay.split('\n')
+  let best = -1
+  let bestScore = 0
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim()
+    if (t === '') continue
+    /* Cheap similarity: the longer of the two shared prefixes/suffixes.
+       Enough to point at the right line without pulling in a diff library. */
+    let p = 0
+    while (p < t.length && p < first.length && t[p] === first[p]) p++
+    let s = 0
+    while (s < t.length - p && s < first.length - p && t[t.length - 1 - s] === first[first.length - 1 - s]) s++
+    const score = (p + s) / Math.max(t.length, first.length)
+    if (score > bestScore) {
+      bestScore = score
+      best = i
+    }
+  }
+  if (best === -1 || bestScore < 0.5) return null
+  return `line ${best + 1}: ${lines[best]!.slice(0, 160)}`
 }
 
 export class ToolExecutor {
@@ -844,14 +1058,17 @@ export class ToolExecutor {
       summary
     })
 
+    const warned = await syntaxWarning(target, content)
     return ok(
-      st
+      (st
         ? `Wrote ${shown} (+${stat.added} -${stat.removed}, ${formatBytes(Buffer.byteLength(content))}).`
-        : `Created ${shown} (${countLines(content)} lines, ${formatBytes(Buffer.byteLength(content))}).`
+        : `Created ${shown} (${countLines(content)} lines, ${formatBytes(Buffer.byteLength(content))}).`) +
+        (warned ? `\n\nWARNING: ${warned}` : '')
     )
   }
 
   /* ---------------- edit_file ---------------- */
+
 
   private async editFile(
     args: Record<string, unknown>,
@@ -889,10 +1106,27 @@ export class ToolExecutor {
       from = existing.indexOf(oldString, from + oldString.length)
     }
 
+    /* Exact match first, always. The relaxed pass only runs when the strict one
+       found nothing, so an exact hit can never be overridden by a fuzzy one. */
+    let fuzzyUsed = false
+    let effectiveOld = oldString
     if (count === 0) {
+      const range = fuzzyRange(existing, oldString)
+      if (range) {
+        effectiveOld = existing.slice(range[0], range[1])
+        count = 1
+        fuzzyUsed = true
+      }
+    }
+
+    if (count === 0) {
+      const near = nearestLine(existing, oldString)
       return fail(
-        `old_string was not found in ${shown}. The match is exact, including indentation and ` +
-          'line endings — read the file and copy the text you want to replace verbatim.'
+        `old_string was not found in ${shown}, even allowing for different indentation. ` +
+          (near
+            ? `The closest line in the file is —\n  ${near}\n` +
+              'If that is what you meant, copy it verbatim; if not, read the file around it.'
+            : 'Read the file and copy the text you want to replace verbatim.')
       )
     }
     if (count > 1 && !replaceAll) {
@@ -903,16 +1137,22 @@ export class ToolExecutor {
       )
     }
 
-    const next = replaceAll
-      ? existing.split(oldString).join(newString)
-      : existing.slice(0, existing.indexOf(oldString)) +
+    /* A relaxed match resolved to exactly ONE region, so it is replaced once
+       whatever replace_all says — expanding a fuzzy hit across the file is the
+       one way this could edit something the model did not mean. */
+    const next = replaceAll && !fuzzyUsed
+      ? existing.split(effectiveOld).join(newString)
+      : existing.slice(0, existing.indexOf(effectiveOld)) +
         newString +
-        existing.slice(existing.indexOf(oldString) + oldString.length)
+        existing.slice(existing.indexOf(effectiveOld) + effectiveOld.length)
 
     const stat = diffStat(existing, next)
     const diff = unifiedDiff(existing, next, shown) || undefined
     const suffix = count > 1 ? ` ×${count}` : ''
-    const summary = `Edit ${shown} (+${stat.added} -${stat.removed})${suffix}`
+    /* Said out loud. A silent fuzzy match would let the model believe its
+       old_string was right and keep sending the same slightly-wrong text. */
+    const matched = fuzzyUsed ? ' — matched ignoring indentation' : ''
+    const summary = `Edit ${shown} (+${stat.added} -${stat.removed})${suffix}${matched}`
 
     const denied = await this.gate({
       toolId: 'edit_file',
@@ -940,9 +1180,10 @@ export class ToolExecutor {
       summary
     })
 
+    const warned = await syntaxWarning(target, next)
     return ok(
       `Edited ${shown}: ${count > 1 ? `${count} occurrences replaced` : '1 occurrence replaced'} ` +
-        `(+${stat.added} -${stat.removed}).`
+        `(+${stat.added} -${stat.removed}).${warned ? `\n\nWARNING: ${warned}` : ''}`
     )
   }
 
@@ -1119,7 +1360,19 @@ export class ToolExecutor {
     const shown = await this.display(target, settings)
 
     const st = await statOrNull(target)
-    if (!st) return fail(`No such file or directory: ${shown}.`)
+    if (!st) {
+      /* Say where a relative path LANDED. "No such file: minigolf/game.js" left
+         the model unable to tell whether the file was missing or whether it had
+         doubled the workspace folder into the path — which is exactly what had
+         happened, twice, on one run. */
+      const roots = settings.workspaceRoots
+      const hint =
+        rawIsRelative(pathArg ?? '.')
+          ? ` It was read as relative to the workspace root, so it resolved to ${target}.` +
+            (roots.length > 0 ? ` The workspace root is ${roots[0]}.` : '')
+          : ''
+      return fail(`No such file or directory: ${shown}.${hint}`)
+    }
 
     const denied = await this.gate({
       toolId: 'grep',
@@ -1308,10 +1561,39 @@ export class ToolExecutor {
       stderr = truncateMiddle(stderr, SHELL_OUTPUT_CAP - outBudget)
     }
 
+    /*
+     * A timeout is where a run gets stuck, so the message has to say what to do.
+     *
+     * Two different faults arrive here wearing the same clothes. One is a slow
+     * command that simply needed longer — `npm install` on a cold cache regularly
+     * beats the 120s default. The other is a command that is never going to
+     * exit because not exiting is its job: a dev server, a watcher, a REPL.
+     * Raising the timeout fixes the first and merely wastes ten minutes on the
+     * second, so the model needs to be told which one it is looking at.
+     *
+     * Without this the message was "Timed out after 120000ms" and nothing else,
+     * and the obvious next move — run it again, wait longer — is the wrong one
+     * exactly half the time.
+     */
+    const looksLikeServer =
+      /\b(dev|serve|start|watch|preview)\b/.test(command) ||
+      /--watch\b/.test(command) ||
+      /\b(vite|webpack|next|nodemon|http-server|live-server|python3? -m http\.server)\b/.test(command)
+    const timeoutAdvice = looksLikeServer
+      ? `Timed out after ${timeoutMs}ms — the process group was killed.\n\n` +
+        `This command looks like a SERVER or WATCHER, which never exits on its own, so it will ` +
+        `time out however long you wait. run_shell is for commands that finish. To look at a ` +
+        `site, build it first (a production build DOES exit) and then use serve_dir on the ` +
+        `output folder — that serves it in the background and hands you back a URL.\n\n` +
+        `Output captured so far:`
+      : `Timed out after ${timeoutMs}ms — the process group was killed.\n\n` +
+        `If this command was simply slow rather than stuck, run it again with a larger ` +
+        `timeout_ms (up to ${SHELL_MAX_TIMEOUT_MS}). Installs on a cold cache often need more ` +
+        `than the ${SHELL_DEFAULT_TIMEOUT_MS}ms default.\n\n` +
+        `Output captured so far:`
+
     const sections = [
-      run.timedOut
-        ? `Timed out after ${timeoutMs}ms — the process group was killed. Output captured so far:`
-        : `Exit code: ${run.code ?? 'unknown'}`,
+      run.timedOut ? timeoutAdvice : `Exit code: ${run.code ?? 'unknown'}`,
       '',
       '--- stdout ---',
       stdout.trimEnd() === '' ? '(empty)' : stdout.trimEnd(),

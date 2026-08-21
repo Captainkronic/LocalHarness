@@ -11,6 +11,7 @@
  *
  *   node scripts/serve-dir-test.mjs
  */
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -141,6 +142,62 @@ check('re-serving says already up', m.toolOutcome({ kind: 'serve', origin: 'x', 
 check('unknown structured payloads are ignored', m.toolOutcome({ kind: 'other' }) === null)
 check('null structured is ignored', m.toolOutcome(null) === null)
 check('a bare string is ignored', m.toolOutcome('exit 0') === null)
+
+
+console.log('\nA folder keeps its origin across restarts')
+/* listen(0) hands out whatever is free, so after an app restart the same folder
+   came back on a different port and every URL the model was carrying pointed at
+   nothing. Observed: a run kept loading a dead :65095 and read the empty result
+   as a broken page rather than a moved server. */
+{
+  const { mkdtemp, writeFile: wf } = await import('node:fs/promises')
+  const dirA = await mkdtemp(join(tmpdir(), 'servedet-'))
+  await wf(join(dirA, 'index.html'), '<p>hi')
+
+  const first = await m.serveDirectory(dirA)
+  const portOf = (u) => Number(new URL(u).port)
+  const p1 = portOf(first.origin)
+  check('a served folder gets a port', Number.isFinite(p1) && p1 > 0, String(first.origin))
+  check('the port is in the dynamic range', p1 >= 49152 && p1 < 65536, String(p1))
+
+  check('re-serving the same folder reuses the SAME server',
+    portOf((await m.serveDirectory(dirA)).origin) === p1)
+
+  // The restart: every listener closed, exactly as quitting the app does.
+  m.stopAllServed()
+  check('stopping clears the registry', m.listServed().length === 0)
+
+  const again = await m.serveDirectory(dirA)
+  check('the same folder comes back on the SAME port after a restart',
+    portOf(again.origin) === p1,
+    `${p1} then ${portOf(again.origin)} — URLs in the model's context would be dead`)
+
+  const dirB = await mkdtemp(join(tmpdir(), 'servedet-'))
+  const other = await m.serveDirectory(dirB)
+  check('a DIFFERENT folder gets a different port', portOf(other.origin) !== p1)
+
+  m.stopAllServed()
+}
+
+
+console.log('\nShell timeouts say what to do next')
+/* Two faults arrive wearing the same clothes: a slow command that needed longer,
+   and a command that will never exit because not exiting is its job. Raising the
+   timeout fixes the first and wastes ten minutes on the second, so the message
+   has to distinguish them. Before this it said only "Timed out after 120000ms". */
+const exec = readFileSync(join(ROOT, 'src/main/agent/executor.ts'), 'utf8')
+check('a plain timeout points at timeout_ms',
+  /run it again with a larger/.test(exec) && /timeout_ms \(up to/.test(exec))
+check('and names the ceiling rather than a vague "higher"',
+  /up to \$\{SHELL_MAX_TIMEOUT_MS\}/.test(exec))
+check('a server-shaped command is recognised', /const looksLikeServer =/.test(exec))
+check('servers are told raising the timeout will NOT help',
+  /time out however long you wait/.test(exec))
+check('and are pointed at build + serve_dir instead',
+  /serve_dir on the/.test(exec) && /production build DOES exit/.test(exec))
+check('the heuristic covers the usual dev-server names',
+  /vite\|webpack\|next\|nodemon\|http-server/.test(exec))
+check('and bare --watch', /--watch/.test(exec))
 
 console.log(failed === 0 ? '\n\x1b[32mall serve_dir checks passed\x1b[0m' : `\n\x1b[31m${failed} failed\x1b[0m`)
 process.exit(failed === 0 ? 0 : 1)
