@@ -56,6 +56,33 @@ import type { WireTool } from '@shared/types'
  */
 const STREAM_AGENT_BODY_TIMEOUT_MS = 45 * 60_000
 
+/**
+ * How long the server may say nothing BEFORE the first token, as opposed to after.
+ *
+ * The 45 minutes above is the right allowance for silence *mid-reply*, because
+ * a tool call being composed genuinely crosses the wire in one piece at the
+ * end. It is the wrong allowance for silence *before the reply starts*, and the
+ * difference is what makes this a separate timer rather than a smaller one.
+ *
+ * The failure it exists for: a run whose prompt had grown past the server's real
+ * per-slot context sat in prefill for THIRTY-ONE MINUTES. The GPU was pinned at
+ * 100% the whole time — llama.cpp context-shifting on every step, making no
+ * progress it could ever finish. Nothing distinguished it from health, because
+ * silence is exactly what a healthy prefill looks like too, and the body
+ * timeout could not fire until 45 minutes had passed.
+ *
+ * Before the first token there is no tool call to be composing, so the only
+ * thing that can legitimately take this long is prefill itself — and prefill is
+ * bounded by prompt size over prefill rate. The slowest measured rate on this
+ * hardware is ~175 tok/s, so even a 100k prompt reads in about ten minutes.
+ * Fifteen leaves half again on top and still catches a wedge less than half way
+ * through the old ceiling.
+ *
+ * Deliberately NOT a settings knob: it is a fault detector, and a fault the
+ * user can raise until it stops firing is one they will stop seeing.
+ */
+const FIRST_TOKEN_TIMEOUT_MS = 15 * 60_000
+
 const STREAM_AGENT = new Agent({
   bodyTimeout: STREAM_AGENT_BODY_TIMEOUT_MS,
   headersTimeout: 2 * 60_000
@@ -229,9 +256,23 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
   }
 
   let firstTokenSeen = false
+  /* Set only by the watchdog below, and read after the loop: cancelling the
+     reader ends the read normally, so without a flag a wedge is indistinguishable
+     from a server that simply finished. */
+  let prefillStalled = false
+  let firstTokenTimer: NodeJS.Timeout | null = null
+  const clearFirstTokenTimer = (): void => {
+    if (firstTokenTimer !== null) {
+      clearTimeout(firstTokenTimer)
+      firstTokenTimer = null
+    }
+  }
   const markFirstToken = (): void => {
     if (firstTokenSeen) return
     firstTokenSeen = true
+    // The reply has started, so any silence from here is the tool-call case
+    // that STREAM_AGENT's 45 minutes exists to allow.
+    clearFirstTokenTimer()
     ev.onFirstToken()
   }
 
@@ -268,6 +309,13 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
   }
 
   const reader = stream.getReader()
+
+  firstTokenTimer = setTimeout(() => {
+    if (firstTokenSeen) return
+    prefillStalled = true
+    // Ends the read; the throw happens after the loop where the reason is known.
+    void reader.cancel().catch(() => undefined)
+  }, FIRST_TOKEN_TIMEOUT_MS)
   const decoder = new TextDecoder()
 
   let buffer = ''
@@ -412,8 +460,27 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     }
     aborted = true
   } finally {
+    clearFirstTokenTimer()
     // Releases the socket whether we drained the stream or bailed out of it.
     void reader.cancel().catch(() => undefined)
+  }
+
+  /*
+   * Checked before `aborted`, because the watchdog's cancel LOOKS like a clean
+   * end of stream and would otherwise be reported as a turn that simply
+   * finished with nothing to say.
+   */
+  if (prefillStalled) {
+    throw new Error(
+      `${url} accepted the request and never produced a first token in ` +
+        `${Math.round(FIRST_TOKEN_TIMEOUT_MS / 60_000)} minutes. That is not a model thinking: ` +
+        `before the first token there is no tool call to compose, so the server is stuck ` +
+        `rather than slow. The usual cause is a prompt longer than the context a single ` +
+        `request actually gets — llama.cpp splits its window across --parallel slots, so a ` +
+        `server showing 101632 with PARALLEL 4 gives one request 25408 and shifts context ` +
+        `forever past that. Check the PARALLEL column of \`lms ps\` against the app's ` +
+        `contextSlots setting, or start a new conversation to shorten the prompt.`
+    )
   }
 
   if (aborted) {

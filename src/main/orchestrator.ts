@@ -44,10 +44,12 @@ import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import {
   callKeyFor,
+  collapseResultUrls,
   isActing,
   loopAdvice,
   loopVerdict,
   shapeKeyFor,
+  targetKeyFor,
   type LoopEntry
 } from './agent/loopbreak'
 import { nativeWireTools, NATIVE_TOOLS } from './agent/tools'
@@ -110,6 +112,27 @@ const LOOP_HISTORY = 32
  * costs another eighteen minutes to learn the same thing.
  */
 const MAX_REASONING_TRIPS = 3
+
+/**
+ * How many times a turn will re-issue a request that came back completely empty.
+ *
+ * An empty reply — no content, no tool calls, no error — is almost never the
+ * model having nothing to say. It is what the app sees when the server dropped
+ * the request underneath it: LM Studio being restarted, a model reloaded with
+ * different settings, a socket replaced mid-flight. The stream closes tidily
+ * and reports `finish_reason` of nothing at all.
+ *
+ * Until this existed the turn simply ended there and waited for a human. That
+ * is fine when someone is watching and fatal when nobody is: an overnight run
+ * would sit finished-but-unfinished for hours because the server had blinked
+ * for two seconds. Observed exactly that way — a reload of the model on the
+ * serving machine ended a build turn with "the model returned an empty reply
+ * (finish reason: unknown)" and the run stopped for good.
+ *
+ * Two, not more: if a third identical request also comes back empty, the server
+ * is not blinking, it is down, and retrying forever would hide that.
+ */
+const MAX_EMPTY_RETRIES = 2
 
 /**
  * Loop trips answered with advice before the turn is actually ended.
@@ -237,7 +260,23 @@ export class Orchestrator {
     if (window === null || window <= 0) return undefined
     const reply = this.workflow(workflowId).sampling.maxTokens
     const budget = window - reply - toolTokens - Math.ceil(window * CONTEXT_SAFETY_FRACTION)
-    return budget > 0 ? budget : undefined
+    if (budget <= 0) return undefined
+    /*
+     * Expressed back in ESTIMATE units, because that is what trimToBudget counts in.
+     *
+     * `window`, `reply` and the margin are all real server-side token counts,
+     * but the trimmer measures the history with the same character-based
+     * estimate that undercounts code by about a third. Handing it a real-token
+     * budget therefore let it keep roughly 1.5x what would fit. Measured: a
+     * meter reading 42.3k against a prompt the server counted as 63.7k, and a
+     * turn that died with finish_reason 'length' having produced nothing.
+     *
+     * The ratio is learned per model from previous requests and is 1 until
+     * something has been measured, so this is a no-op on a fresh model.
+     */
+    const ratio = this.calibrator.promptTokenRatio(model.id)
+    const inEstimateUnits = Math.floor(budget / (ratio > 0 ? ratio : 1))
+    return inEstimateUnits > 0 ? inEstimateUnits : undefined
   }
 
   /** Records a trim on the conversation and says so in the log. */
@@ -348,6 +387,33 @@ export class Orchestrator {
   ): Promise<{ ok: boolean; accepted: boolean; error?: string }> {
     try {
       await this.runTurn(conv, model)
+      /*
+       * Carry on by itself, when the stop was one designed to be continued.
+       *
+       * The step cap and the loop breaker both end a turn with the work intact
+       * and a message inviting a human to continue. That invitation is the
+       * whole problem for an unattended run — measured across a three-hour
+       * build, 4% of wall clock was the app idle waiting for someone to accept
+       * it, and that was with someone watching.
+       *
+       * Only these two reasons, both carried on typed markers rather than
+       * matched out of the error text. An empty reply has its own retry; a real
+       * error, a cancel, or a model that simply finished must all stay stopped.
+       */
+      let left = Math.max(0, Math.round(this.d.settings.get().autoContinueTurns ?? 0))
+      while (left > 0 && !this.active) {
+        const last = conv.messages[conv.messages.length - 1]
+        const recoverable =
+          last?.role === 'assistant' && (last.stoppedAtCap === true || last.stoppedLooping === true)
+        if (!recoverable) break
+        left -= 1
+        this.log(
+          'info',
+          'turn',
+          `continuing on its own — ${last.stoppedLooping === true ? 'the loop breaker stopped the last turn' : 'the last turn ran out of steps'}, ${left} continuation(s) left`
+        )
+        await this.runTurn(conv, model)
+      }
       return { ok: true, accepted: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -502,6 +568,8 @@ export class Orchestrator {
      * second spiral was possible, so a broken brake looked like a working one.
      */
     let reasoningTrips = 0
+    /** Counts across the whole turn, so a flapping server cannot loop forever. */
+    let emptyRetries = 0
     /** Set once a turn has spiralled too often to be trusted with thinking. */
     let effortLatchedOff = false
     /** The last tool call's identity, and how many times it has repeated. */
@@ -511,11 +579,10 @@ export class Orchestrator {
     let loopNudges = 0
     // Fixed for the whole turn: the tool schemas do not change between
     // iterations, and neither does the window.
-    const budget = this.historyBudget(
-      model,
-      conv.workflowId,
-      tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
-    )
+    /* Recomputed per request inside the loop — see the learn() call there. A
+       budget derived once from a window that later changed is worse than no
+       budget, because it trims confidently to the wrong ceiling. */
+    const toolTokensForBudget = tools.length === 0 ? 0 : estimateTokens(JSON.stringify(tools))
 
     /* Set when the loop ends because the model stopped calling tools, or was
        cancelled. If it is still false after the loop, the turn was cut off by
@@ -531,6 +598,23 @@ export class Orchestrator {
       /* Consumed here, once. The retry sets it and continues; taking it at the
          top of the next iteration and clearing it in the same breath is what
          stops one spiral from silencing the rest of the run. */
+      /*
+       * Re-learn the window on every request, not once per turn.
+       *
+       * `learn()` early-returns unless its observation is older than its own
+       * TTL, so this is a no-op on all but roughly one request in two minutes.
+       * What it buys is that a window which CHANGES under a running turn is
+       * noticed — and a turn here can run for hours.
+       *
+       * Not hypothetical: reloading the server with a different context length
+       * mid-run left the meter reading 131k against a real slot of 98,304, and
+       * the history budget is computed from the same number, so the trimmer was
+       * working to a ceiling a third higher than the one that existed. An idle
+       * eviction followed by a JIT reload does the same thing without anyone
+       * touching it.
+       */
+      await this.d.models.learn(model.id).catch(() => undefined)
+
       const requestEffort = effortLatchedOff ? 'none' : (effortThisRequest ?? effort)
       effortThisRequest = undefined
       /* Both per-REQUEST: the spiral counter measures this request, and the cap
@@ -538,9 +622,11 @@ export class Orchestrator {
       reasoningSoFar = 0
       let trippedThisRequest = false
 
+      const budget = this.historyBudget(model, conv.workflowId, toolTokensForBudget)
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
         budget,
-        onTrim: (info) => this.noteTrim(conv, model.id, info)
+        onTrim: (info) => this.noteTrim(conv, model.id, info),
+        workspaceRoots: settings.workspaceRoots
       })
       const promptTokens = this.estimatePromptTokens(messages, tools)
 
@@ -755,6 +841,77 @@ export class Orchestrator {
        * retry.
        */
       if (assistant.content.trim() === '' && (assistant.toolCalls ?? []).length === 0) {
+        /*
+         * A dropped request is worth one more try; an exhausted budget is not.
+         *
+         * 'length' means the model really did run to its cap and is a setting
+         * to change, so re-sending it would burn another whole budget to reach
+         * the same place. Everything else — and in practice that means the
+         * server going away mid-request — is transient, and the same prompt
+         * usually succeeds immediately on a fresh connection.
+         *
+         * An aborted turn is the user pressing Stop and must never be retried.
+         */
+        const transient = finishReason !== 'length' && !controller.signal.aborted
+        if (transient && emptyRetries < MAX_EMPTY_RETRIES) {
+          emptyRetries += 1
+          /* Same removal the reasoning retry does: an abandoned assistant
+             message left in place renders as a streaming indicator forever. */
+          const ghost = conv.messages.indexOf(assistant)
+          if (ghost !== -1) conv.messages.splice(ghost, 1)
+          this.persist(conv, true)
+          // A fresh signal, or the retry inherits whatever killed the last one.
+          controller = new AbortController()
+          if (this.active) this.active.controller = controller
+          this.log(
+            'warn',
+            'llm',
+            `empty reply with no tool calls (finish reason: ${finishReason || 'unknown'}) — ` +
+              `re-sending that request (${emptyRetries}/${MAX_EMPTY_RETRIES}). ` +
+              `The usual cause is the server being restarted underneath the run.`
+          )
+          continue
+        }
+        /*
+         * The whole budget went on thinking and nothing came out. Retry ONCE
+         * with thinking off, exactly as the runaway breaker does mid-stream.
+         *
+         * This is the same fault the reasoning breaker exists for, arriving by
+         * a route it cannot see: the breaker watches a request while it streams
+         * and stands down the moment any content or tool call appears, so a
+         * request that reasons quietly all the way to its cap reaches the end
+         * untouched. Until now that ended the turn with advice addressed to a
+         * human — "lower the thinking level, or raise the reply cap" — which is
+         * no use at 3am. Watched one turn die exactly this way: 63.7k prompt,
+         * 1.8k of reasoning, `finish_reason: length`, nothing produced.
+         *
+         * Thinking off is the same remedy the breaker applies, and this file's
+         * own measurements say it works: the setting that spent every token
+         * reasoning produced a complete file once thinking was disabled.
+         */
+        const spentItAllThinking =
+          finishReason === 'length' &&
+          !controller.signal.aborted &&
+          (turnMetrics.reasoningTokens ?? 0) > 0
+        if (spentItAllThinking && reasoningTrips < MAX_REASONING_TRIPS) {
+          reasoningTrips += 1
+          const ghost = conv.messages.indexOf(assistant)
+          if (ghost !== -1) conv.messages.splice(ghost, 1)
+          this.persist(conv, true)
+          effortThisRequest = 'none'
+          if (reasoningTrips >= MAX_REASONING_TRIPS) effortLatchedOff = true
+          controller = new AbortController()
+          if (this.active) this.active.controller = controller
+          this.log(
+            'warn',
+            'llm',
+            `the request used all ${usage.completionTokens} tokens without answering — ` +
+              `${turnMetrics.reasoningTokens} of them thinking. Retrying it with thinking off ` +
+              `(spiral ${reasoningTrips}/${MAX_REASONING_TRIPS}).`
+          )
+          continue
+        }
+
         const why =
           finishReason === 'length'
             ? `it used all ${usage.completionTokens} tokens without finishing an answer` +
@@ -772,6 +929,11 @@ export class Orchestrator {
         usage.completionTokens,
         Math.max(1, turnMetrics.totalMs - turnMetrics.ttftMs)
       )
+      /* What the prompt REALLY cost against what we guessed, so the next
+         history budget is computed from a measured ratio rather than from
+         four-characters-per-token. `promptTokens` above is our estimate for
+         this same request. */
+      this.calibrator.observePromptEstimate(model.id, promptTokens, usage.promptTokens)
       this.persist(conv, true)
 
       const calls = assistant.toolCalls ?? []
@@ -798,7 +960,9 @@ export class Orchestrator {
         callKey: callKeyFor(calls),
         shapeKey: shapeKeyFor(calls),
         resultKey: '',
-        acting: isActing(calls)
+        acting: isActing(calls),
+        target: targetKeyFor(calls),
+        reasoning: turnMetrics.reasoningTokens ?? 0
       }
       const verdict = loopVerdict(loopHistory, pending)
       if (verdict) {
@@ -828,6 +992,7 @@ export class Orchestrator {
 
         if (spent) {
           assistant.streaming = false
+          assistant.stoppedLooping = true
           assistant.error =
             `stopped because ${why}. It was told twice and kept going, so the turn ends here. ` +
             `Everything before this is intact.`
@@ -861,7 +1026,13 @@ export class Orchestrator {
          hundreds of kilobytes of base64, and holding two of those per iteration
          to answer "was it the same?" is a lot of memory for one boolean. */
       const resultKey = calls
-        .map((c) => `${c.status}:${(c.result ?? c.error ?? '').length}:${(c.result ?? c.error ?? '').slice(0, 200)}`)
+        .map((c) => {
+          /* Normalised BEFORE the length is taken: a ?retry=9 -> ?retry=10 goes
+             one character longer, which on its own is enough to make two
+             identical answers look like two different ones. */
+          const digest = collapseResultUrls(c.result ?? c.error ?? '')
+          return `${c.status}:${digest.length}:${digest.slice(0, 200)}`
+        })
         .join('|')
       loopHistory.push({ ...pending, resultKey })
       if (loopHistory.length > LOOP_HISTORY) loopHistory.shift()

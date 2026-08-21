@@ -138,5 +138,77 @@ const trip = code.slice(code.indexOf('!trippedThisRequest &&'), code.indexOf('!t
 check('the breaker requires an empty answer', /assistant\.content === ''/.test(trip))
 check('and no tool call in flight', /pendingCalls\.size === 0/.test(trip))
 
+console.log('\n\x1b[1mempty-reply retry\x1b[0m')
+
+/*
+ * A turn that came back with nothing used to end there and wait for a human.
+ * That is fine when someone is watching and fatal when nobody is: a model
+ * reload on the serving machine ended an overnight build turn with "the model
+ * returned an empty reply (finish reason: unknown)" and the run stopped dead
+ * for the rest of the night. The same request sent again would have worked.
+ */
+const emptyBlock = code.slice(
+  code.indexOf("if (assistant.content.trim() === '' &&"),
+  code.indexOf("if (assistant.content.trim() === '' &&") + 1400
+)
+check('the empty-reply branch exists', emptyBlock.length > 100)
+check(
+  'an empty reply is re-sent rather than ending the turn',
+  /emptyRetries \+= 1/.test(emptyBlock) && /continue/.test(emptyBlock),
+  'the turn still stops dead on a dropped request'
+)
+check(
+  'the retry is bounded',
+  /emptyRetries < MAX_EMPTY_RETRIES/.test(emptyBlock),
+  'a server that is down would be retried forever'
+)
+check(
+  'a budget exhaustion is NOT retried',
+  /finishReason !== 'length'/.test(emptyBlock),
+  "'length' means the cap was really hit — re-sending burns another whole budget"
+)
+check(
+  'a user abort is NOT retried',
+  /!controller\.signal\.aborted/.test(emptyBlock),
+  'pressing Stop would re-send the request it just cancelled'
+)
+check(
+  'the retry gets a fresh signal',
+  /controller = new AbortController\(\)/.test(emptyBlock),
+  'the retry inherits whatever killed the previous request — the runaway bug, again'
+)
+check(
+  'the abandoned message is removed',
+  /conv\.messages\.splice\(ghost, 1\)/.test(emptyBlock),
+  'a left-behind assistant message renders as a streaming indicator forever'
+)
+check(
+  'the counter spans the turn, so a flapping server cannot loop',
+  /let emptyRetries = 0/.test(code) && !/emptyRetries = 0\n\s*let tripped/.test(code)
+)
+
+
+console.log('\n\x1b[1mbudget spent thinking, nothing produced\x1b[0m')
+/* The reasoning breaker watches a request WHILE it streams and stands down the
+   moment any content or tool call appears, so a request that reasons quietly all
+   the way to its cap reaches the end untouched. That ended the turn with advice
+   addressed to a human, which is no use overnight. Watched one die exactly so:
+   63.7k prompt, 1.8k reasoning, finish_reason 'length', nothing produced. */
+const lenBlock = code.slice(code.indexOf('const spentItAllThinking'), code.indexOf('const spentItAllThinking') + 1100)
+check('the length-exhaustion branch exists', lenBlock.length > 100)
+check('it only fires on finish_reason length', /finishReason === 'length'/.test(lenBlock))
+check('it requires that reasoning actually consumed the budget',
+  /turnMetrics\.reasoningTokens \?\? 0\) > 0/.test(lenBlock),
+  'a plain long answer that hit the cap is not a spiral and must not be retried blind')
+check('a user abort is NOT retried', /!controller\.signal\.aborted/.test(lenBlock))
+check('the retry turns thinking off', /effortThisRequest = 'none'/.test(lenBlock),
+  'the same remedy the mid-stream breaker applies')
+check('it shares the spiral budget rather than inventing a new one',
+  /reasoningTrips < MAX_REASONING_TRIPS/.test(lenBlock) && /reasoningTrips \+= 1/.test(lenBlock))
+check('and latches thinking off once the budget is spent',
+  /reasoningTrips >= MAX_REASONING_TRIPS\) effortLatchedOff = true/.test(lenBlock))
+check('the abandoned message is removed', /conv\.messages\.splice\(ghost, 1\)/.test(lenBlock))
+check('the retry gets a fresh signal', /controller = new AbortController\(\)/.test(lenBlock))
+
 console.log(failures === 0 ? '\n\x1b[32mall checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
 process.exit(failures === 0 ? 0 : 1)
