@@ -146,6 +146,27 @@ export interface IpcApi {
   'files:contextMenu': (path: string) => Promise<void>
   'artifacts:open': (path: string) => Promise<void>
   'artifacts:readDataUrl': (path: string) => Promise<string | null>
+  /**
+   * A previewable file, as a data URL — images, audio, PDF and plain text.
+   *
+   * Separate from readDataUrl, which answers only for images and is what the
+   * edit pipeline's size ceiling is tied to. Widening that one would have made
+   * a 40MB WAV pass a check written about textures. This one carries its own
+   * per-kind ceiling and reports the mime type, because a renderer that has to
+   * guess the type from the extension is one refactor away from feeding a PDF
+   * to an <img>.
+   */
+  'artifacts:preview': (
+    path: string
+  ) => Promise<{
+    dataUrl: string
+    mime: string
+    bytes: number
+    /** Set when the bytes are a RENDERING of the file rather than the file —
+     *  a PDF comes back as a PNG of its first page. The panel says so; without
+     *  it the preview would silently imply the document is one page long. */
+    renderedFrom?: 'pdf'
+  } | null>
 
   /* ---- telemetry ---- */
   'telemetry:health': () => Promise<ServerHealth>
@@ -355,6 +376,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'files:contextMenu',
   'artifacts:open',
   'artifacts:readDataUrl',
+  'artifacts:preview',
   'telemetry:health',
   'telemetry:history',
   'control:state',

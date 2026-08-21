@@ -7,8 +7,12 @@
  */
 
 import { dialog, ipcMain, shell, app, BrowserWindow, Menu, clipboard } from 'electron'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { readdir, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
+import { promisify } from 'node:util'
 
 import type {
   IpcApi,
@@ -94,7 +98,68 @@ type Handlers = {
 }
 
 /** Chat attachments may be any image the model can look at, SVG included. */
+const execFileAsync = promisify(execFile)
+
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'])
+
+/**
+ * What the files panel is allowed to load inline, and how big each may be.
+ *
+ * Audio gets the largest ceiling because a rendered song legitimately runs to
+ * tens of megabytes; text gets the smallest because the panel shows the head of
+ * it, and pulling a 50MB CSV across the bridge to display forty lines is pure
+ * waste. Anything not listed is opened in the user's own application instead —
+ * which is the better answer for a .docx regardless.
+ */
+/**
+ * The first page of a PDF, as PNG bytes.
+ *
+ * Written to a temp file because sips has no stdout mode, and removed straight
+ * after — a preview that leaves a copy of every document it showed in /tmp is
+ * a quiet way to spread files someone may not want spread.
+ *
+ * -Z bounds the LONGEST side, so a landscape page and a portrait one both come
+ * back at a sane size without either being stretched.
+ */
+async function renderPdfFirstPage(path: string): Promise<Buffer | null> {
+  const out = join(tmpdir(), `clpdf-${randomUUID()}.png`)
+  try {
+    await execFileAsync('/usr/bin/sips', ['-s', 'format', 'png', '-Z', '1600', path, '--out', out], {
+      timeout: 20_000
+    })
+    return await readFile(out)
+  } catch {
+    return null
+  } finally {
+    await rm(out, { force: true }).catch(() => undefined)
+  }
+}
+
+const MB = 1024 * 1024
+const PREVIEWABLE: Record<string, { mime: string; max: number }> = {
+  png: { mime: 'image/png', max: 32 * MB },
+  jpg: { mime: 'image/jpeg', max: 32 * MB },
+  jpeg: { mime: 'image/jpeg', max: 32 * MB },
+  gif: { mime: 'image/gif', max: 32 * MB },
+  webp: { mime: 'image/webp', max: 32 * MB },
+  bmp: { mime: 'image/bmp', max: 32 * MB },
+  svg: { mime: 'image/svg+xml', max: 8 * MB },
+  mp3: { mime: 'audio/mpeg', max: 96 * MB },
+  wav: { mime: 'audio/wav', max: 96 * MB },
+  flac: { mime: 'audio/flac', max: 96 * MB },
+  ogg: { mime: 'audio/ogg', max: 96 * MB },
+  m4a: { mime: 'audio/mp4', max: 96 * MB },
+  aac: { mime: 'audio/aac', max: 96 * MB },
+  mp4: { mime: 'video/mp4', max: 96 * MB },
+  webm: { mime: 'video/webm', max: 96 * MB },
+  pdf: { mime: 'application/pdf', max: 64 * MB },
+  txt: { mime: 'text/plain', max: 1 * MB },
+  md: { mime: 'text/plain', max: 1 * MB },
+  csv: { mime: 'text/plain', max: 1 * MB },
+  json: { mime: 'text/plain', max: 1 * MB },
+  log: { mime: 'text/plain', max: 1 * MB },
+  html: { mime: 'text/plain', max: 1 * MB }
+}
 
 /** The edit source picker is narrower: only what the img2img pipeline accepts,
  *  so the dialog cannot offer a file that is then silently refused. */
@@ -452,6 +517,54 @@ export function registerIpc(d: IpcDeps): void {
       // http(s) and openPath handles the filesystem.
       if (/^https?:\/\//i.test(path)) void shell.openExternal(path)
       else void shell.openPath(path)
+    },
+    /*
+     * Anything the panel can show inline.
+     *
+     * An allowlist rather than "read whatever is asked for": this hands file
+     * bytes to the renderer, and the renderer is the part that runs model
+     * output. Each kind carries its own ceiling — a texture ceiling written for
+     * the edit pipeline is the wrong number for a WAV, and one number for both
+     * is wrong for one of them.
+     */
+    'artifacts:preview': async (path: string) => {
+      if (/^https?:\/\//i.test(path)) return null
+      const ext = extname(path).slice(1).toLowerCase()
+      const kind = PREVIEWABLE[ext]
+      if (!kind) return null
+      const info = await stat(path).catch(() => null)
+      if (!info || !info.isFile() || info.size > kind.max) return null
+      /*
+       * A PDF comes back as a picture of its first page.
+       *
+       * Chromium's own viewer is not usable here: <embed> and <iframe> both
+       * load the blob without complaint and paint nothing, in a packaged build,
+       * with plugins enabled and navigator.pdfViewerEnabled true. There is no
+       * error anywhere to distinguish that from a corrupt file — verified the
+       * bytes were a valid 73KB %PDF-1.4 with the right blob type, and it still
+       * rendered an empty rectangle.
+       *
+       * sips is part of macOS, this app is macOS-only, and one page is a real
+       * preview for a sidebar. The full document is one click away in Preview,
+       * which is the better place to read it anyway.
+       */
+      if (kind.mime === 'application/pdf') {
+        const png = await renderPdfFirstPage(path)
+        if (!png) return null
+        return {
+          dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+          mime: 'image/png',
+          bytes: info.size,
+          renderedFrom: 'pdf'
+        }
+      }
+      const buf = await readFile(path).catch(() => null)
+      if (!buf) return null
+      return {
+        dataUrl: `data:${kind.mime};base64,${buf.toString('base64')}`,
+        mime: kind.mime,
+        bytes: info.size
+      }
     },
     'artifacts:readDataUrl': async (path: string) => {
       const ext = extname(path).slice(1).toLowerCase()

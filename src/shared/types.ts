@@ -33,9 +33,10 @@ export type WorkflowId =
 export type PanelKind =
   | 'none'
   | 'transcript'
-  /** The orb, over the spoken transcript. Converse shows the conversation in
-   *  the centre, so the voice UI lives here instead of taking the main pane. */
-  | 'voice'
+  /** Everything the conversation produced, newest first — images, audio,
+   *  documents, data. By recency rather than by type: what you want is almost
+   *  always the thing just made, and sorting by kind buries it. */
+  | 'outputs'
   | 'flights'
   | 'files'
   | 'gallery'

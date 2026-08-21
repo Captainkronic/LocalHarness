@@ -279,6 +279,13 @@ app.whenReady().then(async () => {
        view does not know or care which kind of turn produced a message. The
        list is refreshed only on structural changes — a mid-stream draft would
        otherwise rewrite every sidebar row at 16Hz to change nothing. */
+    /* Both halves of Orchestrator.recordArtifact: the per-workflow store the
+       panel reads on switch, and the live channel it appends from. Doing only
+       the second would make a file vanish the next time the workflow loaded. */
+    onArtifact: (workflowId, artifact) => {
+      artifacts.add(workflowId, artifact)
+      emit('event:artifact', artifact)
+    },
     onConversation: (c, structural) => {
       emit('event:conversationUpdated', c)
       if (structural) emit('event:conversationList', conversations.list())

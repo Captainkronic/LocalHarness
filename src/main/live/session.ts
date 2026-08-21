@@ -34,6 +34,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type {
+  Artifact,
   ChatMessage,
   Conversation,
   LiveAudioChunk,
@@ -47,7 +48,8 @@ import type {
   Settings,
   ToolCall,
   TurnMetrics,
-  WorkflowDefinition
+  WorkflowDefinition,
+  WorkflowId
 } from '@shared/types'
 import { WORKFLOW_BY_ID, isVoiceWorkflow } from '@shared/workflows'
 
@@ -179,6 +181,13 @@ export interface LiveSessionOptions {
    * spoken exchange.
    */
   onConversation: (c: Conversation, structural: boolean) => void
+  /**
+   * A file a spoken turn produced.
+   *
+   * Same store and same channel the Orchestrator uses, so the panel does not
+   * care which kind of turn wrote the file.
+   */
+  onArtifact: (workflowId: WorkflowId, artifact: Artifact) => void
   /**
    * Per-request telemetry, at ~4Hz.
    *
@@ -1225,10 +1234,17 @@ export class LiveSession {
   /**
    * Runs one MCP tool for a spoken turn and appends its result.
    *
-   * Deliberately unlike the Orchestrator's version: no approval gate, no
-   * artifact recording, and the output is clipped hard. Live only ever offers
-   * read-only servers (weather, news, mail), so there is nothing here worth
-   * stopping to ask about — and a spoken turn cannot show a dialog anyway.
+   * Deliberately unlike the Orchestrator's version: no approval gate, and the
+   * output is clipped hard. Live only ever offers read-only servers (weather,
+   * news, mail), so there is nothing here worth stopping to ask about — and a
+   * spoken turn cannot show a dialog anyway.
+   *
+   * Artifacts ARE recorded, which they were not. The comment here used to say
+   * they were skipped, and that was right for Live: nothing it could reach
+   * wrote a file. Converse broke the premise — it carries docgen, comfy-image
+   * and comfy-audio — so asking out loud for a PDF produced the PDF, said so,
+   * and recorded nothing, leaving the file on disk and absent from every panel
+   * that lists what was made.
    * A failure is appended as text rather than thrown, so the model can say
    * what went wrong in its own voice instead of the turn dying silently.
    */
@@ -1256,6 +1272,10 @@ export class LiveSession {
       // does not enter the model's context and so costs no prefill; only
       // `text` does, and that is what MAX_TOOL_RESULT_CHARS clips.
       call.structured = result.structured
+      call.artifacts = result.artifacts
+      for (const artifact of result.artifacts) {
+        this.o.onArtifact(this.workflow.id, artifact)
+      }
       call.status = result.isError ? 'error' : 'ok'
       if (result.isError) call.error = result.text
     } catch (err) {

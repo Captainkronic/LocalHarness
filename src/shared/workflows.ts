@@ -329,7 +329,7 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
        file the conversation. Without this, pressing Start call here would move
        the thread to Live and take the whole app with it. */
     voice: true,
-    panel: 'voice',
+    panel: 'outputs',
     mcpServers: ['fastfacts', 'gmail'],
     nativeTools: [],
     preferredModel: 'google/gemma-4-26b-a4b-qat',
