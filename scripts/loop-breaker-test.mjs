@@ -43,7 +43,8 @@ const entry = (name, args, result, acting) => ({
   callKey: L.callKeyFor([{ name, arguments: args }]),
   shapeKey: L.shapeKeyFor([{ name, arguments: args }]),
   resultKey: result,
-  acting: acting ?? L.isActing([{ name, arguments: args }])
+  acting: acting ?? L.isActing([{ name, arguments: args }]),
+  target: L.targetKeyFor([{ name, arguments: args }])
 })
 
 /** Feed a sequence; return the 1-based index of the call that gets stopped. */
@@ -146,6 +147,47 @@ check('malformed JSON is passed through rather than thrown on',
   typeof L.collapseProse('{"pa') === 'string')
 check('a non-object argument survives', L.collapseProse('"just a string"') === '"just a string"')
 
+console.log('\nCache busting — what defeated ALL THREE rules')
+/* Live regression. A mini-golf run could not see its own change, started
+   appending ?retry=N, and ran thirty iterations of page_eval + read_file
+   reading `ball: null` every time. The varying query gave every call a fresh
+   callKey AND shapeKey, and because page tools echo the URL back it gave every
+   RESULT a fresh key too, so rules 1, 2 and 3 all stood down. */
+const busted = (n) => JSON.stringify({ url: `http://127.0.0.1:57619/index.html?retry=${n}` })
+check('cache-busted URLs collapse to one shape',
+  L.shapeKeyFor([{ name: 'page_eval', arguments: busted(1) }]) ===
+  L.shapeKeyFor([{ name: 'page_eval', arguments: busted(30) }]))
+check('a different PATH still does not collapse',
+  L.shapeKeyFor([{ name: 'view_page', arguments: '{"url":"http://h/a.html?x=1"}' }]) !==
+  L.shapeKeyFor([{ name: 'view_page', arguments: '{"url":"http://h/b.html?x=1"}' }]),
+  'only the query is dropped, never the path')
+check('a query-free URL is left exactly as it was',
+  L.collapseProse('{"url":"http://h/a.html"}') === '{"url":"http://h/a.html"}')
+check('a non-URL string is left alone',
+  L.collapseProse('{"path":"/tmp/a?b"}') === '{"path":"/tmp/a?b"}')
+
+const retryLoop = []
+for (let i = 1; i <= 12; i++) {
+  retryLoop.push(entry('page_eval',
+    JSON.stringify({ url: `http://127.0.0.1:57619/index.html?retry=${i}`, expression: 'probe()' }),
+    `PAGE EVAL http://127.0.0.1:57619/index.html?retry=${i} { "ball": null }`))
+  retryLoop.push(entry('read_file', '{"path":"game.js","offset":201}', 'line 201 ...'))
+}
+const tR = firstTrip(retryLoop)
+check('the ?retry= loop is now stopped', tR !== null, JSON.stringify(tR))
+check('it is caught by the shape rule', tR?.rule === 'shape', tR?.rule)
+check('it is stopped inside twelve calls', (tR?.at ?? 99) <= 12, `at ${tR?.at}`)
+
+/* The counterpart that must still be allowed: same shape after collapsing, but
+   the model is writing files between looks. That is a build loop. */
+const bustedButBuilding = []
+for (let i = 1; i <= 12; i++) {
+  bustedButBuilding.push(entry('page_eval', busted(i), `look ${i}`))
+  bustedButBuilding.push(entry('write_file', `{"path":"game.js","content":"v${i}"}`, `Wrote game.js (${i})`))
+}
+check('cache busting while WRITING files is never stopped',
+  firstTrip(bustedButBuilding) === null, JSON.stringify(firstTrip(bustedButBuilding)))
+
 console.log('\nShape rule does not fire too early')
 const shortCycle = []
 for (let i = 0; i < 3; i++) {
@@ -161,9 +203,109 @@ for (let i = 0; i < 6; i++) {
 }
 check('a two-step cycle is stopped by the eighth call', firstTrip(longerTwo)?.at === 8,
   `at ${firstTrip(longerTwo)?.at}`)
-check('genuine varied work is never stopped', firstTrip(
+check("genuine varied work is never stopped (legacy)", firstTrip(
   Array.from({ length: 30 }, (_, i) => entry('read_file', `{"path":"f${i}.ts"}`, `contents ${i}`))
 ) === null)
+
+console.log('\nRule 4 — looking without ever acting')
+/* Live regression. Sixteen minutes on the mini-golf run went to reading one
+   file at shifting offsets and probing one page. Every call was distinct, so
+   rules 1-3 all stood down: there was no repetition to find, only paralysis. */
+const paralysis = []
+for (let i = 0; i < 8; i++) {
+  paralysis.push(entry('read_file', `{"path":"game.js","offset":${100 + i * 7}}`, `lines ${i}`))
+  paralysis.push(entry('page_eval', `{"url":"http://h/index.html","expression":"probe${i}()"}`, `null ${i}`))
+}
+const t4 = firstTrip(paralysis)
+check('reading ONE file at shifting offsets is stopped', t4 !== null, JSON.stringify(t4))
+check('it is caught by the observing rule', t4?.rule === 'observing', t4?.rule)
+check('the reason says nothing was written',
+  /nothing was written/.test(t4?.why ?? ''), t4?.why)
+
+check('breadth is still never stopped — thirty DIFFERENT files', firstTrip(
+  Array.from({ length: 30 }, (_, i) => entry('read_file', `{"path":"f${i}.ts"}`, `contents ${i}`))
+) === null, 'exploring a codebase is work, not paralysis')
+
+/* One edit anywhere in the stretch is enough to mean the model is building. */
+const readingButEditing = []
+for (let i = 0; i < 8; i++) {
+  readingButEditing.push(entry('read_file', `{"path":"game.js","offset":${i * 9}}`, `lines ${i}`))
+  readingButEditing.push(entry('edit_file', `{"path":"game.js","old_string":"a${i}"}`, `+1 -1`))
+}
+check('a read/edit cycle is never stopped by rule 4',
+  firstTrip(readingButEditing) === null, JSON.stringify(firstTrip(readingButEditing)))
+
+check('a target ignores the cache-busting query',
+  L.targetKeyFor([{ name: 'page_eval', arguments: '{"url":"http://h/a?retry=1"}' }]) ===
+  L.targetKeyFor([{ name: 'page_eval', arguments: '{"url":"http://h/a?retry=99"}' }]))
+
+console.log('\nRule 5 — thinking far more than it is doing')
+/* Live measurement, flight-sim build: consecutive steps in one turn spent
+   1,955 / 385 / 6,421 reasoning tokens to produce one run_shell, one grep and
+   two read_file calls. Six minutes at 18 tok/s to decide to read two files, and
+   neither existing guard could see it — the runaway breaker stands down as soon
+   as a tool call appears, and rule 4 counts calls without knowing their cost. */
+const think = (name, args, result, reasoning) =>
+  ({ ...entry(name, args, result), reasoning })
+const pondering = [
+  think('read_file', '{"path":"sim.js","offset":10}', 'lines', 5000),
+  think('grep', '{"pattern":"lift","path":"sim.js"}', 'hits', 5000),
+  think('read_file', '{"path":"sim.js","offset":200}', 'lines', 5000)
+]
+const t5 = firstTrip(pondering)
+check('expensive thinking with nothing written is stopped', t5 !== null, JSON.stringify(t5))
+check('it is caught by the pondering rule', t5?.rule === 'pondering', t5?.rule)
+check('the reason quantifies the spend', /k tokens thinking/.test(t5?.why ?? ''), t5?.why)
+
+check('ONE big thinking step is left alone', firstTrip([
+  think('read_file', '{"path":"a.js"}', 'x', 20000)
+]) === null, 'a hard problem thought about properly must not be interrupted')
+check('two are still left alone', firstTrip([
+  think('read_file', '{"path":"a.js"}', 'x', 9000),
+  think('read_file', '{"path":"b.js"}', 'y', 9000)
+]) === null, 'three in a row is the pattern; two is not')
+
+check('cheap looking never trips rule 5', firstTrip([
+  think('read_file', '{"path":"a.js"}', 'x', 50),
+  think('read_file', '{"path":"b.js"}', 'y', 50),
+  think('read_file', '{"path":"c.js"}', 'z', 50)
+]) === null)
+check('thinking hard while WRITING is never stopped', firstTrip([
+  think('read_file', '{"path":"a.js"}', 'x', 9000),
+  think('edit_file', '{"path":"a.js","old_string":"q"}', '+1 -1', 9000),
+  think('read_file', '{"path":"a.js"}', 'y', 9000),
+  think('edit_file', '{"path":"a.js","old_string":"r"}', '+1 -1', 9000)
+]) === null, 'deliberating between edits is a model doing the job')
+check('an entry with no reasoning reported cannot trip it', firstTrip([
+  entry('read_file', '{"path":"a.js"}', 'x'),
+  entry('read_file', '{"path":"b.js"}', 'y'),
+  entry('read_file', '{"path":"c.js"}', 'z')
+]) === null, 'absent must mean zero, never "unknown so assume the worst"')
+
+console.log('\nResult digests — the other half of the ?retry= failure')
+check('a cache-busted URL inside a RESULT collapses',
+  L.collapseResultUrls('PAGE EVAL http://127.0.0.1:57619/index.html?retry=31 (0.55s) ball: null') ===
+  L.collapseResultUrls('PAGE EVAL http://127.0.0.1:57619/index.html?retry=7 (0.55s) ball: null'))
+check('a result with no URL is untouched',
+  L.collapseResultUrls('exit 0 — done') === 'exit 0 — done')
+check('two genuinely different paths stay different',
+  L.collapseResultUrls('see http://h/a?x=1') !== L.collapseResultUrls('see http://h/b?x=1'))
+
+/* Live regression, flight-sim run. Thirty page_eval calls with byte-identical
+   arguments all answered {"vBefore":0,"dz":0}; the ONLY difference between
+   results was the elapsed-time stamp the tool prints. Ten milliseconds of
+   jitter broke rule 1's run and added a fourth "distinct outcome" for rule 2. */
+const evalAt = (s) => `PAGE EVAL  http://127.0.0.1:62880/index.html   (${s})  {"vBefore":0,"dz":0}`
+check('an elapsed-time stamp does not make two identical answers differ',
+  L.collapseResultUrls(evalAt('0.02s')) === L.collapseResultUrls(evalAt('0.01s')))
+check('a millisecond stamp collapses too',
+  L.collapseResultUrls('ran (35ms)') === L.collapseResultUrls('ran (1200ms)'))
+check('a bare number in the output is DATA and survives',
+  L.collapseResultUrls('airspeed 34.2 kt') !== L.collapseResultUrls('airspeed 51.8 kt'),
+  'collapsing measured values would blind the breaker to real progress')
+check('a genuinely different answer still differs at the same elapsed time',
+  L.collapseResultUrls(evalAt('0.02s')) !==
+  L.collapseResultUrls('PAGE EVAL  http://127.0.0.1:62880/index.html   (0.02s)  {"vBefore":0,"dz":6.8}'))
 
 console.log('\nAdvice the MODEL actually receives')
 /*

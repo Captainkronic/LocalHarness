@@ -50,6 +50,103 @@ export const SHAPE_MIN_REPEATS = 3
 export const SHAPE_MIN_SPAN = 8
 
 /**
+ * Rule 4's threshold: consecutive calls that looked without touching anything.
+ *
+ * Rules 1-3 all need REPETITION. Paralysis does not repeat — a model can read a
+ * different region of the file, grep a different pattern and probe a different
+ * expression every single time and still be no closer to writing a line. On a
+ * mini-golf run this cost sixteen minutes and produced no edit; on another pass
+ * it cost ten. Every call was distinct, so nothing fired.
+ *
+ * Fourteen is deliberately generous. Orientation at the start of a task is real
+ * work and a model landing in an unfamiliar file should be allowed to look
+ * around properly. What this catches is looking around INSTEAD of deciding, and
+ * because it arrives as a nudge rather than a stop, a genuinely read-only task
+ * — reviewing a diff, explaining a codebase — is told once and carries on.
+ */
+export const MAX_OBSERVING_CALLS = 14
+
+/**
+ * …and how few things it may have been looking AT for rule 4 to mean anything.
+ *
+ * Breadth is work. A model reading thirty different files is exploring a
+ * codebase and must never be interrupted for it. What went wrong on the golf
+ * run was narrow: fourteen reads of ONE file at shifting offsets, and page
+ * probes against ONE url. Same tools, same absence of edits — but circling a
+ * single artifact rather than covering ground.
+ *
+ * So rule 4 needs both halves: a long stretch that acted on nothing AND barely
+ * any distinct targets in it.
+ */
+export const OBSERVING_MAX_TARGETS = 3
+
+/**
+ * Reasoning tokens a turn may spend across steps that changed nothing.
+ *
+ * The gap between the two guards that already exist. The runaway breaker counts
+ * reasoning that produced NO output and is right to stand down the moment a
+ * tool call appears; rule 4 counts calls that acted on nothing and cannot see
+ * how expensive they were. Neither notices deliberation wildly out of
+ * proportion to what it yielded.
+ *
+ * Measured on a flight-sim build, consecutive steps in one turn:
+ *
+ *     1,955 reasoning tokens  ->  one run_shell
+ *       385 reasoning tokens  ->  one grep
+ *     6,421 reasoning tokens  ->  two read_file calls
+ *
+ * That last step is about six minutes at 18 tok/s to decide to read two files,
+ * and nothing anywhere was in a position to say so. Reasoning is billed against
+ * the same budget as the reply, so this is not merely slow — it is the budget
+ * being spent on deciding rather than doing.
+ *
+ * 12,000 is roughly eleven minutes of pure thinking on this hardware. Below
+ * that a model is working; above it, with nothing written, it is circling in a
+ * way the other rules cannot see.
+ */
+export const MAX_REASONING_WITHOUT_ACTING = 12_000
+
+/**
+ * …spread over at least this many steps.
+ *
+ * One enormous step is a hard problem being thought about properly, and
+ * stopping that would be exactly the over-eager failure the file warns about.
+ * Three in a row, all costly, none of them acting, is a pattern.
+ */
+export const PONDERING_MIN_STEPS = 3
+
+/**
+ * Argument keys that name the thing a call is aimed at, in priority order.
+ *
+ * `path` before `url` because an edit-and-check cycle names a file on one side
+ * and a page on the other, and the file is the thing being circled.
+ */
+const TARGET_ARG_KEYS = ['path', 'file', 'filename', 'url', 'pattern']
+
+/** What a call was aimed at: a path or url if it names one, else the tool. */
+export function targetKeyFor(calls: LoopCall[]): string {
+  return calls
+    .map((c) => {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(c.arguments)
+      } catch {
+        return c.name
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return c.name
+      const rec = parsed as Record<string, unknown>
+      for (const key of TARGET_ARG_KEYS) {
+        const v = rec[key]
+        /* Collapsed, so ?retry=N does not make each look like a fresh target —
+           that would defeat rule 4 the same way it defeated rules 1 to 3. */
+        if (typeof v === 'string' && v !== '') return `${c.name}@${collapseUrl(v)}`
+      }
+      return c.name
+    })
+    .join('|')
+}
+
+/**
  * Tools that DO something, as opposed to look at something.
  *
  * run_shell is on this list deliberately. A watcher written for these same runs
@@ -83,11 +180,58 @@ export interface LoopEntry {
   resultKey: string
   /** True when this step wrote a file or ran a command. */
   acting: boolean
+  /**
+   * What the call was aimed at — a path or url where one is named.
+   *
+   * Optional because rule 4 is the only reader: an entry without it counts as
+   * its own target, which makes a caller that does not set it simply never
+   * trip rule 4 rather than trip it wrongly.
+   */
+  target?: string
+  /**
+   * Reasoning tokens the request that produced this call spent.
+   *
+   * Optional, and absent means zero: a caller that does not report it simply
+   * never trips rule 5 rather than tripping it wrongly.
+   */
+  reasoning?: number
 }
 
 export interface LoopCall {
   name: string
   arguments: string
+}
+
+/**
+ * Collapse the query string of a URL value, keeping origin and path.
+ *
+ * A model that cannot see a change it expects will reach for cache busting —
+ * `?retry=1`, `?retry=2`, `?t=<now>` — and that single varying token defeats
+ * all three rules at once. It changes the callKey, so rule 1 never sees a
+ * repeat; it changes the shapeKey, so rule 3 never sees a cycle; and because
+ * page tools echo the URL back in their output it changes the resultKey too,
+ * so rule 2 counts twelve distinct outcomes and shrugs.
+ *
+ * Observed live on a mini-golf run: thirty iterations of
+ * `page_eval` + `read_file` at `?retry=1..30`, reading `ball: null` every time
+ * because the page exposed no debug hook. Nothing stopped it, and the turn was
+ * heading for a full context window.
+ *
+ * The query is dropped for SHAPE only. Two loads of the same path are the same
+ * step of the same procedure, which is precisely what shape is meant to
+ * capture. Rule 3 still fires only when nothing in the span wrote a file or ran
+ * a command, so a model genuinely walking `?hole=1..9` while building is left
+ * alone — and a constant tail collapses to period 1, which is rule 1's
+ * business and needs identical RESULTS before it acts.
+ */
+function collapseUrl(value: string): string {
+  if (!/^https?:\/\//i.test(value)) return value
+  try {
+    const u = new URL(value)
+    return u.search ? `${u.origin}${u.pathname}?<query>` : value
+  } catch {
+    return value // not parseable; leave it verbatim rather than guess
+  }
 }
 
 /** Replace prose values with a marker and sort keys, so only shape survives. */
@@ -103,7 +247,12 @@ export function collapseProse(argsJson: string): string {
   const out: Record<string, unknown> = {}
   for (const key of Object.keys(rec).sort()) {
     const value = rec[key]
-    out[key] = PROSE_ARG_KEYS.has(key.toLowerCase()) && typeof value === 'string' ? '<prose>' : value
+    out[key] =
+      typeof value !== 'string'
+        ? value
+        : PROSE_ARG_KEYS.has(key.toLowerCase())
+          ? '<prose>'
+          : collapseUrl(value)
   }
   return JSON.stringify(out)
 }
@@ -158,9 +307,45 @@ function periodic(tail: LoopEntry[], period: number): boolean {
 }
 
 export interface LoopVerdict {
-  rule: 'identical' | 'narrow' | 'shape'
+  rule: 'identical' | 'narrow' | 'shape' | 'observing' | 'pondering'
   /** Reads after "stopped because ...". */
   why: string
+}
+
+/**
+ * Collapse cache-busting query strings inside a RESULT digest.
+ *
+ * The mirror of `collapseUrl()`, and needed for the same live failure. Rule 2
+ * compares OUTCOMES, and the page tools echo the requested URL back into their
+ * output — "PAGE EVAL http://127.0.0.1:57619/index.html?retry=31 …". A model
+ * varying ?retry=N therefore produced a distinct result string on every pass
+ * even though the answer never changed, so twelve identical readings of
+ * `ball: null` counted as twelve different outcomes and rule 2 stood down.
+ *
+ * Normalising here rather than in the tool keeps the model's own view of the
+ * result honest — it still sees the URL it asked for.
+ */
+export function collapseResultUrls(text: string): string {
+  return (
+    text
+      .replace(/(https?:\/\/[^\s?#]+)\?[^\s]*/gi, '$1?<query>')
+      /*
+       * Elapsed-time stamps, for the same reason as the query string.
+       *
+       * The page tools head their output with how long the call took —
+       * "PAGE EVAL http://…/index.html   (0.02s)". That is tool chrome, not an
+       * answer, and it jitters. Caught live on a flight-sim run: thirty
+       * page_eval calls with BYTE-IDENTICAL arguments all returning
+       * {"vBefore":0,"dz":0}, where the only difference between results was
+       * (0.02s) versus (0.01s). Ten milliseconds of noise was enough to break
+       * rule 1's run of identical results and to inflate rule 2's outcome
+       * count from three to four.
+       *
+       * Only a parenthesised duration is collapsed. A bare number in the
+       * output is data — a measured airspeed, a token count — and must survive.
+       */
+      .replace(/\((\d+(?:\.\d+)?)\s*(ms|s)\)/gi, '(<elapsed>)')
+  )
 }
 
 /**
@@ -214,6 +399,47 @@ export function loopVerdict(history: LoopEntry[], next: LoopEntry): LoopVerdict 
     }
   }
 
+  /* Rule 5: thinking far more than it is doing.
+     Before rule 4 because it names the sharper fault when both apply — the
+     problem is not that fourteen calls looked, it is that the looking cost a
+     budget. Walks back over the trailing non-acting steps only. */
+  {
+    let spent = 0
+    let steps = 0
+    for (let i = full.length - 1; i >= 0; i--) {
+      const e = full[i]!
+      if (e.acting) break
+      spent += e.reasoning ?? 0
+      steps++
+    }
+    if (steps >= PONDERING_MIN_STEPS && spent > MAX_REASONING_WITHOUT_ACTING) {
+      return {
+        rule: 'pondering',
+        why:
+          `the last ${steps} steps spent about ${Math.round(spent / 1000)}k tokens thinking ` +
+          `and did not write a file or run a command`
+      }
+    }
+  }
+
+  /* Rule 4: looking, repeatedly, without ever touching anything.
+     Last, because rules 1-3 name a sharper fault when they apply. This one
+     needs no repetition at all — only that nothing in a long stretch acted. */
+  if (full.length >= MAX_OBSERVING_CALLS) {
+    const tail = full.slice(-MAX_OBSERVING_CALLS)
+    /* An entry with no target counts as unique, so a caller that never sets one
+       accumulates MAX_OBSERVING_CALLS distinct targets and this stays quiet. */
+    const targets = new Set(tail.map((e, i) => e.target ?? `#${i}`))
+    if (tail.every((e) => !e.acting) && targets.size <= OBSERVING_MAX_TARGETS) {
+      return {
+        rule: 'observing',
+        why:
+          `the last ${MAX_OBSERVING_CALLS} tool calls only looked at ${targets.size} ` +
+          `thing(s) — nothing was written and no command was run`
+      }
+    }
+  }
+
   return null
 }
 
@@ -262,8 +488,33 @@ export function loopAdvice(verdict: LoopVerdict, toolName: string): string {
       : verdict.rule === 'narrow'
         ? `Your last ${CYCLE_WINDOW} calls produced only a handful of distinct outcomes between ` +
           `them. You are circling.`
-        : `You have repeated the same short sequence of calls several times without writing a ` +
-          `file or running a command. Looking again is not going to change it.`
+        : verdict.rule === 'pondering'
+          ? `You have spent thousands of tokens thinking across your last few steps and have ` +
+            `not written a file or run a command in any of them.`
+          : verdict.rule === 'observing'
+            ? `Your last ${MAX_OBSERVING_CALLS} calls all looked at things — reading, grepping, ` +
+              `probing — and not one of them changed anything.`
+            : `You have repeated the same short sequence of calls several times without writing a ` +
+              `file or running a command. Looking again is not going to change it.`
+
+  /* Paralysis needs different advice from repetition. Telling a model that has
+     never acted "do not repeat that call" is answering a question it did not
+     ask; what it needs is permission to commit to an imperfect first version. */
+  if (verdict.rule === 'observing' || verdict.rule === 'pondering') {
+    return [
+      head,
+      'Nothing before this was lost — every earlier result still stands.',
+      '',
+      'You have enough to act. Make the change now, then judge it by what happens:',
+      '- Write the simplest version that could work. It does not have to be right first time —',
+      '  a wrong edit you can see the result of teaches you more than another read.',
+      '- If you are weighing exact values (a radius, a timeout, a coefficient), pick a reasonable',
+      '  one, write it, look at the result, and adjust. Deciding it in your head is slower and',
+      '  less reliable than measuring it.',
+      '- If you are re-reading to remind yourself what the code looks like, you already read it.',
+      '  Act on what you have; read again only when an edit fails.'
+    ].join('\n')
+  }
 
   return [
     head,
