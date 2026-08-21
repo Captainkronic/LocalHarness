@@ -687,7 +687,27 @@ export class Orchestrator {
 
       const requestEffort = effortThisRequest ?? selectedEffort()
       effortThisRequest = undefined
-      const reasoningCap = reasoningCapFor(requestEffort)
+      /*
+       * The opening request gets more room, because "nothing written yet" is
+       * not evidence there.
+       *
+       * The breaker fires on reasoning past the cap AND nothing written AND no
+       * tool call pending. On the FIRST request of a turn the second clause is
+       * true by definition, so the test collapses to the cap alone — and the
+       * opening plan is precisely where a model is supposed to think hardest.
+       * The result was that an open-ended brief tripped the breaker on step one
+       * every time and was re-sent with thinking off, so `medium` never got
+       * used for the one step it was chosen for. Measured on a website build:
+       * both recorded requests came back `reasoningEffortUsed: none` while the
+       * picker read Med.
+       *
+       * A spiral across LATER steps is caught by the pondering rule, which
+       * looks at reasoning spent over several steps that acted on nothing —
+       * evidence this per-request cap cannot see. That is what makes it safe to
+       * be generous here.
+       */
+      const reasoningCap =
+        iteration === 0 ? reasoningCapFor(requestEffort) * 2 : reasoningCapFor(requestEffort)
       /* Both per-REQUEST: the spiral counter measures this request, and the cap
          applies to it alone. */
       reasoningSoFar = 0

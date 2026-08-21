@@ -209,8 +209,11 @@ check('progress resets the consecutive counter',
 check('the reset happens where tool calls are known to exist',
   code.indexOf('if (reasoningTripsTotal < HARD_REASONING_TRIPS) reasoningTrips = 0') >
     code.indexOf('const calls = assistant.toolCalls'))
+check('the opening request gets a larger allowance',
+  /iteration === 0 \? reasoningCapFor\(requestEffort\) \* 2 : reasoningCapFor\(requestEffort\)/.test(code),
+  '"nothing written yet" is true by definition on step one, so the cap alone decides — and step one is where planning belongs')
 check('the reasoning cap follows the effort actually sent',
-  /const reasoningCap = reasoningCapFor\(requestEffort\)/.test(code),
+  /reasoningCapFor\(requestEffort\)/.test(code) && !/reasoningCapFor\(effort\)/.test(code),
   'a cap left from a different effort polices the wrong budget')
 
 /* Three spirals set effortLatchedOff and NOTHING ever cleared it, so a turn that
