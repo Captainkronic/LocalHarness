@@ -60,45 +60,83 @@ export default function ConverseWorkspace(): JSX.Element {
   return (
     <div className="cv">
       {/* The conversation, always. Spoken turns arrive here as ordinary
-          messages, so there is nothing to switch to in order to read them. */}
-      <div className="cv-thread">
-        <ChatView />
-      </div>
+          messages, so there is nothing to switch to in order to read them.
 
-      <div className="cv-bar">
-        <button
-          type="button"
-          className={running ? 'cv-call is-on' : 'cv-call'}
-          onClick={toggleCall}
-          aria-pressed={running}
-          title={running ? 'End the voice session' : 'Start talking'}
-        >
-          <span aria-hidden="true">{running ? '■' : '🎙'}</span>
-          {running ? 'Stop' : 'Talk'}
-        </button>
+          The microphone goes INSIDE the composer's input row, beside Send. The
+          first attempt put it in a strip underneath, where it read as a
+          footnote and sat two pixels from the bottom of the window — present,
+          and effectively invisible. A second way to say something belongs
+          where the first one already is. */}
+      <ChatView
+        composerAccessory={
+          <button
+            type="button"
+            className={running ? 'cv-mic is-on' : 'cv-mic'}
+            onClick={toggleCall}
+            aria-pressed={running}
+            title={running ? 'Stop talking (end the voice session)' : 'Talk instead of typing'}
+            aria-label={running ? 'Stop the voice session' : 'Talk instead of typing'}
+          >
+            <MicIcon speaking={running && liveStatus.userSpeaking} stop={running} />
+            <span className="cv-mic-label">{running ? 'Stop' : 'Talk'}</span>
+          </button>
+        }
+      />
 
-        {/* A level meter only while there is a level. A dead bar beside an idle
-            microphone reads as broken hardware. */}
-        {running ? (
+      {/*
+        A status line only while a call is up.
+
+        During a spoken turn the only other signal is silence, and silence reads
+        as a crash — so what it is doing is spelled out, with the level meter
+        and the transcription of what it heard beside it. When nothing is
+        running this whole row is absent rather than empty, because a permanent
+        strip saying "idle" is a strip of wasted screen.
+      */}
+      {running ? (
+        <div className="cv-bar" role="status">
           <span className="cv-level" aria-hidden="true">
             <span
               className={liveStatus.userSpeaking ? 'cv-level-fill is-hot' : 'cv-level-fill'}
               style={{ width: `${Math.round(Math.min(1, Math.max(0, liveStatus.level)) * 100)}%` }}
             />
           </span>
-        ) : null}
-
-        <span className="cv-say">{SAYS[state] ?? state}</span>
-
-        {running && liveStatus.lastUserText ? (
-          /* What it thought it heard, next to what you said. A misheard word is
-             the usual explanation for a strange answer, and without this the
-             answer simply looks wrong. */
-          <span className="cv-heard" title="What was transcribed">
-            “{liveStatus.lastUserText}”
-          </span>
-        ) : null}
-      </div>
+          <span className="cv-say">{SAYS[state] ?? state}</span>
+          {liveStatus.lastUserText ? (
+            /* What it thought it heard. A misheard word is the usual
+               explanation for a strange answer; without this the answer simply
+               looks wrong. */
+            <span className="cv-heard" title="What was transcribed">
+              “{liveStatus.lastUserText}”
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
+  )
+}
+
+/** Filled while you are actually speaking, so the button reflects the room. */
+function MicIcon({ speaking, stop }: { speaking: boolean; stop: boolean }): JSX.Element {
+  if (stop) {
+    return (
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
+      </svg>
+    )
+  }
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill={speaking ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="2" width="4" height="7" rx="2" />
+      <path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2" />
+    </svg>
   )
 }

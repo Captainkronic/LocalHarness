@@ -3,7 +3,7 @@
  * composer pinned below.
  */
 
-import { useCallback, useMemo, useState, type JSX } from 'react'
+import { useCallback, useMemo, useState, type JSX, type ReactNode } from 'react'
 import { useStore } from '@renderer/state/store'
 import { workflowPayload } from '@renderer/lib/payload'
 import { formatTokens } from '@renderer/lib/format'
@@ -15,7 +15,12 @@ import MessageList from './MessageList'
 import Composer from './Composer'
 import './chat.css'
 
-export default function ChatView() {
+/** An extra control for the composer's input row — see ComposerProps.accessory. */
+export interface ChatViewProps {
+  composerAccessory?: ReactNode
+}
+
+export default function ChatView({ composerAccessory }: ChatViewProps = {}) {
   const conversation = useStore((s) => s.conversation)
   const workflows = useStore((s) => s.workflows)
   const activeWorkflow = useStore((s) => s.activeWorkflow)
@@ -137,7 +142,12 @@ export default function ChatView() {
           />
         </div>
       )}
-      <Composer value={draft} onValueChange={setDraft} focusSignal={focusSignal} />
+      <Composer
+        value={draft}
+        onValueChange={setDraft}
+        focusSignal={focusSignal}
+        accessory={composerAccessory}
+      />
     </div>
   )
 }

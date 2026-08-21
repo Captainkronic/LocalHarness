@@ -14,8 +14,7 @@
   min-height: 0;
 }
 
-/* Under the composer rather than above it: the composer is the primary input,
-   and the bar is the alternative to it. */
+/* Only present while a call is up — see the component. */
 .cv-bar {
   display: flex;
   align-items: center;
@@ -87,4 +86,40 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+
+/* The microphone, in the composer's own control row beside Send.
+   Given a visible label as well as an icon: an unlabelled mic glyph in a row
+   that already has a paperclip and an arrow is one more thing to decode, and
+   the whole complaint was that this control could not be found. */
+.cv-mic {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 2px;
+  padding: 4px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+}
+
+.cv-mic:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Unmistakably live: this is a hot microphone and it should not be subtle. */
+.cv-mic.is-on {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.cv-mic-label {
+  font-weight: 500;
 }

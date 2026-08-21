@@ -10,7 +10,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent
+  type KeyboardEvent,
+  type ReactNode
 } from 'react'
 import type { Attachment } from '@shared/types'
 import { useStore } from '@renderer/state/store'
@@ -24,9 +25,23 @@ export interface ComposerProps {
   onValueChange?: (v: string) => void
   /** Bump to pull focus into the textarea. */
   focusSignal?: number
+  /**
+   * An extra control inside the input row, beside Send.
+   *
+   * Converse puts its microphone here rather than in a strip of its own. A
+   * second way to say something is an input affordance and belongs where the
+   * first one already is — the strip-underneath version read as a footnote and
+   * sat two pixels from the bottom of the window.
+   */
+  accessory?: ReactNode
 }
 
-export default function Composer({ value, onValueChange, focusSignal }: ComposerProps) {
+export default function Composer({
+  value,
+  onValueChange,
+  focusSignal,
+  accessory
+}: ComposerProps) {
   const send = useStore((s) => s.send)
   const cancel = useStore((s) => s.cancel)
   const phase = useStore((s) => s.live.phase)
@@ -220,6 +235,8 @@ export default function Composer({ value, onValueChange, focusSignal }: Composer
             onKeyDown={onKeyDown}
             spellCheck={false}
           />
+
+          {accessory}
 
           {running ? (
             <button
