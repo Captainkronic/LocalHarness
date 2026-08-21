@@ -210,5 +210,27 @@ check('and latches thinking off once the budget is spent',
 check('the abandoned message is removed', /conv\.messages\.splice\(ghost, 1\)/.test(lenBlock))
 check('the retry gets a fresh signal', /controller = new AbortController\(\)/.test(lenBlock))
 
+
+console.log('\n\x1b[1mthe latch is not a life sentence\x1b[0m')
+/* Three spirals set effortLatchedOff and NOTHING ever cleared it, so a turn that
+   stumbled on its opening plan ran the next several hours with thinking off.
+   Measured on a website build: seventeen steps and twenty-two files written with
+   reasoningEffortUsed 'none' while the sidebar said Med the whole time. */
+check('progress clears the consecutive counter',
+  /if \(reasoningTripsTotal < HARD_REASONING_TRIPS\) \{\s*\n\s*reasoningTrips = 0/.test(code),
+  'a turn that reached for a tool is not spiralling and must get thinking back')
+check('and lifts the latch', /reasoningTrips = 0\s*\n\s*effortLatchedOff = false/.test(code))
+check('the un-latch happens where tool calls are known to exist',
+  code.indexOf('if (reasoningTripsTotal < HARD_REASONING_TRIPS)') >
+    code.indexOf('const calls = assistant.toolCalls'),
+  'resetting before the calls are known would clear it on an empty reply too')
+check('a total counter exists and is never reset',
+  /let reasoningTripsTotal = 0/.test(code) && !/reasoningTripsTotal = 0\s*\n\s*effortLatchedOff/.test(code))
+check('both trip paths increment the total',
+  (code.match(/reasoningTripsTotal \+= 1/g) || []).length === 2,
+  'a path that bumps only the resettable counter can never reach the backstop')
+check('and the backstop is larger than the consecutive limit',
+  /HARD_REASONING_TRIPS = 8/.test(code) && /MAX_REASONING_TRIPS = 3/.test(code))
+
 console.log(failures === 0 ? '\n\x1b[32mall checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
 process.exit(failures === 0 ? 0 : 1)

@@ -114,6 +114,27 @@ const LOOP_HISTORY = 32
 const MAX_REASONING_TRIPS = 3
 
 /**
+ * Spirals in one turn before thinking is taken away for GOOD.
+ *
+ * MAX_REASONING_TRIPS counts spirals in a row and is right to be small. This
+ * counts them across the whole turn and exists because the small counter used
+ * to latch permanently: three spirals set `effortLatchedOff` and nothing ever
+ * cleared it, so a turn that stumbled on its opening plan ran the next several
+ * HOURS with thinking off.
+ *
+ * Measured on a website build: the model spent its first minutes planning an
+ * open-ended brief, tripped the breaker three times doing it, and then wrote
+ * seventeen steps and twenty-two files with `reasoningEffortUsed: none` — while
+ * the picker in the sidebar said Med the entire time. Every one of those steps
+ * was work the setting was chosen for.
+ *
+ * A turn that goes on to call tools has demonstrated it is not spiralling, so
+ * progress now gives thinking back. This is the backstop for the turn where it
+ * really is hopeless.
+ */
+const HARD_REASONING_TRIPS = 8
+
+/**
  * How many times a turn will re-issue a request that came back completely empty.
  *
  * An empty reply — no content, no tool calls, no error — is almost never the
@@ -587,6 +608,8 @@ export class Orchestrator {
      * second spiral was possible, so a broken brake looked like a working one.
      */
     let reasoningTrips = 0
+    /** Never reset. The backstop behind the resettable counter. */
+    let reasoningTripsTotal = 0
     /** Counts across the whole turn, so a flapping server cannot loop forever. */
     let emptyRetries = 0
     /** Set once a turn has spiralled too often to be trusted with thinking. */
@@ -726,6 +749,7 @@ export class Orchestrator {
             ) {
               trippedThisRequest = true
               reasoningTrips += 1
+              reasoningTripsTotal += 1
               /* Past this many spirals the turn has shown it cannot deliberate
                  on this problem, so thinking stays off for the rest of it
                  rather than being handed back to spiral again. An escalation
@@ -914,6 +938,7 @@ export class Orchestrator {
           (turnMetrics.reasoningTokens ?? 0) > 0
         if (spentItAllThinking && reasoningTrips < MAX_REASONING_TRIPS) {
           reasoningTrips += 1
+          reasoningTripsTotal += 1
           const ghost = conv.messages.indexOf(assistant)
           if (ghost !== -1) conv.messages.splice(ghost, 1)
           this.persist(conv, true)
@@ -966,6 +991,26 @@ export class Orchestrator {
         }
         finishedOnItsOwn = true
         break
+      }
+
+      /*
+       * Progress gives thinking back.
+       *
+       * A request that reached for a tool is not spiralling, whatever it did
+       * before, so the consecutive-spiral counter resets and the latch lifts.
+       * Without this a stumble on the opening plan — the hardest part of any
+       * task and the likeliest place to overthink — silenced the rest of a
+       * multi-hour turn, and the sidebar went on reporting the setting the user
+       * had chosen rather than the one being sent.
+       *
+       * `reasoningTripsTotal` is deliberately NOT reset: a turn that keeps
+       * spiralling between tool calls still latches for good once it has spent
+       * the whole allowance, which is the ping-pong this file has warned about
+       * since the one-shot flag was removed.
+       */
+      if (reasoningTripsTotal < HARD_REASONING_TRIPS) {
+        reasoningTrips = 0
+        effortLatchedOff = false
       }
 
       /*
