@@ -85,5 +85,21 @@ check('the tool-token term is still computed once, outside',
   !/const toolTokensForBudget = /.test(loop),
   'the tool list does not change within a turn; re-stringifying it every request is waste')
 
+
+console.log('\n\x1b[1mquit does not orphan a generation\x1b[0m')
+/* Quitting tore down MCP, speech, polling and served folders but left the HTTP
+   request to LM Studio open, so the server carried on generating a reply nobody
+   would read. On a single-slot server the next request queued behind that
+   orphan: a brand new run sat at "Reading 4.4k tokens of context" for NINE
+   MINUTES before it started, with nothing about the app saying why. */
+const main = await readFile(join(ROOT, 'src/main/index.ts'), 'utf8')
+check('shutdown aborts the in-flight turn', /orchestrator\.abortActive\(\)/.test(main))
+check('and does it BEFORE the slow teardown',
+  main.indexOf('orchestrator.abortActive()') < main.indexOf('await mcp.shutdown()'),
+  'aborting after several seconds of teardown leaves the server generating through all of it')
+check('the orchestrator exposes an id-free abort', /abortActive\(\): void \{/.test(code),
+  'cancel() needs a conversation id; shutdown has none and must not need one')
+check('it aborts whatever is active', /this\.active\?\.controller\.abort\(\)/.test(code))
+
 console.log(failures === 0 ? '\n\x1b[32mall auto-continue checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
 process.exit(failures === 0 ? 0 : 1)

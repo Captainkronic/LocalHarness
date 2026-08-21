@@ -400,6 +400,12 @@ app.whenReady().then(async () => {
   })
 
   const shutdown = async (): Promise<void> => {
+    /* FIRST, before anything slow. An in-flight generation outlives the app
+       otherwise: the socket is never closed from this side, the server keeps
+       producing a reply nobody will read, and on a single-slot server the next
+       request queues behind it. Measured at nine minutes of apparent stall on a
+       fresh run after a rebuild. */
+    orchestrator.abortActive()
     // Before the subsystems it observes go away, or it repaints against a
     // half-torn-down app on the way out.
     tray?.destroy()

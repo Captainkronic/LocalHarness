@@ -313,6 +313,25 @@ export class Orchestrator {
     })
   }
 
+  /**
+   * Abort whatever request is in flight, whichever conversation owns it.
+   *
+   * For quit. `cancel()` needs a conversation id because it is the user
+   * pressing Stop on a particular chat; shutdown has no such id and must not
+   * need one — it just has to make sure nothing is left generating.
+   *
+   * Skipping this was measured as a nine-minute stall. Quitting the app tore
+   * down MCP, speech, polling and the served folders but left the HTTP request
+   * to LM Studio open, so the server carried on generating a reply nobody would
+   * ever read. With `--parallel 1` the next request — a brand new run, after a
+   * rebuild — queued behind that orphan and sat at "Reading 4.4k tokens of
+   * context" for nine minutes before it started. Nothing was wrong with it, and
+   * nothing about the app said so.
+   */
+  abortActive(): void {
+    this.active?.controller.abort()
+  }
+
   cancel(conversationId: string): void {
     if (this.active?.conversationId !== conversationId) return
     this.active.controller.abort()
