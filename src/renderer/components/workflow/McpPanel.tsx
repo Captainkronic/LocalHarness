@@ -121,11 +121,39 @@ export function McpPanel(): JSX.Element {
   )
 
   // Workflow defaults first, then anything the user added, then the rest.
-  const ordered = useMemo(() => {
+  const naturalOrder = useMemo(() => {
     const rank = (s: McpServerSpec): number =>
       defaultIds.has(s.id) ? 0 : enabledIds.has(s.id) ? 1 : 2
     return [...specs].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
   }, [specs, defaultIds, enabledIds])
+
+  /**
+   * The order the rows were in when the pointer arrived, held until it leaves.
+   *
+   * The sort keys on `enabledIds`, so toggling a server re-sorts the list
+   * instantly — out from under the cursor that just clicked it. The natural
+   * follow-up gesture, clicking the same spot again to undo, then lands on
+   * whichever row slid into the vacancy. That is not a harmless mis-click: it
+   * changes the tool list and the per-message token payload, and nothing
+   * announces it. Observed turning `playwright` off and `comfy-audio` on.
+   *
+   * Null whenever the pointer is elsewhere, so the list still sorts itself the
+   * moment nobody is aiming at it.
+   */
+  const [frozenIds, setFrozenIds] = useState<string[] | null>(null)
+
+  const ordered = useMemo(() => {
+    if (frozenIds === null) return naturalOrder
+    const byId = new Map(naturalOrder.map((s) => [s.id, s] as const))
+    const held = new Set(frozenIds)
+    const out = frozenIds
+      .map((id) => byId.get(id))
+      .filter((s): s is McpServerSpec => s !== undefined)
+    // A server that appeared since the freeze goes on the end rather than
+    // being hidden until the pointer leaves.
+    for (const s of naturalOrder) if (!held.has(s.id)) out.push(s)
+    return out
+  }, [naturalOrder, frozenIds])
 
   const isToolOn = useCallback(
     (serverId: string, tool: McpToolInfo): boolean =>
@@ -279,7 +307,11 @@ export function McpPanel(): JSX.Element {
           <code> mcp-registry.ts</code>.
         </p>
       ) : (
-        <div className="mcp-list scroll-y">
+        <div
+          className="mcp-list scroll-y"
+          onPointerEnter={() => setFrozenIds(naturalOrder.map((s) => s.id))}
+          onPointerLeave={() => setFrozenIds(null)}
+        >
           {ordered.map((spec) => {
             const st = stateById.get(spec.id)
             const status: McpServerState['status'] = st?.status ?? 'stopped'

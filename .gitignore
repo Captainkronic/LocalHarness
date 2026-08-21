@@ -29,3 +29,6 @@ shots/
 /resources/mcp/
 /resources/wheels/
 /resources/runtime/
+
+# Overnight agentic run artifacts (transcripts, probes, browser profiles)
+.overnight/

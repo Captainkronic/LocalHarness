@@ -156,6 +156,10 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
    *
    * `armed` holds the id being counted down; null means nothing pending.
    */
+  /* The details panel under the ring. Closed by default: this strip's job is
+     one sentence, and everything below is for when that sentence is not enough. */
+  const [statsOpen, setStatsOpen] = useState(false)
+
   const [remainMs, setRemainMs] = useState<number | null>(null)
   const armed = useRef<string | null>(null)
   const cancelled = useRef<string | null>(null)
@@ -204,7 +208,16 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
 
   return (
     <div className="turn-strip">
-      <ContextRing />
+      <button
+        type="button"
+        className={`ts-ringbtn${statsOpen ? ' is-open' : ''}`}
+        aria-expanded={statsOpen}
+        aria-label={statsOpen ? 'Hide session details' : 'Show session details'}
+        onClick={() => setStatsOpen((v) => !v)}
+      >
+        <ContextRing />
+      </button>
+      {statsOpen ? <SessionStats onClose={() => setStatsOpen(false)} /> : null}
       <span className={`ts-status is-${tone}`} title={detail}>
         {text}
         {running && pushGapMs >= STALE_PUSH_MS ? (
@@ -322,15 +335,33 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
         }
         const composing =
           callOpenedAt !== null ? ` for ${formatMs(now - callOpenedAt)}` : ''
+        /*
+         * "composing", not "nothing on the wire".
+         *
+         * Both sentences describe the same healthy state — this server sends a
+         * tool call's arguments in one piece, so a file-sized argument really
+         * does put nothing on the wire for minutes. But one of them names what
+         * IS happening and the other names an absence, and an absence reads as
+         * a fault. Watching a run at 4am, "nothing on the wire for 3m 7s" is
+         * indistinguishable from a hang, and the honest reading — that the
+         * model is working hard and there is simply nothing to show yet —
+         * arrives only if you hover the tooltip.
+         *
+         * A genuine stall is caught elsewhere and properly: the first-token
+         * watchdog in llm/client.ts fails a request that never starts, and
+         * silence AFTER the reply has started is legitimate for as long as the
+         * body timeout allows. So this line has no fault to report, and should
+         * not imply one.
+         */
         if (tokenGapMs >= QUIET_WIRE_MS) {
           return {
-            text: `Writing ${what} — nothing on the wire${composing}`,
+            text: `Writing ${what} — composing${composing}`,
             detail: COMPOSING_TIP(callName),
             tone: 'live'
           }
         }
         return {
-          text: `Writing ${what} — nothing on the wire yet`,
+          text: `Writing ${what} — composing`,
           detail: COMPOSING_TIP(callName),
           tone: 'live'
         }
@@ -453,3 +484,174 @@ function ContextRing(): JSX.Element {
 }
 
 export default TurnStrip
+
+/* ------------------------------------------------------------------ */
+/* Session details                                                     */
+/* ------------------------------------------------------------------ */
+
+/** One label/value row. `hint` becomes the row's tooltip. */
+function Stat({
+  label,
+  value,
+  hint,
+  tone
+}: {
+  label: string
+  value: string
+  hint?: string
+  tone?: 'warn' | 'bad'
+}): JSX.Element {
+  return (
+    <div className="ss-row" title={hint}>
+      <span className="ss-label">{label}</span>
+      <span className={`ss-value tnum${tone ? ` is-${tone}` : ''}`}>{value}</span>
+    </div>
+  )
+}
+
+/**
+ * What the one-line strip cannot say.
+ *
+ * The strip is deliberately a single sentence about right now, and everything
+ * it leaves out was previously unreachable without opening devtools: how full
+ * the window is and WHAT is filling it, whether history has been dropped, what
+ * this request actually cost, and what the conversation has spent in total.
+ *
+ * Two rules carried over from the strip. Nothing here is a throughput rate the
+ * component computed itself — the rates come from the same live metrics the HUD
+ * reads, and are shown only while a request is in flight, so a dead number
+ * cannot linger. And an unknown is rendered "—", never zero and never a guess:
+ * a window whose size is not yet known must not read as an empty one.
+ */
+function SessionStats({ onClose }: { onClose: () => void }): JSX.Element {
+  const usage = useStore((s) => s.usage)
+  const warnAt = useStore((s) => s.settings.contextWarnFraction)
+  const slots = useStore((s) => s.settings.contextSlots)
+  const live = useStore((s) => s.live)
+  const health = useStore((s) => s.health)
+  const trimmed = useStore((s) => s.conversation?.trimmedMessages ?? 0)
+  const messages = useStore((s) => s.conversation?.messages ?? [])
+
+  /* Whole-conversation totals, walked once. Cheap next to a render that only
+     happens while the panel is open. */
+  let toolCalls = 0
+  let outTokens = 0
+  let reasoningTokens = 0
+  let requests = 0
+  let slowestMs = 0
+  for (const m of messages) {
+    toolCalls += m.toolCalls?.length ?? 0
+    const mt = m.metrics
+    if (!mt) continue
+    requests += 1
+    outTokens += mt.completionTokens
+    reasoningTokens += mt.reasoningTokens ?? 0
+    if (mt.totalMs > slowestMs) slowestMs = mt.totalMs
+  }
+
+  const max = usage.max !== null && usage.max > 0 ? usage.max : null
+  const headroom = max === null ? null : Math.max(0, max - usage.used)
+  const pct = usage.fraction === null ? null : Math.round(usage.fraction * 100)
+  const overWarn = usage.fraction !== null && usage.fraction >= warnAt
+  const running = live.phase !== 'idle'
+
+  return (
+    <div className="ss-panel" role="dialog" aria-label="Session details">
+      <div className="ss-head">
+        <span>Session</span>
+        <button type="button" className="ss-close" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </div>
+
+      <div className="ss-group">Context window</div>
+      <Stat
+        label="Used"
+        value={max === null ? `${formatTokens(usage.used)} / —` : `${formatTokens(usage.used)} / ${formatTokens(max)}`}
+        tone={overWarn ? 'warn' : undefined}
+        hint={
+          max === null
+            ? 'The loaded window is not known yet. It becomes known once a model is resident.'
+            : 'Everything that would be sent on the next request: system prompt, tool schemas, and the messages that survive trimming.'
+        }
+      />
+      <Stat
+        label="Full"
+        value={pct === null ? '—' : `${pct}%`}
+        tone={overWarn ? 'warn' : undefined}
+        hint={`Trimming starts before this reads full — the reply budget and tool schemas are reserved out of the same window. Your warning threshold is ${Math.round(warnAt * 100)}%.`}
+      />
+      <Stat
+        label="Headroom"
+        value={headroom === null ? '—' : formatTokens(headroom)}
+        hint="Tokens left before the window is full. History is trimmed well before this reaches zero."
+      />
+      {slots > 1 ? (
+        <Stat
+          label="Server slots"
+          value={`${slots}`}
+          tone="warn"
+          hint="llama.cpp divides its context across parallel slots, so one request gets the loaded length divided by this. The figures above already account for it."
+        />
+      ) : null}
+      <Stat
+        label="Dropped"
+        value={trimmed === 0 ? 'none' : `${trimmed} message${trimmed === 1 ? '' : 's'}`}
+        tone={trimmed > 0 ? 'warn' : undefined}
+        hint="Earlier messages removed from the prompt to fit the window. The model is told this has happened; the messages are still in the transcript."
+      />
+
+      <div className="ss-group">What is filling it</div>
+      <Stat label="Messages" value={formatTokens(usage.breakdown.messages)} hint="The conversation itself." />
+      <Stat
+        label="Tool schemas"
+        value={formatTokens(usage.breakdown.tools)}
+        hint="Sent on every single request. Turning off an MCP server you are not using is the fastest way to shrink this."
+      />
+      <Stat label="System prompt" value={formatTokens(usage.breakdown.system)} hint="The workflow's instructions, plus the date and your workspace root." />
+      {usage.breakdown.attachments > 0 ? (
+        <Stat label="Attachments" value={formatTokens(usage.breakdown.attachments)} hint="Images and files carried in the conversation." />
+      ) : null}
+
+      {running ? (
+        <>
+          <div className="ss-group">This request</div>
+          <Stat label="Phase" value={live.phase} hint={PHASE_TIP[live.phase] ?? ''} />
+          <Stat label="Prompt sent" value={formatTokens(live.promptTokens)} hint="Our own count of what went out, known before the reply starts." />
+          <Stat label="Generated" value={formatTokens(live.completionTokens)} hint="Tokens produced since the last tool call. An agentic turn is several requests back to back, so this restarts at each one." />
+          <Stat label="Time to first token" value={live.ttftMs === null ? '—' : formatMs(live.ttftMs)} hint="How long prefill took. Null until the first token lands." />
+          <Stat
+            label="Prefill"
+            value={live.prefillTps === null ? '—' : `${Math.round(live.prefillTps)} tok/s${live.prefillEstimated ? ' est.' : ''}`}
+            hint="Reading the prompt. Marked est. while it is a projection from earlier turns rather than a measurement of this one."
+          />
+          <Stat label="Decode" value={live.decodeTps === null ? '—' : `${live.decodeTps.toFixed(1)} tok/s`} hint="Writing the reply, over a rolling window." />
+        </>
+      ) : null}
+
+      <div className="ss-group">This conversation</div>
+      <Stat label="Requests" value={`${requests}`} hint="Model calls made across every turn here. One turn is usually many." />
+      <Stat label="Tool calls" value={`${toolCalls}`} />
+      <Stat label="Tokens generated" value={formatTokens(outTokens)} hint="Everything the model has written here, replies and tool arguments together." />
+      <Stat
+        label="…thinking"
+        value={reasoningTokens === 0 ? 'none' : formatTokens(reasoningTokens)}
+        hint="Of those, the ones spent reasoning. Billed against the same budget as the answer."
+      />
+      <Stat label="Slowest request" value={slowestMs === 0 ? '—' : formatMs(slowestMs)} />
+
+      <div className="ss-group">Server</div>
+      <Stat label="Model" value={live.modelId ?? health.residentModelId ?? '—'} />
+      <Stat
+        label="Endpoint"
+        /* host:port only. The scheme and the /v1 path are the same on every
+           endpoint this app talks to, and spending two wrapped lines on them
+           pushed the part that actually differs out of sight. */
+        value={health.endpoint.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}
+        tone={health.reachable ? undefined : 'bad'}
+        hint={`${health.endpoint} — ${health.reachable ? 'reachable' : 'NOT reachable; the last check failed'}.`}
+      />
+      <Stat label="Latency" value={health.latencyMs === null ? '—' : `${health.latencyMs} ms`} />
+    </div>
+  )
+}

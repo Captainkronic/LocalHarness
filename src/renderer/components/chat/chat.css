@@ -1080,6 +1080,8 @@
   gap: var(--s2);
   min-height: 18px;
   font-size: var(--fs-tiny);
+  /* Containing block for .ss-panel, which opens upward out of the ring. */
+  position: relative;
 }
 
 .ts-ring {
@@ -1637,4 +1639,126 @@
    the one value worth noticing is coloured. */
 .mm-nothink .mm-v {
   color: var(--warn);
+}
+
+/* ------------------------------------------------------------------ */
+/* Session details, opened from the context ring                       */
+/* ------------------------------------------------------------------ */
+
+/* The ring is the affordance, so it has to look like one. Padding rather than
+   a box: the ring's own arc is the graphic, and a border around it would read
+   as a second meter. */
+.ts-ringbtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  margin: -2px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ts-ringbtn:hover,
+.ts-ringbtn.is-open {
+  background: var(--bg-hover);
+}
+
+.ts-ringbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Anchored to the composer and opening UPWARD: the strip sits at the bottom of
+   the window, so a panel dropping down would be off-screen. */
+.ss-panel {
+  position: absolute;
+  bottom: calc(100% + var(--s2));
+  left: 0;
+  z-index: 20;
+  width: min(320px, calc(100vw - var(--s6)));
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding: var(--s2) var(--s3) var(--s3);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--fs-tiny);
+}
+
+.ss-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--s2);
+  margin-bottom: var(--s1);
+  border-bottom: 1px solid var(--line-subtle);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.ss-close {
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.ss-close:hover {
+  color: var(--fg);
+}
+
+.ss-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Section headings, not decoration: each names a different thing being
+   measured, and the reader is scanning for one of them. */
+.ss-group {
+  margin-top: var(--s3);
+  margin-bottom: 2px;
+  color: var(--fg-faint);
+  font-size: var(--fs-tiny);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ss-group:first-of-type {
+  margin-top: var(--s2);
+}
+
+/* Label left, value hard right, so the numbers form a column to scan down. */
+.ss-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: 2px 0;
+}
+
+.ss-label {
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.ss-value {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.ss-value.is-warn {
+  color: var(--warn);
+}
+
+.ss-value.is-bad {
+  color: var(--danger);
 }
