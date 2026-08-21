@@ -56,6 +56,12 @@ export default function TalkDeck(): JSX.Element {
   const liveStatus = useStore((s) => s.liveStatus)
   const startLive = useStore((s) => s.startLive)
   const stopLive = useStore((s) => s.stopLive)
+  const requestInterrupt = useStore((s) => s.requestInterrupt)
+  /* The honest test for "is there something to cut off". A reply keeps coming
+     out of the speakers after the state has moved on, and `state === speaking`
+     alone would hide the button while a sentence was still playing. */
+  const audioPlaying = useStore((s) => s.audioPlaying)
+  const openSettings = useStore((s) => s.setSettingsOpen)
 
   /* 'off' is the idle state; there is no 'idle'. Anything else means the
      microphone is open or a turn is in flight. */
@@ -92,6 +98,24 @@ export default function TalkDeck(): JSX.Element {
             {running ? (
               <>
                 <VoiceIndicator state={state} />
+                {/*
+                  Interrupt, not Stop. Two different things and the labels have
+                  to say which: this abandons the REPLY and goes back to
+                  listening; Stop ends the call. Shown only while there is
+                  something to abandon, so the row does not carry a dead control
+                  through every silence.
+                */}
+                {audioPlaying || state === 'speaking' || state === 'thinking' || state === 'tool' ? (
+                  <button
+                    type="button"
+                    className="tk-hush"
+                    onClick={requestInterrupt}
+                    title="Stop it talking and listen instead"
+                    aria-label="Interrupt the reply"
+                  >
+                    Interrupt
+                  </button>
+                ) : null}
                 <span className="tk-say" role="status">
                   {SAYS[state] ?? state}
                 </span>
@@ -118,6 +142,17 @@ export default function TalkDeck(): JSX.Element {
                 <span className="tk-mic-label">Talk</span>
               </button>
             )}
+            {/* A shortcut into Settings, not a second copy of it. The controls
+                live in one place; this is just the door nearest the microphone. */}
+            <button
+              type="button"
+              className="tk-gear"
+              onClick={() => openSettings(true)}
+              title="Voice settings — including how loud you must be to interrupt"
+              aria-label="Voice settings"
+            >
+              <GearIcon />
+            </button>
           </div>
         }
       />
@@ -168,6 +203,15 @@ export default function TalkDeck(): JSX.Element {
         </p>
       ) : null}
     </div>
+  )
+}
+
+function GearIcon(): JSX.Element {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.3" />
+      <path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7L3.5 3.5" strokeLinecap="round" />
+    </svg>
   )
 }
 

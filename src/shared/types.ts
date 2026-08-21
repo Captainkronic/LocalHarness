@@ -674,8 +674,69 @@ export interface LiveSettings {
   video: boolean
   /** Stop speaking as soon as the user starts. */
   bargeIn: boolean
+  /**
+   * How loud you have to be to cut it off, 0..1 on the METER's scale.
+   *
+   * Deliberately not `vadThreshold`, which is the same idea for a different
+   * job: that one decides when a turn begins, and raising it to stop the
+   * assistant being interrupted by a cough would also stop it hearing a quiet
+   * question. Two decisions, two numbers.
+   *
+   * The scale matters and is the reason this is tunable at all. vadThreshold
+   * is raw RMS; this is the value the meter DRAWS — sqrt(rms) * 2.4 — so the
+   * threshold marker sits on the same axis as the bars, and setting it is a
+   * matter of talking and watching where the level lands rather than guessing
+   * at a number. For reference, vadThreshold's 0.02 RMS shows as 0.34 here.
+   */
+  bargeThreshold: number
+  /**
+   * How long you have to keep it up, in ms.
+   *
+   * The other half of "was that speech or a chair". Loudness alone fires on a
+   * door closing; loudness sustained for a tenth of a second does not. Measured
+   * in time rather than in frames, which is what this used to be — a frame is
+   * 32ms at 16kHz and something else at any other rate, so the old constant
+   * meant a different sensitivity on different hardware.
+   */
+  bargeMs: number
   /** Speak replies at all. Off makes it a dictation loop. */
   speak: boolean
+}
+
+/*
+ * Declared here rather than beside the session that owns the behaviour.
+ *
+ * The settings store needs these to build its own defaults, and importing them
+ * from the session made a leaf module drag the whole spoken loop — and the
+ * prompt builder behind it — into every bundle that touched settings. Which is
+ * how a test that builds one small file started failing to resolve an alias in
+ * a file it had no reason to see.
+ */
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
+  // Jarvis. See VOICE_PRESETS in shared/workflows.ts.
+  voice: 'bm_daniel',
+  speed: 0.95,
+  vadThreshold: 0.02,
+  silenceMs: 700,
+  // 700 + 700. Measured against the failure it exists to stop: a pause to think
+  // of a word, which runs to roughly half a second, was landing inside the old
+  // 700ms window and sending half a sentence. Together they cost about 1.4s of
+  // wall clock before the reply starts, which is the honest price of not being
+  // interrupted, and both halves are adjustable.
+  pauseGraceMs: 700,
+  minUtteranceMs: 350,
+  video: false,
+  // OFF by default. With speakers, barge-in is an audio feedback loop: the
+  // microphone hears the assistant, scores it as speech, interrupts, starts a
+  // new turn, and that turn speaks again. Observed doing exactly that. It is
+  // genuinely useful on headphones, so it stays available — just not assumed.
+  bargeIn: false,
+  /* Above vadThreshold's 0.34-on-the-meter, so ordinary room noise and the
+     tail of the assistant's own voice do not cut it off, but a raised sentence
+     does. Tunable, and worth tuning per room. */
+  bargeThreshold: 0.45,
+  bargeMs: 150,
+  speak: true
 }
 
 /** One completed exchange, for the transcript rail. */
@@ -1212,6 +1273,20 @@ export interface Settings {
    * every time you open the app is worse than no face.
    */
   liveAvatarId: string | null
+  /**
+   * Voice settings, persisted.
+   *
+   * They used to live only on the LiveSession instance, which was fine while
+   * they were a thing you nudged mid-call from the Live workspace: the session
+   * outlived the fiddling. It stopped being fine the moment they appeared in a
+   * panel called Settings — a setting you change there and lose on restart is
+   * not a setting.
+   *
+   * Stored as-is and validated by LiveSession.updateSettings on the way in,
+   * rather than being clamped a second time here. Two copies of the same
+   * ranges is how they end up disagreeing.
+   */
+  live: LiveSettings
 }
 
 /* ------------------------------------------------------------------ */

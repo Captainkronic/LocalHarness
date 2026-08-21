@@ -51,6 +51,7 @@ import type {
   WorkflowDefinition,
   WorkflowId
 } from '@shared/types'
+import { DEFAULT_LIVE_SETTINGS } from '@shared/types'
 import { WORKFLOW_BY_ID, canSpeak, isTalkWorkflow } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
@@ -66,27 +67,6 @@ import { decodeWavToDataUrl, encodeWav } from './wav'
 
 const SCOPE = 'live'
 
-export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
-  // Jarvis. See VOICE_PRESETS in shared/workflows.ts.
-  voice: 'bm_daniel',
-  speed: 0.95,
-  vadThreshold: 0.02,
-  silenceMs: 700,
-  // 700 + 700. Measured against the failure it exists to stop: a pause to think
-  // of a word, which runs to roughly half a second, was landing inside the old
-  // 700ms window and sending half a sentence. Together they cost about 1.4s of
-  // wall clock before the reply starts, which is the honest price of not being
-  // interrupted, and both halves are adjustable.
-  pauseGraceMs: 700,
-  minUtteranceMs: 350,
-  video: false,
-  // OFF by default. With speakers, barge-in is an audio feedback loop: the
-  // microphone hears the assistant, scores it as speech, interrupts, starts a
-  // new turn, and that turn speaks again. Observed doing exactly that. It is
-  // genuinely useful on headphones, so it stays available — just not assumed.
-  bargeIn: false,
-  speak: true
-}
 
 /** Live captions would otherwise push a status object per token. */
 const STATUS_PUSH_MS = 120
@@ -188,6 +168,8 @@ export interface LiveSessionOptions {
    * care which kind of turn wrote the file.
    */
   onArtifact: (workflowId: WorkflowId, artifact: Artifact) => void
+  /** Voice settings changed — write them to disk so they outlive the process. */
+  onLiveSettings: (live: LiveSettings) => void
   /**
    * Per-request telemetry, at ~4Hz.
    *
@@ -292,6 +274,20 @@ export class LiveSession {
 
   constructor(opts: LiveSessionOptions) {
     this.o = opts
+    /*
+     * Seeded through updateSettings, not assigned.
+     *
+     * What comes off disk is untrusted — an old shape, a hand-edited file, a
+     * number outside a range that has since changed — and updateSettings is the
+     * only thing that knows the valid range of each field. Running it here gives
+     * one validator for both paths instead of a second set of clamps in the
+     * settings store, quietly disagreeing with this one.
+     *
+     * At construction rather than at start(), because the settings PANEL reads
+     * these and someone can open it having never made a call. Loading them only
+     * when a session began would show defaults over the top of saved values.
+     */
+    this.updateSettings(opts.getSettings().live)
   }
 
   /* ---------------------------------------------------------------- */
@@ -421,8 +417,16 @@ export class LiveSession {
     return { ...this.live }
   }
 
-  updateSettings(patch: Partial<LiveSettings>): LiveSettings {
+  updateSettings(patch: Partial<LiveSettings> | undefined): LiveSettings {
     const next: LiveSettings = { ...this.live }
+    /* This is the validator for untrusted input and is documented as such, so
+       it has to survive being handed nothing: a settings file written before
+       `live` existed has no such key, and reading through undefined threw on
+       the very first field. Every branch below is already "take it only if it
+       is the right type", and an absent patch simply takes none of them. */
+    if (patch === undefined || patch === null || typeof patch !== 'object') {
+      return { ...next }
+    }
 
     if (typeof patch.voice === 'string' && patch.voice.trim().length > 0) {
       const wanted = patch.voice.trim()
@@ -449,9 +453,15 @@ export class LiveSession {
     }
     if (typeof patch.video === 'boolean') next.video = patch.video
     if (typeof patch.bargeIn === 'boolean') next.bargeIn = patch.bargeIn
+    if (isNumber(patch.bargeThreshold)) next.bargeThreshold = clamp(patch.bargeThreshold, 0.05, 1)
+    if (isNumber(patch.bargeMs)) next.bargeMs = clamp(patch.bargeMs, 40, 1500)
     if (typeof patch.speak === 'boolean') next.speak = patch.speak
 
     this.live = next
+    /* Persisted on every change rather than at shutdown: the app is quit by
+       closing a window, and a setting that survives only a clean exit is a
+       setting that disappears the first time something crashes. */
+    this.o.onLiveSettings({ ...next })
     this.pushStatus()
     return { ...next }
   }

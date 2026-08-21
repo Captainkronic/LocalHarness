@@ -73,7 +73,9 @@ export default function App(): ReactElement {
     })()
   }, [])
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  /* In the store, so the composer's voice shortcut can open it too. */
+  const settingsOpen = useStore((s) => s.settingsOpen)
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const [modelsOpen, setModelsOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
 

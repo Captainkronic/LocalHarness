@@ -198,3 +198,146 @@
 .tk-machinery {
   display: none;
 }
+
+/* ------------------------------------------------------------------ */
+/* Interrupt, and the tuning behind it                                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Interrupt is not Stop and must not look like it.
+ *
+ * Stop ends the call and is red because it is the destructive one. This
+ * abandons the current REPLY and goes straight back to listening, which is an
+ * ordinary part of a conversation — so it takes the phase colour and sits
+ * quietly beside the meter rather than competing with the control that hangs up.
+ */
+.tk-hush {
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in srgb, var(--tk-hue, var(--accent)) 45%, transparent);
+  background: none;
+  color: var(--tk-hue, var(--accent));
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex: none;
+}
+
+.tk-hush:hover {
+  background: color-mix(in srgb, var(--tk-hue, var(--accent)) 18%, transparent);
+}
+
+.tk-gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--fg-faint);
+}
+
+.tk-gear:hover,
+.tk-gear.is-open {
+  color: var(--fg);
+  border-color: var(--line);
+}
+
+/*
+ * A settings section body, not a popover.
+ *
+ * This began anchored above the composer with position:absolute, and moving it
+ * into the Settings panel without removing that left the heading rendering and
+ * the controls taken out of flow — a section with a title and a hole where its
+ * contents should be. It borrows the panel's own surface now rather than
+ * carrying a card of its own inside one.
+ */
+.tk-tune {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.tk-tune-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.tk-tune-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--s2);
+}
+
+.tk-tune-label {
+  font-size: var(--fs-small);
+  color: var(--fg);
+}
+
+.tk-tune-value {
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+}
+
+.tk-tune-note {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  line-height: 1.4;
+}
+
+/* Dimmed rather than removed: the sliders are the explanation of what the
+   toggle above does, and hiding them makes the toggle a mystery switch. */
+.tk-tune-group.is-off {
+  opacity: 0.45;
+}
+
+/* The meter you tune against. Everything in here shares one axis — the live
+   level, the recent peak and the threshold — which is the only thing that makes
+   a loudness number mean anything. */
+.tk-gauge {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.tk-gauge-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--fg-faint);
+}
+
+/* Over the line right now — the answer to "would that have interrupted it". */
+.tk-gauge-fill[data-over='true'] {
+  background: var(--accent);
+}
+
+/* Loudest of the last two seconds. A syllable peaks and is gone before anyone
+   can read it, so the peak stays put long enough to aim at. */
+.tk-gauge-peak {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+.tk-gauge-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--accent);
+}
+
+.tk-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}

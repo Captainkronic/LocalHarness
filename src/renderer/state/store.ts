@@ -24,6 +24,7 @@ import {
   type IpcEvents
 } from '@shared/ipc'
 import { DEFAULT_WORKFLOW, WORKFLOWS, canSpeak } from '@shared/workflows'
+import { DEFAULT_LIVE_SETTINGS } from '@shared/types'
 import type {
   ReasoningEffort,
   SamplingOverrides,
@@ -109,6 +110,43 @@ export interface AppState {
    */
   micLevel: number
   setMicLevel: (level: number) => void
+  /**
+   * Is a spoken reply actually coming out of the speakers right now?
+   *
+   * Not the same question as `liveStatus.state === 'speaking'`, and the
+   * difference is the one that matters for an Interrupt button: audio keeps
+   * draining out of the queue after the state has moved on, so the state alone
+   * would hide the control at exactly the moment there is still a sentence
+   * left to cut off. Published from the renderer, which owns the player.
+   */
+  audioPlaying: boolean
+  setAudioPlaying: (playing: boolean) => void
+  /**
+   * Cut off the reply in flight — stop the audio AND abandon the turn.
+   *
+   * A counter rather than a callback, because the two halves live in different
+   * components. The player is inside LiveWorkspace, which TalkDeck mounts
+   * hidden for its microphone; main can cancel the generation but cannot stop
+   * a sound the renderer is already playing. Calling only the IPC would end the
+   * turn and keep talking through whatever was already buffered, which is
+   * precisely the thing being interrupted.
+   *
+   * So the request is state, LiveWorkspace watches it, and the component that
+   * owns the audio is the one that stops it.
+   */
+  interruptRequest: number
+  requestInterrupt: () => void
+  /**
+   * The settings panel, in the store rather than in App.
+   *
+   * It was local state, which meant App was the only thing that could open it —
+   * fine while the only way in was the title bar, wrong the moment a second
+   * place needed to point at a setting. The voice controls live in there now
+   * and the composer has a shortcut to them, so "open settings" has to be
+   * something any component can ask for.
+   */
+  settingsOpen: boolean
+  setSettingsOpen: (open: boolean) => void
   liveExchanges: LiveExchange[]
   liveSettings: LiveSettings
   usage: ContextUsage
@@ -207,7 +245,9 @@ const INITIAL_SETTINGS: Settings = {
   workflowSampling: {},
   workflowMcpOverrides: {},
   panelLayout: {},
-  liveAvatarId: null
+  liveAvatarId: null,
+  /* Placeholder until the real settings arrive from main on boot. */
+  live: DEFAULT_LIVE_SETTINGS
 }
 
 const IDLE_LIVE: LiveMetrics = {
@@ -251,17 +291,6 @@ const IDLE_LIVE_SESSION: LiveSessionStatus = {
   timings: null
 }
 
-const DEFAULT_LIVE_SETTINGS: LiveSettings = {
-  voice: 'bm_daniel',
-  speed: 0.95,
-  vadThreshold: 0.02,
-  silenceMs: 700,
-  pauseGraceMs: 700,
-  minUtteranceMs: 350,
-  video: false,
-  bargeIn: false,
-  speak: true
-}
 
 const EMPTY_USAGE: ContextUsage = {
   used: 0,
@@ -564,6 +593,12 @@ export const useStore = create<AppState>()((set, get) => {
     liveStatus: IDLE_LIVE_SESSION,
     micLevel: 0,
     setMicLevel: (micLevel) => set({ micLevel }),
+    audioPlaying: false,
+    setAudioPlaying: (audioPlaying) => set({ audioPlaying }),
+    interruptRequest: 0,
+    requestInterrupt: () => set((s) => ({ interruptRequest: s.interruptRequest + 1 })),
+    settingsOpen: false,
+    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     liveExchanges: [],
     liveSettings: DEFAULT_LIVE_SETTINGS,
     usage: EMPTY_USAGE,

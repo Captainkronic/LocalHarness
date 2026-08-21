@@ -9,8 +9,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-
-import { PANEL_W_DEFAULT, PANEL_W_MAX, PANEL_W_MIN, REASONING_EFFORTS } from '@shared/types'
+import { DEFAULT_LIVE_SETTINGS, PANEL_W_DEFAULT, PANEL_W_MAX, PANEL_W_MIN, REASONING_EFFORTS } from '@shared/types'
 import type {
   ApprovalMode,
   LlmEndpoint,
@@ -65,7 +64,8 @@ export const DEFAULT_SETTINGS: Settings = {
   workflowSampling: {},
   workflowMcpOverrides: {},
   panelLayout: {},
-  liveAvatarId: null
+  liveAvatarId: null,
+  live: { ...DEFAULT_LIVE_SETTINGS }
 }
 
 const APPROVAL_MODES: readonly ApprovalMode[] = ['always_ask', 'auto_read', 'auto_all']
@@ -263,6 +263,12 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     // the Face picker says "go back to the orb". Falling back to `base` when
     // the value was not a string meant selecting Orb silently kept the avatar,
     // and the dropdown snapped straight back.
+    /* Passed through rather than field-checked here. LiveSession.updateSettings
+       already clamps every one of these, and it is the only thing that reads
+       them, so a second set of ranges in this file could only ever drift out of
+       step with the first. A malformed blob is merged onto the defaults there
+       and the bad fields are simply not taken. */
+    live: isRecord(raw) && isRecord(src.live) ? { ...base.live, ...src.live } : base.live,
     liveAvatarId:
       isRecord(raw) && 'liveAvatarId' in raw
         ? typeof src.liveAvatarId === 'string'

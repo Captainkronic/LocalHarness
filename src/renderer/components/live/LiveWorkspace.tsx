@@ -50,7 +50,6 @@ import './live.css'
 
 /** Consecutive over-threshold frames (~32ms each) before speech during playback
  *  counts as barge-in. One frame is a door closing; three is a person. */
-const BARGE_FRAMES = 3
 /** Long edge of the camera frame sent to the model. Beyond this the vision
  *  encoder gains nothing and prefill pays for every extra tile. */
 const FRAME_LONG_EDGE = 768
@@ -110,6 +109,8 @@ export function LiveWorkspace(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
 
   const statusRef = useRef(status)
+  /** When the current over-threshold run began, or 0. See handleLevel. */
+  const bargeFromRef = useRef(0)
   const micLevelRef = useRef(0)
   /** True while the microphone has gone quiet but the turn is being held open
    *  in case he is only pausing. Drives the orb, nothing else. */
@@ -149,15 +150,40 @@ export function LiveWorkspace(): JSX.Element {
   })
   const { push, stop: stopPlayback, readLevel } = playback
 
+  const publishLevel = useStore((s) => s.setMicLevel)
+  const publishPlaying = useStore((s) => s.setAudioPlaying)
+  const interruptRequest = useStore((s) => s.interruptRequest)
+
   useEffect(() => window.harness.on('event:liveAudio', push), [push])
 
   useEffect(() => {
     if (inCall) return
     stopPlayback()
+    publishPlaying(false)
     setSpokenTo(0)
     setLevel(0)
     micLevelRef.current = 0
   }, [inCall, stopPlayback])
+
+  /*
+   * Someone pressed Interrupt somewhere else in the app.
+   *
+   * Both halves happen here because both halves are here: the player is in this
+   * component, and stopping the generation without stopping the sound would
+   * leave the buffered sentences playing on over the silence.
+   *
+   * The nonce is compared against what was last seen rather than tested for
+   * truthiness, so mounting mid-session does not fire a spurious interrupt on
+   * a call that is running perfectly well.
+   */
+  const seenInterrupt = useRef(interruptRequest)
+  useEffect(() => {
+    if (interruptRequest === seenInterrupt.current) return
+    seenInterrupt.current = interruptRequest
+    stopPlayback()
+    publishPlaying(false)
+    void interruptLive()
+  }, [interruptRequest, stopPlayback, publishPlaying, interruptLive])
 
   // A new turn starts a new reply, so the spoken highlight starts over.
   useEffect(() => {
@@ -234,20 +260,36 @@ export function LiveWorkspace(): JSX.Element {
 
   const handleLevel = (value: number, speaking: boolean): void => {
     micLevelRef.current = value
-    if (!speaking) {
-      speechRunRef.current = 0
+    if (!speaking) speechRunRef.current = 0
+    else speechRunRef.current += 1
+
+    /*
+     * Barge-in, on its own threshold and its own clock.
+     *
+     * It used to key off `speaking`, which is vadThreshold — the same number
+     * that decides when a turn STARTS. Sharing it meant the only way to stop
+     * being interrupted by a cough was to also stop being heard when speaking
+     * quietly. And it counted FRAMES, which is 32ms at 16kHz and something
+     * else at any other sample rate, so the sensitivity quietly differed by
+     * hardware. Both are now settings, in ms and on the meter's own scale, so
+     * they can be tuned against something visible.
+     */
+    if (!live.bargeIn) {
+      bargeFromRef.current = 0
       return
     }
-    speechRunRef.current += 1
-    if (
-      (statusRef.current.state === 'speaking' || playback.isPlaying()) &&
-      live.bargeIn &&
-      speechRunRef.current >= BARGE_FRAMES
-    ) {
-      speechRunRef.current = 0
-      stopPlayback()
-      void interruptLive()
+    const audible = statusRef.current.state === 'speaking' || playback.isPlaying()
+    if (!audible || value < live.bargeThreshold) {
+      bargeFromRef.current = 0
+      return
     }
+    const now = performance.now()
+    if (bargeFromRef.current === 0) bargeFromRef.current = now
+    if (now - bargeFromRef.current < live.bargeMs) return
+    bargeFromRef.current = 0
+    stopPlayback()
+    publishPlaying(false)
+    void interruptLive()
   }
 
   const capture = useAudioCapture({
@@ -267,7 +309,6 @@ export function LiveWorkspace(): JSX.Element {
 
   /* ---- one publish loop for the orb -------------------------------- */
 
-  const publishLevel = useStore((s) => s.setMicLevel)
 
   useEffect(() => {
     if (!inCall) {
@@ -287,6 +328,10 @@ export function LiveWorkspace(): JSX.Element {
          Anything else showing the level (the composer's meter) reads it from
          here rather than from liveStatus, which never carries it. */
       publishLevel(source)
+      /* Only on a change: this is a boolean on a 60Hz loop, and setting it
+         every frame would re-render every subscriber sixty times a second to
+         tell them nothing happened. */
+      publishPlaying(playback.isPlaying())
       // Rides the same loop as the level, and only commits on a CHANGE, so
       // holding through a two-second pause costs one render rather than 120.
       setPausing((prev) => (prev === pausingRef.current ? prev : pausingRef.current))

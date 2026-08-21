@@ -282,6 +282,11 @@ app.whenReady().then(async () => {
     /* Both halves of Orchestrator.recordArtifact: the per-workflow store the
        panel reads on switch, and the live channel it appends from. Doing only
        the second would make a file vanish the next time the workflow loaded. */
+    /* Straight to the persisted settings. The session validated it already —
+       it is the only thing that knows these ranges — so this just stores it. */
+    onLiveSettings: (live) => {
+      settings.update({ live })
+    },
     onArtifact: (workflowId, artifact) => {
       artifacts.add(workflowId, artifact)
       emit('event:artifact', artifact)

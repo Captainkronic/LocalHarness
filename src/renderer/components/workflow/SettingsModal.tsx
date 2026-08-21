@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { ApprovalMode, ModelInfo, Settings } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { formatMs, formatPercent, formatTokens } from '@renderer/lib/format'
+import VoiceTuning from './VoiceTuning'
 import './workflow.css'
 
 /**
@@ -244,6 +245,24 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
 
         <div className="set-body scroll-y">
           {/* ---- Connection ---- */}
+          {/*
+            First, deliberately.
+
+            Every other setting here has a right answer that can be reasoned
+            about — which model, which server, how many tokens. This one does
+            not: how loudly you have to speak to cut the assistant off depends
+            on the room, the microphone and the person, so the only way to set
+            it is to talk and watch. That is what the meter under it is for, and
+            it is why this is at the top rather than buried under Display.
+          */}
+          <section className="set-section">
+            <div className="set-section-head">
+              <span className="section-label">Voice</span>
+              <span className="set-status-num tnum">interrupting</span>
+            </div>
+            <VoiceTuning />
+          </section>
+
           <section className="set-section">
             <div className="set-section-head">
               <span className="section-label">Connection</span>
