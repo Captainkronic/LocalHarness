@@ -1754,27 +1754,46 @@
   color: var(--danger);
 }
 
-/* Converse's voice panel: the orb above what was said. */
+/* Converse's voice panel: the orb, centred, and nothing else.
+   The conversation lives in the main thread — putting it here too would say
+   that a spoken turn is a different kind of message, and it is not. */
 .vp {
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
-  min-height: 0;
-  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  /* .ctx-body is a block, so flex:1 here would do nothing and the panel would
+     sit at the top of a 700px column. A definite parent height makes this
+     percentage resolve, which is what actually centres the orb. */
+  min-height: 100%;
+  padding: var(--s4) var(--s2);
+
+  /* --lv-orb is declared on .lv, so outside the live workspace it is simply
+     undefined and .orb-svg's width/height resolve to auto — the orb rendered
+     at 71px, its intrinsic size, rather than at any size anyone chose. It now
+     has the panel to itself, so it is sized for that rather than for sharing
+     the column with a transcript. */
+  --lv-orb: clamp(140px, 24vh, 216px);
 }
 
-.vp-orb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s3) 0;
-  flex: none;
+/* Width from the panel, so the cap below has something real to measure
+   against; the orb is otherwise content-sized and the percentage circular. */
+.vp .orb {
+  width: 100%;
+}
+
+/* The panel is user-resizable, and a fixed 216px orb in a 180px column would
+   simply hang out of it. */
+.vp .orb-svg {
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 1;
 }
 
 /* Dimmed rather than hidden when nothing is happening: an empty space where a
-   control was is harder to understand than a quiet one. */
-.vp-orb.is-idle {
+   control was is harder to read than a quiet one. */
+.vp.is-idle {
   opacity: 0.45;
 }
 
@@ -1783,5 +1802,5 @@
   color: var(--fg-faint);
   text-align: center;
   line-height: 1.45;
-  max-width: 30ch;
+  max-width: 28ch;
 }
