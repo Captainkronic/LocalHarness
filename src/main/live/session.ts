@@ -51,7 +51,7 @@ import type {
   WorkflowDefinition,
   WorkflowId
 } from '@shared/types'
-import { WORKFLOW_BY_ID, isVoiceWorkflow } from '@shared/workflows'
+import { WORKFLOW_BY_ID, canSpeak, isTalkWorkflow } from '@shared/workflows'
 
 import { streamChat, type WireMessage } from '../llm/client'
 import type { ModelRegistry } from '../llm/models'
@@ -306,11 +306,20 @@ export class LiveSession {
     if (conv === null) {
       return { ok: false, error: `Conversation ${conversationId} no longer exists` }
     }
-    // Refused rather than coerced. A workflow that is not spoken has native
-    // tools and approval gates this loop cannot run, and starting it here would
-    // half-work: it would talk, and quietly fail to do anything it offered.
-    if (!isVoiceWorkflow(conv.workflowId)) {
-      return { ok: false, error: `${conv.workflowId} is not a spoken workflow` }
+    /*
+     * Refused rather than coerced, and the reason has narrowed rather than
+     * gone away.
+     *
+     * It used to be "not a voice workflow". It is now "cannot be spoken to at
+     * all" — which admits the talk-capable workflows, where the point is a
+     * typed screen you can also speak to. What it still refuses is the thing
+     * the original comment was actually about: a workflow whose tools need an
+     * approval dialog this loop has no way to show, or native tools it has no
+     * way to run. Code and Docs stay out for exactly that reason, and the
+     * `talk` flag is what a workflow uses to say it is not one of them.
+     */
+    if (!canSpeak(conv.workflowId)) {
+      return { ok: false, error: `${conv.workflowId} cannot be spoken to` }
     }
     // AFTER the stop below, not before: stop() clears the workflow, so setting
     // it here would leave a restarted session with no workflow — and the
@@ -1186,7 +1195,14 @@ export class LiveSession {
         ? 0
         : window - this.workflow.sampling.maxTokens - toolTokens - Math.ceil(window * 0.05)
 
-    return buildMessages(conv, this.workflow.systemPrompt, model.supportsVision, {
+    /* A talk workflow's prompt was written to be READ. Spoken without this it
+       reads out asterisks, backticks and "one dot two". Voice-first workflows
+       already have prompts written for the ear and are left alone. */
+    const prompt = isTalkWorkflow(this.workflow.id)
+      ? `${this.workflow.systemPrompt}\n\n${spokenNote(this.workflow)}`
+      : this.workflow.systemPrompt
+
+    return buildMessages(conv, prompt, model.supportsVision, {
       budget: raw > 0 ? raw : undefined,
       onTrim: (info) =>
         this.o.onLog(
@@ -1522,6 +1538,39 @@ function attachFrame(messages: WireMessage[], frameDataUrl: string): void {
     messages[i] = { ...msg, content: parts }
     return
   }
+}
+
+/**
+ * What changes when this workflow is being spoken to rather than typed at.
+ *
+ * Talk-capable workflows are typed workflows first: their prompts describe a
+ * photographer or a sound designer writing to someone READING, and they use
+ * markdown, headings and code fences to do it. Handed to a speech synthesiser
+ * that becomes asterisks read aloud, "hash hash Prompt", and a filename spelled
+ * out one underscore at a time.
+ *
+ * The native-tools line is not a nicety either. The spoken loop wires MCP tools
+ * only, so a workflow declaring read_file has it in its prompt and no way to
+ * call it — and a model that believes it can read a file will offer to, then
+ * produce nothing. Naming the gap is cheaper than the model discovering it
+ * mid-sentence.
+ */
+function spokenNote(wf: WorkflowDefinition): string {
+  const lines = [
+    'RIGHT NOW YOU ARE BEING HEARD, NOT READ.',
+    '',
+    '- Everything you write is spoken aloud. No markdown, no headings, no bullet points, no code fences — they are read out as punctuation.',
+    '- Two or three sentences. If there is more to say, say the first part and offer the rest.',
+    '- Say numbers and names the way a person would say them out loud.',
+    '- Anything you create still appears on screen, so describe it in a sentence rather than reciting it.'
+  ]
+  if (wf.nativeTools.length > 0) {
+    lines.push(
+      `- These are unavailable while speaking and you cannot use them: ${wf.nativeTools.join(', ')}. ` +
+        'If one is needed, say so and suggest typing it instead.'
+    )
+  }
+  return lines.join('\n')
 }
 
 function chatMessage(role: 'user' | 'assistant', content: string): ChatMessage {

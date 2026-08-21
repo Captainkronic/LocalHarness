@@ -1,13 +1,13 @@
 /* Converse: the conversation, and a bar that lets you speak into it.
    The transcript is never hidden — that was the point of the rewrite. */
-.cv {
+.tk {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 
-.cv-thread {
+.tk-thread {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -32,7 +32,7 @@
  * SAYS without changing how tall it is, so the text box never jumps under the
  * cursor mid-sentence.
  */
-.cv-controls {
+.tk-controls {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -50,10 +50,10 @@
 
 /* Live, the pair becomes a single lit object rather than two loose controls —
    the clearest way to say "a call is up" without a banner saying so. */
-.cv-controls.is-live {
-  border-color: var(--cv-hue, var(--accent-line));
-  background: color-mix(in srgb, var(--cv-hue, var(--accent)) 10%, transparent);
-  animation: cv-breathe 3.2s var(--ease) infinite;
+.tk-controls.is-live {
+  border-color: var(--tk-hue, var(--accent-line));
+  background: color-mix(in srgb, var(--tk-hue, var(--accent)) 10%, transparent);
+  animation: tk-breathe 3.2s var(--ease) infinite;
 }
 
 /*
@@ -64,24 +64,24 @@
  * conversation, not a severity, and green-for-listening would read as a health
  * light rather than a microphone.
  */
-.cv-controls[data-state='listening'] { --cv-hue: #4fc3ff; }
-.cv-controls[data-state='capturing'] { --cv-hue: #7fe3ff; }
-.cv-controls[data-state='transcribing'] { --cv-hue: #37abe9; }
-.cv-controls[data-state='thinking'],
-.cv-controls[data-state='tool'] { --cv-hue: #6f8cff; }
-.cv-controls[data-state='speaking'] { --cv-hue: #7fe3ff; }
-.cv-controls[data-state='starting'] { --cv-hue: #2e8fc4; }
-.cv-controls[data-state='error'] { --cv-hue: var(--danger); }
+.tk-controls[data-state='listening'] { --tk-hue: #4fc3ff; }
+.tk-controls[data-state='capturing'] { --tk-hue: #7fe3ff; }
+.tk-controls[data-state='transcribing'] { --tk-hue: #37abe9; }
+.tk-controls[data-state='thinking'],
+.tk-controls[data-state='tool'] { --tk-hue: #6f8cff; }
+.tk-controls[data-state='speaking'] { --tk-hue: #7fe3ff; }
+.tk-controls[data-state='starting'] { --tk-hue: #2e8fc4; }
+.tk-controls[data-state='error'] { --tk-hue: var(--danger); }
 
-@keyframes cv-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cv-hue) 30%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cv-hue) 0%, transparent); }
+@keyframes tk-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tk-hue) 30%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--tk-hue) 0%, transparent); }
 }
 
 /* What it is doing, in two words, beside the thing doing it. */
-.cv-say {
+.tk-say {
   font-size: var(--fs-micro);
-  color: var(--cv-hue, var(--fg-dim));
+  color: var(--tk-hue, var(--fg-dim));
   letter-spacing: 0.02em;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -89,7 +89,7 @@
 
 /* ---- the meter ---- */
 
-.cvi {
+.tk-meter {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -97,11 +97,11 @@
   flex: none;
 }
 
-.cvi-bar {
+.tk-bar {
   width: 3px;
   height: 16px;
   border-radius: 2px;
-  background: var(--cv-hue, var(--accent));
+  background: var(--tk-hue, var(--accent));
   transform-origin: center;
   /* No transition. The level is republished every animation frame, so the
      browser is already drawing 60 steps a second — a transition on top of that
@@ -117,14 +117,14 @@
  * is set inline, which is what turns five identical animations into one thing
  * travelling across the row.
  */
-.cv-controls[data-state='transcribing'] .cvi-bar,
-.cv-controls[data-state='thinking'] .cvi-bar,
-.cv-controls[data-state='tool'] .cvi-bar,
-.cv-controls[data-state='starting'] .cvi-bar {
-  animation: cv-wave 1.1s var(--ease) infinite;
+.tk-controls[data-state='transcribing'] .tk-bar,
+.tk-controls[data-state='thinking'] .tk-bar,
+.tk-controls[data-state='tool'] .tk-bar,
+.tk-controls[data-state='starting'] .tk-bar {
+  animation: tk-wave 1.1s var(--ease) infinite;
 }
 
-@keyframes cv-wave {
+@keyframes tk-wave {
   0%, 100% { transform: scaleY(0.28); opacity: 0.55; }
   50% { transform: scaleY(1); opacity: 1; }
 }
@@ -136,16 +136,16 @@
  * of the travelling wave.
  */
 @media (prefers-reduced-motion: reduce) {
-  .cv-controls.is-live {
+  .tk-controls.is-live {
     animation: none;
   }
-  .cv-controls[data-state='transcribing'] .cvi-bar,
-  .cv-controls[data-state='thinking'] .cvi-bar,
-  .cv-controls[data-state='tool'] .cvi-bar,
-  .cv-controls[data-state='starting'] .cvi-bar {
-    animation: cv-fade 1.8s ease-in-out infinite;
+  .tk-controls[data-state='transcribing'] .tk-bar,
+  .tk-controls[data-state='thinking'] .tk-bar,
+  .tk-controls[data-state='tool'] .tk-bar,
+  .tk-controls[data-state='starting'] .tk-bar {
+    animation: tk-fade 1.8s ease-in-out infinite;
   }
-  @keyframes cv-fade {
+  @keyframes tk-fade {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
   }
@@ -153,7 +153,7 @@
 
 /* What it thought it heard, under the composer. Only when there is something
    to show, so it costs nothing until the first sentence lands. */
-.cv-heard {
+.tk-heard {
   padding: var(--s1) var(--s4) 0;
   font-size: var(--fs-micro);
   color: var(--fg-faint);
@@ -163,7 +163,7 @@
   white-space: nowrap;
 }
 
-.cv-mic {
+.tk-mic {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -177,24 +177,24 @@
   letter-spacing: 0.02em;
 }
 
-.cv-mic:hover {
+.tk-mic:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* Unmistakably live: this is a hot microphone and it should not be subtle. */
-.cv-mic.is-on {
+.tk-mic.is-on {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
-.cv-mic-label {
+.tk-mic-label {
   font-weight: 500;
 }
 
 /* LiveWorkspace, present for its microphone and playback rather than its UI.
    display:none affects layout only — getUserMedia, the AudioWorklet and the
    TTS playback are all indifferent to whether their component is painted. */
-.cv-machinery {
+.tk-machinery {
   display: none;
 }

@@ -23,7 +23,7 @@ import {
   type IpcEventChannel,
   type IpcEvents
 } from '@shared/ipc'
-import { DEFAULT_WORKFLOW, WORKFLOWS, isVoiceWorkflow } from '@shared/workflows'
+import { DEFAULT_WORKFLOW, WORKFLOWS, canSpeak } from '@shared/workflows'
 import type {
   ReasoningEffort,
   SamplingOverrides,
@@ -787,7 +787,11 @@ export const useStore = create<AppState>()((set, get) => {
       // conversation carries its workflow, the whole app then followed it there
       // — the user pressed a button in one section and landed in another.
       const here = get().activeWorkflow
-      const target: WorkflowId = isVoiceWorkflow(here) ? here : 'live'
+      /* canSpeak, not isVoiceWorkflow: Image and Audio can be spoken to now,
+         and the narrower test would have bounced someone out of the workflow
+         they pressed the button in — the exact bug this line was written to
+         fix, one capability later. */
+      const target: WorkflowId = canSpeak(here) ? here : 'live'
       const conversationId = await ensureConversation(target)
       if (!conversationId) {
         return { ok: false, error: 'Could not open a conversation for the session.' }

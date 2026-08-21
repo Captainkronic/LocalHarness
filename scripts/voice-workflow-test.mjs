@@ -13,12 +13,17 @@
  *   node scripts/voice-workflow-test.mjs
  */
 import { build } from 'esbuild'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/* Read as text: the spoken-mode preamble is a template built at request time,
+   so the assertion is that the session still builds one, not that a particular
+   sentence came out. */
+const sessionSource = readFileSync(resolve(ROOT, 'src/main/live/session.ts'), 'utf8')
 let failures = 0
 const check = (name, ok, detail = '') => {
   if (ok) console.log(`  \x1b[32mok\x1b[0m   ${name}`)
@@ -32,7 +37,7 @@ const dir = await mkdtemp(join(tmpdir(), 'lh-voicewf-'))
 await writeFile(
   join(dir, 'e.ts'),
   `export { LiveSession } from '${ROOT}/src/main/live/session'
-   export { WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow } from '${ROOT}/src/shared/workflows'\n`
+   export { WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow, isTalkWorkflow, canSpeak } from '${ROOT}/src/shared/workflows'\n`
 )
 const shim = join(dir, 'electron-shim.mjs')
 await writeFile(
@@ -52,33 +57,65 @@ await build({
   logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim }
 })
-const { LiveSession, WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow } = await import(
+const { LiveSession, WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow, isTalkWorkflow, canSpeak } = await import(
   pathToFileURL(outfile).href
 )
 
 /* ---- 1. the flag, and what it implies -------------------------------- */
 console.log('\n\x1b[1mvoice workflows\x1b[0m')
 
-const voice = WORKFLOWS.filter((w) => w.voice === true).map((w) => w.id)
 /*
- * `converse` is voice-capable but is NOT a voice-only workflow: it renders both
- * a composer and a microphone over one conversation. The flag is what
- * `startLive` checks before deciding where to file a conversation, and without
- * it pressing Start call there would move the thread to Live and take the app
- * with it.
+ * Two tiers, and the distinction is load-bearing.
+ *
+ *   `voice`  — spoken FIRST. The orb is the screen.
+ *   `talk`   — typed first, spoken as well: the same thread with a microphone
+ *              in the composer.
+ *
+ * Converse moved from the first to the second, which is what it always
+ * actually was: it renders a composer and a thread, not an orb. Keeping it
+ * under `voice` is what forced the router to special-case it by id, and that
+ * special case is why adding a second one of these needed a router edit.
  */
-check(
-  'the spoken workflows are exactly these',
-  voice.join(',') === 'live,converse,booker,clinic',
-  voice.join(',')
-)
+const voice = WORKFLOWS.filter((w) => w.voice === true).map((w) => w.id)
+const talk = WORKFLOWS.filter((w) => w.talk === true).map((w) => w.id)
+
+check('the voice-first workflows are exactly these', voice.join(',') === 'live,booker,clinic', voice.join(','))
+check('the talk-capable workflows are exactly these', talk.join(',') === 'converse,image,audio', talk.join(','))
+check('nothing claims to be both', WORKFLOWS.every((w) => !(w.voice === true && w.talk === true)))
+
 check('isVoiceWorkflow agrees with the flag', WORKFLOWS.every((w) => isVoiceWorkflow(w.id) === (w.voice === true)))
-check('an unknown id is not spoken', !isVoiceWorkflow('nonesuch'))
+check('isTalkWorkflow agrees with the flag', WORKFLOWS.every((w) => isTalkWorkflow(w.id) === (w.talk === true)))
+check('canSpeak is the union', WORKFLOWS.every((w) => canSpeak(w.id) === (w.voice === true || w.talk === true)))
+check('an unknown id is not spoken', !isVoiceWorkflow('nonesuch') && !canSpeak('nonesuch'))
 
 for (const id of voice) {
-  // A spoken turn has no approval dialog and no native tool runner, so a voice
-  // workflow declaring native tools would offer what it cannot run.
+  // A spoken turn has no approval dialog and no native tool runner, so a
+  // voice-FIRST workflow declaring native tools would offer what it cannot run.
   check(`${id} declares no native tools`, WORKFLOW_BY_ID[id].nativeTools.length === 0)
+}
+
+/*
+ * A talk workflow MAY declare native tools — it is a typed workflow first, and
+ * Image and Audio both read files when typed at. The spoken loop simply never
+ * wires them, so voice can only ever do LESS. That is safe, and it is only
+ * safe while the model is told, or it offers to read a file and then cannot.
+ */
+for (const id of talk) {
+  const wf = WORKFLOW_BY_ID[id]
+  if (wf.nativeTools.length === 0) continue
+  check(
+    `${id}'s native tools are named as unavailable when spoken`,
+    /These are unavailable while speaking/.test(sessionSource) &&
+      /wf\.nativeTools\.join/.test(sessionSource),
+    'a model that believes it can read a file will offer to'
+  )
+}
+
+/* The one workflow class that must never get this: an approval gate is the
+   reason writing files and running shells is acceptable at all, and a spoken
+   turn cannot show one. */
+for (const id of ['code', 'docs']) {
+  check(`${id} cannot be spoken to`, !canSpeak(id), 'it writes files behind an approval dialog')
 }
 
 /* ---- 2. the session takes its workflow from the conversation ---------- */

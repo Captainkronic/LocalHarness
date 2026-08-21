@@ -328,7 +328,7 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     /* Voice-capable, which is what `startLive` checks before deciding where to
        file the conversation. Without this, pressing Start call here would move
        the thread to Live and take the whole app with it. */
-    voice: true,
+    talk: true,
     panel: 'outputs',
     mcpServers: ['fastfacts', 'gmail'],
     nativeTools: [],
@@ -798,6 +798,7 @@ keeps FAILING the same way while the code looks right, suspect the check.
     glyph: '❖',
     accent: '#c77dbb',
     mcpServers: ['comfy-image'],
+    talk: true,
     nativeTools: ['read_file', 'list_dir'],
     panel: 'gallery',
     systemPrompt: `${BASE_PROMPT}
@@ -888,6 +889,7 @@ Write prompts like a photographer briefing a shoot, not like a tag list. A good 
     glyph: '♪',
     accent: '#5fb49c',
     mcpServers: ['comfy-audio', 'voice'],
+    talk: true,
     nativeTools: ['read_file', 'list_dir'],
     panel: 'audio',
     systemPrompt: `${BASE_PROMPT}
@@ -1101,4 +1103,23 @@ export const DEFAULT_WORKFLOW: WorkflowId = 'chat'
  */
 export function isVoiceWorkflow(id: WorkflowId): boolean {
   return WORKFLOW_BY_ID[id]?.voice === true
+}
+
+/** A typed workflow whose composer also offers push-to-talk. */
+export function isTalkWorkflow(id: WorkflowId): boolean {
+  return WORKFLOW_BY_ID[id]?.talk === true
+}
+
+/**
+ * Can a spoken session run on this workflow at all?
+ *
+ * The one question the session, the store and the router all need answered,
+ * and they used to answer it separately: the session gated on `voice`, the
+ * store fell back to the Live workflow when the current one was not `voice`,
+ * and the router special-cased Converse by id because it was neither shape
+ * cleanly. Three places, three chances to disagree — which is exactly how
+ * Flight Booker once ended up filed under Live.
+ */
+export function canSpeak(id: WorkflowId): boolean {
+  return isVoiceWorkflow(id) || isTalkWorkflow(id)
 }

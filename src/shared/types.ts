@@ -107,6 +107,31 @@ export interface WorkflowDefinition {
    */
   voice?: boolean
   /**
+   * This workflow's chat screen offers push-to-talk.
+   *
+   * Distinct from `voice`, and the difference is the whole point. `voice` means
+   * the workflow IS spoken and gets the orb as its main pane. `talk` means an
+   * ordinary typed workflow that can ALSO be spoken to, without leaving the
+   * conversation: the same thread, the same panel, one extra control in the
+   * composer.
+   *
+   * Opt-in per workflow, deliberately, because a spoken turn is not a typed one
+   * with a microphone attached. Two things about it are load-bearing:
+   *
+   *   It cannot show an approval dialog. There is no way to ask "are you sure"
+   *   to someone who is talking, so every MCP tool this workflow exposes will
+   *   run unasked. Only set this where that is true of all of them.
+   *
+   *   It has no native tools at all. The spoken loop wires MCP tools only, so a
+   *   workflow with `nativeTools` can do strictly less by voice than by typing.
+   *   That is safe — it can only ever narrow — but the model is told so, or it
+   *   offers to read a file it has no way to read.
+   *
+   * Which is why Code and Docs do not have it and should not: they write files
+   * and run shells, and the approval gate is the reason that is acceptable.
+   */
+  talk?: boolean
+  /**
    * A tool the app calls on this workflow's own MCP server when a session
    * opens, with `{ id: conversationId }`.
    *

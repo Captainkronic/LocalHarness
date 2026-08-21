@@ -32,7 +32,7 @@ const read = (p) => readFileSync(resolve(ROOT, p), 'utf8')
 const types = read('src/shared/types.ts')
 const store = read('src/renderer/state/store.ts')
 const live = read('src/renderer/components/live/LiveWorkspace.tsx')
-const indicator = read('src/renderer/components/converse/VoiceIndicator.tsx')
+const indicator = read('src/renderer/components/talk/VoiceIndicator.tsx')
 const session = read('src/main/live/session.ts')
 
 /* ---- the trap is labelled ---------------------------------------------- */
@@ -79,17 +79,17 @@ check(
 )
 check(
   'no CSS transition stacked on top of the per-frame updates',
-  !/transition: transform/.test(read('src/renderer/components/converse/converse.css')),
+  !/transition: transform/.test(read('src/renderer/components/talk/talk.css')),
   'two smoothing passes is what "not realtime enough" feels like'
 )
 
 /* ---- and the row it lives in did not grow --------------------------- */
 
-const css = read('src/renderer/components/converse/converse.css')
+const css = read('src/renderer/components/talk/talk.css')
 check(
   'the live pill reserves its border rather than adding one',
-  /\.cv-controls \{[^}]*border: 1px solid transparent/.test(css) &&
-    /\.cv-controls\.is-live \{[^}]*border-color:/.test(css),
+  /\.tk-controls \{[^}]*border: 1px solid transparent/.test(css) &&
+    /\.tk-controls\.is-live \{[^}]*border-color:/.test(css),
   'otherwise the composer grows the instant a call starts'
 )
 

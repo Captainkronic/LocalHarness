@@ -1,17 +1,23 @@
 /**
- * One conversation you can type into or talk into, without changing screens.
+ * A conversation you can type into or talk into, for any workflow that says it
+ * can take it.
  *
- * Chat and Live were never separate threads. The live session pushes plain user
- * and assistant messages into `conv.messages` and composes its requests with the
- * same `buildMessages` a typed turn uses, so a spoken turn is already an
- * ordinary message in the transcript. Nothing had to be merged; it only had to
- * stop being hidden.
+ * This began as Converse and is no longer only Converse. Nothing in it was
+ * specific to that workflow — the thread, the composer, the microphone and the
+ * panel are the same parts in every case — so Image and Audio use it unchanged,
+ * and a workflow added next year gets it by writing `talk: true` rather than by
+ * writing a screen.
  *
- * Which is what the first version of this got wrong. It toggled between the
- * chat view and the live workspace, so speaking HID the conversation in order
- * to show a microphone — and seeing the two interleaved is the entire thing
- * that makes them feel like one thread. The transcript now always stays and
- * only the input changes.
+ * What makes that safe is on the definition, not here: `talk` asserts that this
+ * workflow's MCP tools are safe to run without an approval dialog, because a
+ * spoken turn has no way to show one. See WorkflowDefinition.talk. Code and Docs
+ * do not have it and should not.
+ *
+ * Chat and Live were never separate threads to begin with. The live session
+ * pushes plain user and assistant messages into `conv.messages` and composes its
+ * requests with the same `buildMessages` a typed turn uses, so a spoken turn is
+ * already an ordinary message in the transcript. Nothing had to be merged; it
+ * only had to stop being hidden.
  *
  * There is deliberately no mode to be in. The composer is always live and the
  * call button is always there, so replying to something you heard by typing is
@@ -24,7 +30,7 @@ import ChatView from '@renderer/components/chat/ChatView'
 import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
 import VoiceIndicator from './VoiceIndicator'
 import { useStore } from '@renderer/state/store'
-import './converse.css'
+import './talk.css'
 
 /**
  * What each session state means to someone looking at the bar.
@@ -46,7 +52,7 @@ const SAYS: Record<string, string> = {
   error: 'Stopped'
 }
 
-export default function ConverseWorkspace(): JSX.Element {
+export default function TalkDeck(): JSX.Element {
   const liveStatus = useStore((s) => s.liveStatus)
   const startLive = useStore((s) => s.startLive)
   const stopLive = useStore((s) => s.stopLive)
@@ -62,7 +68,7 @@ export default function ConverseWorkspace(): JSX.Element {
   }, [running, startLive, stopLive])
 
   return (
-    <div className="cv">
+    <div className="tk">
       {/* The conversation, always. Spoken turns arrive here as ordinary
           messages, so there is nothing to switch to in order to read them.
 
@@ -82,34 +88,34 @@ export default function ConverseWorkspace(): JSX.Element {
             the way out. Nothing appears or disappears above the text box, so
             the composer does not jump height when a call starts.
           */
-          <div className={running ? 'cv-controls is-live' : 'cv-controls'} data-state={state}>
+          <div className={running ? 'tk-controls is-live' : 'tk-controls'} data-state={state}>
             {running ? (
               <>
                 <VoiceIndicator state={state} />
-                <span className="cv-say" role="status">
+                <span className="tk-say" role="status">
                   {SAYS[state] ?? state}
                 </span>
                 <button
                   type="button"
-                  className="cv-mic is-on"
+                  className="tk-mic is-on"
                   onClick={toggleCall}
                   title="End the voice session"
                   aria-label="End the voice session"
                 >
                   <MicIcon speaking={false} stop />
-                  <span className="cv-mic-label">Stop</span>
+                  <span className="tk-mic-label">Stop</span>
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                className="cv-mic"
+                className="tk-mic"
                 onClick={toggleCall}
                 title="Talk instead of typing"
                 aria-label="Talk instead of typing"
               >
                 <MicIcon speaking={false} stop={false} />
-                <span className="cv-mic-label">Talk</span>
+                <span className="tk-mic-label">Talk</span>
               </button>
             )}
           </div>
@@ -134,7 +140,7 @@ export default function ConverseWorkspace(): JSX.Element {
         Hidden with display:none, which affects layout and nothing else. Audio
         capture and playback do not care whether their component is painted.
       */}
-      <div className="cv-machinery" aria-hidden="true">
+      <div className="tk-machinery" aria-hidden="true">
         <LiveWorkspace />
       </div>
 
@@ -157,7 +163,7 @@ export default function ConverseWorkspace(): JSX.Element {
         for a strange answer, and without seeing it the answer just looks wrong.
       */}
       {running && liveStatus.lastUserText !== '' ? (
-        <p className="cv-heard" title="What was transcribed">
+        <p className="tk-heard" title="What was transcribed">
           heard “{liveStatus.lastUserText}”
         </p>
       ) : null}

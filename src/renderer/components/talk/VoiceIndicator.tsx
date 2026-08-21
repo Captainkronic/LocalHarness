@@ -23,7 +23,7 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 
 import type { LiveSessionState } from '@shared/types'
 import { useStore } from '@renderer/state/store'
-import './converse.css'
+import './talk.css'
 
 /** Per-bar shape, so the meter reads as a voice rather than a bar chart. */
 const BARS = [0.55, 0.82, 1, 0.82, 0.55]
@@ -80,7 +80,7 @@ export function VoiceIndicator({ state }: { state: LiveSessionState }): JSX.Elem
   const shown = useSmoothLevel(level, metered)
 
   return (
-    <span className="cvi" data-state={state} aria-hidden="true">
+    <span className="tk-meter" data-state={state} aria-hidden="true">
       {BARS.map((shape, i) => {
         /* A floor so the meter never collapses to nothing: an empty control
            reads as broken, and silence during a call is still a live mic. */
@@ -88,7 +88,7 @@ export function VoiceIndicator({ state }: { state: LiveSessionState }): JSX.Elem
         return (
           <span
             key={i}
-            className="cvi-bar"
+            className="tk-bar"
             style={{
               /* Height as a scale keeps every bar on one compositor layer;
                  animating height itself would lay the row out each frame. */

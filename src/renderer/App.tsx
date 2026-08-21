@@ -17,7 +17,7 @@ import {
 
 import { useStore } from '@renderer/state/store'
 import { basename, formatMs, formatTokens } from '@renderer/lib/format'
-import { WORKFLOW_BY_ID, isVoiceWorkflow } from '@shared/workflows'
+import { WORKFLOW_BY_ID, isTalkWorkflow, isVoiceWorkflow } from '@shared/workflows'
 import type { ModelInfo, ServerHealth } from '@shared/types'
 
 // Default imports throughout: every sibling exports its component as the module
@@ -27,7 +27,7 @@ import MetricsHud from '@renderer/components/metrics/MetricsHud'
 import WorkflowRail from '@renderer/components/workflow/WorkflowRail'
 import Sidebar from '@renderer/components/workflow/Sidebar'
 import SettingsModal from '@renderer/components/workflow/SettingsModal'
-import ConverseWorkspace from '@renderer/components/converse/ConverseWorkspace'
+import TalkDeck from '@renderer/components/talk/TalkDeck'
 import ChatView from '@renderer/components/chat/ChatView'
 import ApprovalDialog from '@renderer/components/chat/ApprovalDialog'
 import ContextPanel from '@renderer/components/panels/ContextPanel'
@@ -245,12 +245,16 @@ export default function App(): ReactElement {
             <EditWorkspace />
           ) : workflow.id === 'code' ? (
             <CodeWorkspace />
-          ) : workflow.id === 'converse' ? (
-            /* Checked BEFORE isVoiceWorkflow: converse is voice-capable, so the
-               generic voice branch would swallow it and render only the mic. */
-            <ConverseWorkspace />
           ) : isVoiceWorkflow(workflow.id) ? (
+            /* Voice-FIRST: the orb is the screen. */
             <LiveWorkspace />
+          ) : isTalkWorkflow(workflow.id) ? (
+            /* Typed first, spoken as well — the thread with a microphone in the
+               composer. This used to be a check for the literal id 'converse',
+               which is why adding a second one of these meant editing a router.
+               Now it is a capability, and a new workflow opts in on its own
+               definition. */
+            <TalkDeck />
           ) : (
             <ChatView />
           )}
