@@ -70,19 +70,9 @@ check(
  * request 13 of 90 silenced the remaining 77 and every turn after it.
  */
 check(
-  'the turn-level effort is a const, so nothing can reassign it',
-  /\n\s*const effort =\s*\n/.test(code),
-  'effort is `let` again — a retry can now silence the rest of the turn'
-)
-check(
   'the retry does NOT touch the turn-level effort',
   !/[^a-zA-Z]effort = '/.test(code),
   'something assigns to `effort` directly'
-)
-check(
-  'the override is consumed and cleared in the same breath',
-  /const requestEffort = .*effortThisRequest \?\? effort.*\n\s*effortThisRequest = undefined/.test(code),
-  'the per-request override is not cleared where it is read, so it can leak'
 )
 check(
   'what is SENT is the per-request value',
@@ -109,16 +99,6 @@ check(
   'it counts spirals rather than latching on the first',
   /reasoningTrips \+= 1/.test(code),
   'no spiral counter'
-)
-check(
-  'and stops handing thinking back after too many',
-  /reasoningTrips >= MAX_REASONING_TRIPS/.test(code) && /effortLatchedOff = true/.test(code),
-  'nothing escalates — a turn could ping-pong between spiral and retry forever'
-)
-check(
-  'the latch actually suppresses the effort',
-  /effortLatchedOff \? 'none' :/.test(code),
-  'the latch is set but never read'
 )
 
 /*
@@ -205,25 +185,38 @@ check('the retry turns thinking off', /effortThisRequest = 'none'/.test(lenBlock
   'the same remedy the mid-stream breaker applies')
 check('it shares the spiral budget rather than inventing a new one',
   /reasoningTrips < MAX_REASONING_TRIPS/.test(lenBlock) && /reasoningTrips \+= 1/.test(lenBlock))
-check('and latches thinking off once the budget is spent',
-  /reasoningTrips >= MAX_REASONING_TRIPS\) effortLatchedOff = true/.test(lenBlock))
 check('the abandoned message is removed', /conv\.messages\.splice\(ghost, 1\)/.test(lenBlock))
 check('the retry gets a fresh signal', /controller = new AbortController\(\)/.test(lenBlock))
 
 
-console.log('\n\x1b[1mthe latch is not a life sentence\x1b[0m')
+console.log('\n\x1b[1mthe GUI selection is the intent\x1b[0m')
+check('the effort sent comes from the LIVE selection, not a turn-start snapshot',
+  /const requestEffort = effortThisRequest \?\? selectedEffort\(\)/.test(code),
+  'read once per turn, moving the picker mid-run does nothing for hours')
+check('the selection is read from settings each time',
+  /const selectedEffort = \(\)[^\n]*=>\s*\n?\s*this\.d\.settings\.get\(\)\.workflowReasoning/.test(code))
+check('there is NO permanent override left',
+  !/effortLatchedOff/.test(code),
+  'a latch means the app silently sends something other than what the sidebar shows')
+check('a rescue lasts exactly one request',
+  /effortThisRequest = undefined/.test(code) && /effortThisRequest = 'none'/.test(code),
+  'set for the retry and cleared where it is read')
+check('the spiral allowance is still bounded',
+  /reasoningTripsTotal/.test(code) && /HARD_REASONING_TRIPS = 8/.test(code))
+check('progress resets the consecutive counter',
+  /if \(reasoningTripsTotal < HARD_REASONING_TRIPS\) reasoningTrips = 0/.test(code),
+  'a turn that reached for a tool is not spiralling')
+check('the reset happens where tool calls are known to exist',
+  code.indexOf('if (reasoningTripsTotal < HARD_REASONING_TRIPS) reasoningTrips = 0') >
+    code.indexOf('const calls = assistant.toolCalls'))
+check('the reasoning cap follows the effort actually sent',
+  /const reasoningCap = reasoningCapFor\(requestEffort\)/.test(code),
+  'a cap left from a different effort polices the wrong budget')
+
 /* Three spirals set effortLatchedOff and NOTHING ever cleared it, so a turn that
    stumbled on its opening plan ran the next several hours with thinking off.
    Measured on a website build: seventeen steps and twenty-two files written with
    reasoningEffortUsed 'none' while the sidebar said Med the whole time. */
-check('progress clears the consecutive counter',
-  /if \(reasoningTripsTotal < HARD_REASONING_TRIPS\) \{\s*\n\s*reasoningTrips = 0/.test(code),
-  'a turn that reached for a tool is not spiralling and must get thinking back')
-check('and lifts the latch', /reasoningTrips = 0\s*\n\s*effortLatchedOff = false/.test(code))
-check('the un-latch happens where tool calls are known to exist',
-  code.indexOf('if (reasoningTripsTotal < HARD_REASONING_TRIPS)') >
-    code.indexOf('const calls = assistant.toolCalls'),
-  'resetting before the calls are known would clear it on an empty reply too')
 check('a total counter exists and is never reset',
   /let reasoningTripsTotal = 0/.test(code) && !/reasoningTripsTotal = 0\s*\n\s*effortLatchedOff/.test(code))
 check('both trip paths increment the total',

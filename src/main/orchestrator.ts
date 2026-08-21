@@ -551,7 +551,16 @@ export class Orchestrator {
       ...(this.d.settings.get().workflowSampling[conv.workflowId] ?? {})
     }
 
-    const effort =
+    /**
+     * What the user has selected, read fresh on every request.
+     *
+     * Read once per turn before, which meant changing the picker mid-run did
+     * nothing until the next message — on a turn that runs for hours, that is
+     * indistinguishable from the control being broken. The selection is the
+     * intent; the loop should follow it as it stands now, not as it stood when
+     * the turn began.
+     */
+    const selectedEffort = (): ReasoningEffort | undefined =>
       this.d.settings.get().workflowReasoning[conv.workflowId] ?? wf.sampling.reasoningEffort
     /** Set only by the runaway retry, and cleared the moment that request ends. */
     let effortThisRequest: ReasoningEffort | undefined
@@ -584,7 +593,12 @@ export class Orchestrator {
       medium: 0.45,
       high: 0.75
     }
-    const reasoningCap = Math.floor(sampling.maxTokens * (REASONING_SHARE[effort ?? 'low'] ?? 0.5))
+    /* Per request, because the effort can now change between requests — the
+       user may move the picker mid-turn, and a rescue sends one request at
+       'none'. A cap left over from a different effort would police the wrong
+       budget. */
+    const reasoningCapFor = (e: ReasoningEffort | undefined): number =>
+      Math.floor(sampling.maxTokens * (REASONING_SHARE[e ?? 'low'] ?? 0.5))
     /**
      * Reset per REQUEST, not per turn.
      *
@@ -613,7 +627,21 @@ export class Orchestrator {
     /** Counts across the whole turn, so a flapping server cannot loop forever. */
     let emptyRetries = 0
     /** Set once a turn has spiralled too often to be trusted with thinking. */
-    let effortLatchedOff = false
+    /*
+     * There is no permanent override any more.
+     *
+     * A spiral is rescued by re-sending THAT request with thinking off, which
+     * is self-clearing and lasts exactly one request. What used to happen
+     * instead was a latch: three spirals and thinking was gone for the rest of
+     * the turn, which on a multi-hour turn meant hours of work done blind while
+     * the picker in the sidebar still read Med.
+     *
+     * Once the rescue allowance is spent the breaker stops INTERVENING — it
+     * lets the request run at whatever the user has selected. A request that
+     * then burns its budget is recoverable and, importantly, visible: it
+     * reports finish_reason 'length' and says so. Silently changing a setting
+     * the user can see is worse than an honest failure they can act on.
+     */
     /** The last tool call's identity, and how many times it has repeated. */
     /* Everything the breaker needs, oldest first; only the tail is read. */
     const loopHistory: LoopEntry[] = []
@@ -657,8 +685,9 @@ export class Orchestrator {
        */
       await this.d.models.learn(model.id).catch(() => undefined)
 
-      const requestEffort = effortLatchedOff ? 'none' : (effortThisRequest ?? effort)
+      const requestEffort = effortThisRequest ?? selectedEffort()
       effortThisRequest = undefined
+      const reasoningCap = reasoningCapFor(requestEffort)
       /* Both per-REQUEST: the spiral counter measures this request, and the cap
          applies to it alone. */
       reasoningSoFar = 0
@@ -849,7 +878,6 @@ export class Orchestrator {
         /* Off for the retry. Once the turn has spiralled MAX_REASONING_TRIPS
            times, `effortForRest` latches so it stays off — see the counter. */
         effortThisRequest = 'none'
-        if (reasoningTrips >= MAX_REASONING_TRIPS) effortLatchedOff = true
 
         // A fresh signal, or the retry inherits the abort that caused it.
         controller = new AbortController()
@@ -943,7 +971,6 @@ export class Orchestrator {
           if (ghost !== -1) conv.messages.splice(ghost, 1)
           this.persist(conv, true)
           effortThisRequest = 'none'
-          if (reasoningTrips >= MAX_REASONING_TRIPS) effortLatchedOff = true
           controller = new AbortController()
           if (this.active) this.active.controller = controller
           this.log(
@@ -1008,10 +1035,7 @@ export class Orchestrator {
        * the whole allowance, which is the ping-pong this file has warned about
        * since the one-shot flag was removed.
        */
-      if (reasoningTripsTotal < HARD_REASONING_TRIPS) {
-        reasoningTrips = 0
-        effortLatchedOff = false
-      }
+      if (reasoningTripsTotal < HARD_REASONING_TRIPS) reasoningTrips = 0
 
       /*
        * Stop a model that is learning nothing.
