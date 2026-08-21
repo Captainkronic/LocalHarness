@@ -238,6 +238,8 @@ const INITIAL_SETTINGS: Settings = {
   workspaceRoots: [],
   shellAllowlist: [],
   contextWarnFraction: 0.8,
+  contextSlots: 1,
+  autoContinueTurns: 0,
   theme: 'system',
   modelPollMs: 15_000,
   extraEndpoints: [],

@@ -415,6 +415,55 @@ export class RateCalibrator {
     }
   }
 
+  /**
+   * How much our character-based token estimate undercounts, per model.
+   *
+   * `estimateTokens` divides characters by 4, which is the right ratio for
+   * English prose and badly wrong for what an agentic coding turn is actually
+   * made of — source, JSON tool arguments, diffs, stack traces. Dense
+   * punctuation and identifiers tokenise far worse than prose.
+   *
+   * Measured on a flight-sim build: the meter read **42.3k** while the server
+   * reported **63.7k** prompt tokens for the same request — an effective 2.66
+   * characters per token, a 1.5x undercount. That is not a cosmetic error. The
+   * history budget is derived from the same estimate, so trimming believed it
+   * had 20k of headroom that did not exist, never fired, and the turn died with
+   * `finish_reason: length` having spent its entire output budget reasoning and
+   * produced nothing.
+   *
+   * There is no need to guess at a better constant: the server reports real
+   * `prompt_tokens` on every single request. So the ratio is learned, per model,
+   * from the previous turns of this very conversation.
+   */
+  private readonly promptRatio = new Map<string, number>()
+
+  /**
+   * Record what the server said the prompt really cost against what we guessed.
+   *
+   * Both must be for the SAME request, and `estimated` must be the figure that
+   * came out of `estimateTokens`, or the ratio measures the wrong thing.
+   */
+  observePromptEstimate(modelId: string, estimated: number, actual: number): void {
+    if (modelId.length === 0 || estimated <= 0 || actual <= 0) return
+    /* Guard against nonsense in either direction. A ratio below 1 means the
+       estimate was already generous; above 4 means something other than
+       tokenisation differs, and scaling by it would trim a conversation to
+       nothing. */
+    const ratio = actual / estimated
+    if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 4) return
+    this.blend(this.promptRatio, modelId, ratio)
+  }
+
+  /**
+   * Multiplier to apply to a character-based estimate for this model.
+   *
+   * Returns 1 until something has been measured, so a fresh model behaves
+   * exactly as before rather than being trimmed on the strength of a guess.
+   */
+  promptTokenRatio(modelId: string): number {
+    return this.promptRatio.get(modelId) ?? 1
+  }
+
   private blend(store: Map<string, number>, modelId: string, sample: number): void {
     if (!Number.isFinite(sample) || sample <= 0) return
     const previous = store.get(modelId)

@@ -18,14 +18,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = await mkdtemp(join(tmpdir(), 'lh-trim-'))
 await writeFile(join(dir, 'e.ts'),
-  `export { trimToBudget, countConversationTokens } from '${ROOT}/src/main/llm/prompt'\n`)
+  `export { trimToBudget, countConversationTokens, workspaceLine } from '${ROOT}/src/main/llm/prompt'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'\nexport const app={getPath:()=>tmpdir(),getVersion:()=>'0'}\nexport default{app}\n`)
 const out = join(dir, 'b.mjs')
 await build({ entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },  format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim } })
-const { trimToBudget, countConversationTokens } = await import(pathToFileURL(out).href)
+const { trimToBudget, countConversationTokens, workspaceLine } = await import(pathToFileURL(out).href)
 
 let fail = 0
 const check = (name, ok, note = '') => {
@@ -99,6 +99,20 @@ check('onTrim kept count matches output', info !== null && info.kept === t2.leng
 // Nothing to drop: a single exchange cannot be trimmed further.
 const one = [{ role: 'system', content: 'sys' }, { role: 'user', content: pad(500) }]
 check('single exchange is never dropped', trimToBudget(one, 5) === one)
+
+
+console.log('\nWorkspace line — so the model never has to guess a path')
+/* Across one day of runs the model invented /Users/adam/workspace,
+   /outputs/mini-golf-3d and /Users/adam/flight-sim, each costing a refused call
+   and a round trip, because nothing ever told it where it was. */
+check('a single root is named outright', /\/ws\/one/.test(workspaceLine(['/ws/one'])))
+check('and says relative paths resolve against it',
+  /relative path is resolved against it/.test(workspaceLine(['/ws/one'])))
+check('and tells it not to guess', /Do not guess/.test(workspaceLine(['/ws/one'])))
+check('several roots are all named',
+  /\/ws\/a/.test(workspaceLine(['/ws/a','/ws/b'])) && /\/ws\/b/.test(workspaceLine(['/ws/a','/ws/b'])))
+check('no roots means no line at all', workspaceLine([]) === '',
+  'an empty sentence in every system prompt is pure cost')
 
 await rm(dir, { recursive: true, force: true })
 console.log(fail === 0 ? '\n\x1b[32mall trim checks passed\x1b[0m\n' : `\n\x1b[31m${fail} failed\x1b[0m\n`)

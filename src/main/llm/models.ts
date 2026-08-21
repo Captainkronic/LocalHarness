@@ -156,8 +156,19 @@ export class ModelRegistry {
   }
 
   /** The real window for a model, or null when it has never been observed loaded. */
+  /**
+   * The window a SINGLE request actually gets, not the one the server advertises.
+   *
+   * Divided by `contextSlots` because llama.cpp splits `n_ctx` across parallel
+   * slots and says so nowhere in either models API. Every caller — the trim
+   * budget and the context meter alike — wants the effective number, so the
+   * division belongs here rather than at each call site.
+   */
   contextWindow(modelId: string): number | null {
-    return this.windows.get(modelId)?.contextLength ?? null
+    const raw = this.windows.get(modelId)?.contextLength ?? null
+    if (raw === null || raw <= 0) return raw
+    const slots = Math.max(1, Math.round(this.opts.getSettings().contextSlots || 1))
+    return Math.floor(raw / slots)
   }
 
   health(): ServerHealth {

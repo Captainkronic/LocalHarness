@@ -450,6 +450,15 @@ export interface ChatMessage {
    * on from it, so it must never be inferred from the error text.
    */
   stoppedAtCap?: boolean
+  /**
+   * The turn ended because the loop breaker gave up on it, having already
+   * advised the model twice.
+   *
+   * A typed marker for the same reason `stoppedAtCap` is one: auto-continue
+   * keys on it, and deciding whether to spend another whole turn must never
+   * depend on matching a sentence that exists to be reworded.
+   */
+  stoppedLooping?: boolean
   error?: string
 }
 
@@ -1220,6 +1229,45 @@ export interface Settings {
   shellAllowlist: string[]
   /** Warn when the assembled prompt exceeds this fraction of the window. */
   contextWarnFraction: number
+  /**
+   * How many parallel slots the server splits its context across.
+   *
+   * llama.cpp divides `n_ctx` between `--parallel` slots, so a server loaded
+   * with 101,632 tokens and `PARALLEL 4` gives a single request 25,408 — and
+   * neither the OpenAI `/v1/models` payload nor LM Studio's `/api/v0/models`
+   * mentions it. Only `lms ps` prints it.
+   *
+   * Getting this wrong is not a cosmetic error. A run that crossed the real
+   * per-slot limit sat in prefill for THIRTY-ONE MINUTES — GPU pinned at 100%,
+   * no first token, the meter cheerfully reading "52.4k / 102k" — because the
+   * server was context-shifting on every step. Trimming never fired either,
+   * since the budget was computed from the full window.
+   *
+   * 1 for a normal single-slot server; set it to the `PARALLEL` column of
+   * `lms ps` when the server is sharing its window.
+   */
+  contextSlots: number
+  /**
+   * Turns the app will start again on its own after a RECOVERABLE stop.
+   *
+   * Two things end a turn without the model being finished: the step cap, and
+   * the loop breaker giving up. Both leave the work intact and both are
+   * designed to be continued — the UI has always offered a button for it. That
+   * button is the problem for an unattended run: measured over a three-hour
+   * agentic build, 4% of wall clock was the app sitting idle waiting for a
+   * human to press it, and that was WITH someone watching. Overnight it is
+   * however many hours remain.
+   *
+   * Bounded rather than unlimited, because "carry on" is not always the right
+   * answer and a run that needs it ten times in a row needs a person. The
+   * counter is per user message, so each thing actually asked for gets its own
+   * allowance.
+   *
+   * 0 disables it, which is the default: a harness that silently keeps working
+   * after it said it had stopped is a surprise, and surprises should be opted
+   * into.
+   */
+  autoContinueTurns: number
   theme: 'dark' | 'light' | 'system'
   /** Poll interval floor for /api/v0/models, ms. Backs off when idle. */
   modelPollMs: number

@@ -60,6 +60,41 @@ export interface BuildOptions {
   budget?: number
   /** Called only when something was actually dropped. */
   onTrim?: (info: TrimInfo) => void
+  /**
+   * The sandbox folders, named in the system prompt so the model does not have
+   * to discover or invent them. See `workspaceLine`.
+   */
+  workspaceRoots?: string[]
+}
+
+/**
+ * Where the model is allowed to work, stated rather than discovered.
+ *
+ * The sandbox refuses anything outside these folders, and the refusal message
+ * is good — but until this existed the model was never TOLD the path, so it
+ * guessed. Across one day of agentic runs it invented `/Users/adam/workspace`,
+ * `/outputs/mini-golf-3d` and `/Users/adam/flight-sim`, each costing a refused
+ * call and a round trip through a 27B model at ~18 tok/s before it fell back to
+ * list_dir to find out where it actually was.
+ *
+ * A dozen tokens at the top of the prompt removes the whole class. It also
+ * gives relative paths a stated meaning, which is the other half of the same
+ * problem: `minigolf/game.js` resolved under the workspace root and missed, and
+ * nothing in the prompt said what it would be resolved against.
+ */
+export function workspaceLine(roots: string[]): string {
+  if (roots.length === 0) return ''
+  if (roots.length === 1) {
+    return (
+      `Your workspace is ${roots[0]}. That is the only folder you can read or write, ` +
+      `and a relative path is resolved against it. Do not guess at other paths.`
+    )
+  }
+  return (
+    `Your workspace folders are ${roots.map((r) => `${r}`).join(', ')}. Those are the only ` +
+    `folders you can read or write, and a relative path is resolved against the first. ` +
+    `Do not guess at other paths.`
+  )
 }
 
 /** e.g. "Today is Tuesday, 18 August 2026." — the model's only clock. */
@@ -139,7 +174,11 @@ export function buildMessages(
     // rather than quoted: booking a flight, "how long until", "is that still
     // current". Roughly a dozen tokens, and it removes a whole class of
     // confident nonsense.
-    out.push({ role: 'system', content: `${systemPrompt}\n\n${todayLine()}` })
+    const where = workspaceLine(opts.workspaceRoots ?? [])
+    out.push({
+      role: 'system',
+      content: `${systemPrompt}\n\n${todayLine()}${where === '' ? '' : `\n${where}`}`
+    })
   }
 
   // Tool results the conversation stores as their own messages. Results held on

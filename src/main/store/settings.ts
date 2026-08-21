@@ -50,6 +50,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // takes no path or operates on the working directory.
   shellAllowlist: ['pwd', 'git status', 'git diff', 'git log', 'npm run typecheck', 'node -v'],
   contextWarnFraction: 0.75,
+  contextSlots: 1,
+  autoContinueTurns: 0,
   theme: 'dark',
   modelPollMs: 600000,
   // Adam's MLX server with multi-token prediction, alongside LM Studio's own.
@@ -249,6 +251,8 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     workspaceRoots: roots ? dedupe(roots.map(expandTilde)) : base.workspaceRoots,
     shellAllowlist: allowlist ? dedupe(allowlist.map((c) => c.trim()).filter(Boolean)) : base.shellAllowlist,
     contextWarnFraction: asClampedNumber(src.contextWarnFraction, 0.1, 1) ?? base.contextWarnFraction,
+    contextSlots: Math.round(asClampedNumber(src.contextSlots, 1, 16) ?? base.contextSlots),
+    autoContinueTurns: Math.round(asClampedNumber(src.autoContinueTurns, 0, 50) ?? base.autoContinueTurns),
     theme:
       theme !== undefined && (THEMES as readonly string[]).includes(theme)
         ? (theme as Settings['theme'])
