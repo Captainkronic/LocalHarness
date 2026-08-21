@@ -16,6 +16,7 @@
  *
  *   node scripts/syntax-warning-test.mjs
  */
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -88,6 +89,25 @@ check('good JSON passes', (await syntaxWarning('/x/a.json', '{"a": 1}')) === nul
 check('a very large file is skipped',
   (await syntaxWarning('/x/big.js', 'var a = 1;\n'.repeat(60000) + 'function(){')) === null,
   'a bundle is not what an agent hand-edits, and parsing one costs more than it saves')
+
+
+console.log('\n\x1b[1mSilence must not read as a clean bill of health\x1b[0m')
+/* Watched live: a React build hit a JSX nesting error the harness cannot check,
+   and the model concluded "a write truncation definitely occurred" and began
+   investigating the TOOL. The file was complete; it was missing a closing tag.
+   Two things now push back on that — the write reports its size verified on
+   disk, and an unchecked extension says it was not checked. */
+const exec = readFileSync(join(ROOT, 'src/main/agent/executor.ts'), 'utf8')
+check('a write reports its size verified on disk',
+  /on disk, verified/.test(exec),
+  'distrusting the tool is a hypothesis the model cannot disprove; the tool should disprove it unasked')
+check('and shouts if disk disagrees with what was written',
+  /was written but the file is/.test(exec))
+check('unchecked extensions are declared, not passed over in silence',
+  /const UNCHECKED_EXT = new Set\(\['\.jsx', '\.tsx', '\.ts'\]\)/.test(exec))
+check('and the note points at the project build',
+  /run the project's own build/.test(exec),
+  'the toolchain is the thing that can actually parse JSX')
 
 await rm(dir, { recursive: true, force: true })
 console.log(failed === 0 ? '\n\x1b[32mall syntax-warning checks passed\x1b[0m\n' : `\n\x1b[31m${failed} failed\x1b[0m\n`)

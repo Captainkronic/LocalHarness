@@ -250,6 +250,18 @@ export async function syntaxWarning(target: string, content: string): Promise<st
   })
 }
 
+/**
+ * Extensions we deliberately do NOT syntax-check, and should say so about.
+ *
+ * Silence reads as a clean bill of health. A model that has seen
+ * "DOES NOT PARSE" on its .js files reasonably infers that no warning on a
+ * .jsx means the .jsx parsed — and it does not, because nothing looked.
+ */
+const UNCHECKED_EXT = new Set(['.jsx', '.tsx', '.ts'])
+function unchecked(target: string): boolean {
+  return UNCHECKED_EXT.has(nodePath.extname(target).toLowerCase())
+}
+
 /** True for a path the executor will resolve against the workspace root. */
 function rawIsRelative(p: string): boolean {
   return p !== '' && !nodePath.isAbsolute(p) && !p.startsWith('~')
@@ -1070,11 +1082,35 @@ export class ToolExecutor {
     })
 
     const warned = await syntaxWarning(target, content)
+    /*
+     * Read the size back off disk and say so.
+     *
+     * Not paranoia about our own fs.writeFile — it is about what the model does
+     * when its code does not work. Watched live: a React build hit a JSX nesting
+     * error the harness could not check, and the model concluded "a write
+     * truncation definitely occurred" and started investigating the TOOL. The
+     * file was complete; it was missing a closing tag. Distrusting the tool is
+     * an expensive hypothesis because nothing the model can do will disprove
+     * it — so the tool should disprove it, unasked, in one number.
+     */
+    const onDisk = await statOrNull(target)
+    const intended = Buffer.byteLength(content)
+    const verified =
+      onDisk !== null && onDisk.size === intended
+        ? ` ${formatBytes(intended)} on disk, verified.`
+        : onDisk === null
+          ? ''
+          : ` WARNING: ${formatBytes(intended)} was written but the file is ${formatBytes(onDisk.size)} on disk.`
     return ok(
       (st
-        ? `Wrote ${shown} (+${stat.added} -${stat.removed}, ${formatBytes(Buffer.byteLength(content))}).`
-        : `Created ${shown} (${countLines(content)} lines, ${formatBytes(Buffer.byteLength(content))}).`) +
-        (warned ? `\n\nWARNING: ${warned}` : '')
+        ? `Wrote ${shown} (+${stat.added} -${stat.removed}).${verified}`
+        : `Created ${shown} (${countLines(content)} lines).${verified}`) +
+        (warned ? `\n\nWARNING: ${warned}` : '') +
+        (unchecked(target)
+          ? `\n\nNote: ${nodePath.extname(target)} is not plain JavaScript, so its syntax was NOT ` +
+            `checked here. If the page misbehaves, run the project's own build — that is what will ` +
+            `find a mismatched tag.`
+          : '')
     )
   }
 
