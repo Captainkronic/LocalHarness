@@ -1,0 +1,61 @@
+/* Converse: the two input surfaces, one above the other in the stacking sense.
+   Both stay mounted so a toggle does not tear down audio capture or lose the
+   transcript's scroll position; only one is visible. */
+.cv {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.cv-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line-subtle);
+  background: var(--bg-raised);
+  flex: none;
+}
+
+.cv-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-size: var(--fs-small);
+  color: var(--fg-dim);
+}
+
+.cv-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.cv-tab.is-on {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+/* Pushed right and kept quiet: it explains, it does not instruct. */
+.cv-note {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+}
+
+.cv-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* `display: none` rather than visibility or opacity: a hidden pane must not
+   take part in layout, and must not be reachable by tab. */
+.cv-pane.is-hidden {
+  display: none;
+}

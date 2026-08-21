@@ -18,6 +18,7 @@
 export type WorkflowId =
   | 'chat'
   | 'live'
+  | 'converse'
   | 'booker'
   | 'clinic'
   | 'code'

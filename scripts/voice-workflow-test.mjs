@@ -60,7 +60,18 @@ const { LiveSession, WORKFLOWS, WORKFLOW_BY_ID, isVoiceWorkflow } = await import
 console.log('\n\x1b[1mvoice workflows\x1b[0m')
 
 const voice = WORKFLOWS.filter((w) => w.voice === true).map((w) => w.id)
-check('the spoken workflows are exactly these', voice.join(',') === 'live,booker,clinic', voice.join(','))
+/*
+ * `converse` is voice-capable but is NOT a voice-only workflow: it renders both
+ * a composer and a microphone over one conversation. The flag is what
+ * `startLive` checks before deciding where to file a conversation, and without
+ * it pressing Start call there would move the thread to Live and take the app
+ * with it.
+ */
+check(
+  'the spoken workflows are exactly these',
+  voice.join(',') === 'live,converse,booker,clinic',
+  voice.join(',')
+)
 check('isVoiceWorkflow agrees with the flag', WORKFLOWS.every((w) => isVoiceWorkflow(w.id) === (w.voice === true)))
 check('an unknown id is not spoken', !isVoiceWorkflow('nonesuch'))
 

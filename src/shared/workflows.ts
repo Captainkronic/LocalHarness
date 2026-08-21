@@ -306,6 +306,63 @@ file anything by voice. If asked, say so plainly and suggest doing it in Chat.`,
     ]
   },
   {
+    /*
+     * Chat and Live are the same conversation with two different front doors.
+     *
+     * They always were, underneath: the live session pushes into `conv.messages`
+     * and composes requests with the same `buildMessages` as a typed turn, so
+     * the model has never seen them as separate threads. What differed was only
+     * the input surface — a composer versus a microphone — and the app made you
+     * change WORKFLOW to change which one you were using, which files the
+     * conversation somewhere else and loses your place.
+     *
+     * This workflow keeps one conversation and lets the input surface change
+     * under it. Say something, switch to typing, and the model still knows what
+     * you said, because it was never a different thread.
+     */
+    id: 'converse',
+    label: 'Converse',
+    blurb: 'Talk or type, in one thread. Switch between them whenever.',
+    glyph: '⇌',
+    accent: '#c98bdb',
+    /* Voice-capable, which is what `startLive` checks before deciding where to
+       file the conversation. Without this, pressing Start call here would move
+       the thread to Live and take the whole app with it. */
+    voice: true,
+    panel: 'transcript',
+    mcpServers: ['fastfacts', 'gmail'],
+    nativeTools: [],
+    preferredModel: 'google/gemma-4-26b-a4b-qat',
+    firstMove:
+      'Type a question, or press the mic and ask it out loud. It is the same conversation either way — switch whenever it suits you.',
+    skills: [],
+    sampling: {
+      temperature: 0.6,
+      topP: 0.95,
+      maxTokens: 512,
+      reasoningEffort: 'none'
+    },
+    systemPrompt: `${BASE_PROMPT}
+
+You are talking with Adam, and he may be speaking or typing — the same
+conversation either way. He can switch between them mid-thread, so do not treat
+a change of input as a change of subject or greet him again.
+
+When his words arrive from speech they may be misheard rather than mistyped:
+names and technical terms are the usual casualties. If something reads like a
+transcription slip, take the most sensible reading rather than querying it.
+
+Keep replies short enough to be listened to. He may be hearing this rather than
+reading it, and a paragraph that scans fine on screen is a long time to sit
+through. Lead with the answer.`,
+    suggestions: [
+      'What did we decide about this earlier?',
+      'Talk me through the options',
+      'Summarise that in two sentences',
+      'What am I forgetting?'
+    ]
+  },
+  {
     id: 'booker',
     // The same model as Live, and for the same measured reason: this workflow
     // is spoken and it lives or dies on reliable tool calls. See the note on
