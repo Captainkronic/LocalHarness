@@ -14,6 +14,7 @@ import type {
   ToolCall,
   WireTool
 } from '@shared/types'
+import { WIRE_IMAGE_MIMES } from '@shared/types'
 import { estimateTokens, toolSchemaTokens } from '@main/mcp/tokens'
 import type { WireMessage } from './client'
 
@@ -384,6 +385,28 @@ function userContent(msg: ChatMessage, supportsVision: boolean): WireMessage['co
       // A file:// URL is not fetchable by the server, so name it instead of
       // putting something broken on the wire.
       notes.push(`[image unavailable: ${attachment.name} — ${attachment.path}]`)
+      continue
+    }
+    /*
+     * The last gate before the wire, and it exists because history repeats.
+     *
+     * Every request replays the whole conversation, attachments included — so
+     * ONE image the server refuses does not fail one turn, it fails every turn
+     * after it, forever. That is what it looked like: a webp 400'd, and then a
+     * perfectly good PNG 400'd too, because the webp was still in the history
+     * behind it. The conversation was permanently unusable and nothing on
+     * screen said why.
+     *
+     * Attachments picked from now on are converted when they are picked, but
+     * ones already stored cannot be, so an unsendable format is dropped with a
+     * note. Losing one image is a bad turn; sending it is a dead conversation.
+     */
+    const mime = attachment.dataUrl.slice(5, attachment.dataUrl.indexOf(';'))
+    if (!WIRE_IMAGE_MIMES.includes(mime)) {
+      notes.push(
+        `[image not sent: ${attachment.name} — the inference server does not accept ` +
+          `${mime}. Attach it again and it will be converted automatically.]`
+      )
       continue
     }
     images.push({ type: 'image_url', image_url: { url: attachment.dataUrl } })

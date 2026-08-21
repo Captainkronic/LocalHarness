@@ -428,6 +428,20 @@ export interface ChatMessage {
   error?: string
 }
 
+/**
+ * Image formats LM Studio's vision endpoint will actually accept.
+ *
+ * Measured against the server, not assumed: png, jpeg and gif are taken; webp,
+ * bmp and svg are refused with
+ *
+ *   {"error":"'url' field must be a base64 encoded image."}
+ *
+ * which names the wrong thing — the URL is a perfectly well-formed base64 data
+ * URL, and the objection is to the FORMAT inside it. Anything outside this set
+ * is converted before it goes near the wire.
+ */
+export const WIRE_IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif']
+
 export interface Attachment {
   id: string
   kind: 'image' | 'file'

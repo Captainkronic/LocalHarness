@@ -20,7 +20,7 @@ import type {
   IpcEventChannel,
   IpcEvents
 } from '@shared/ipc'
-import { EDIT_IMAGE_EXTENSIONS } from '@shared/types'
+import { EDIT_IMAGE_EXTENSIONS, WIRE_IMAGE_MIMES } from '@shared/types'
 import type {
   ReasoningEffort,
   Attachment,
@@ -132,6 +132,46 @@ async function renderPdfFirstPage(path: string): Promise<Buffer | null> {
     return null
   } finally {
     await rm(out, { force: true }).catch(() => undefined)
+  }
+}
+
+/**
+ * Re-encodes an image into something the inference server will accept.
+ *
+ * A WebP attachment produced a 400 that killed the whole turn — the server
+ * refuses webp, bmp and svg, and says so by complaining the url "must be a
+ * base64 encoded image", which points at the wrong thing entirely. The file
+ * on disk is left alone; only what goes on the wire is converted.
+ *
+ * PNG first because it is lossless and keeps transparency. PNG of a photograph
+ * is however much larger than the webp it came from — 121KB became 821KB here —
+ * so anything still oversized after that is re-encoded as JPEG, where the
+ * alpha channel is worth less than the turn fitting in the context window.
+ */
+async function transcodeForWire(
+  path: string
+): Promise<{ mime: string; buf: Buffer } | null> {
+  const png = join(tmpdir(), `climg-${randomUUID()}.png`)
+  const jpg = join(tmpdir(), `climg-${randomUUID()}.jpg`)
+  try {
+    /* -Z bounds the longest side. Vision encoders work well below this, so it
+       costs nothing visible and stops a large source becoming a huge payload. */
+    await execFileAsync('/usr/bin/sips', ['-s', 'format', 'png', '-Z', '2048', path, '--out', png], {
+      timeout: 30_000
+    })
+    const asPng = await readFile(png)
+    if (asPng.length <= 6 * MB) return { mime: 'image/png', buf: asPng }
+    await execFileAsync(
+      '/usr/bin/sips',
+      ['-s', 'format', 'jpeg', '-s', 'formatOptions', '80', '-Z', '2048', path, '--out', jpg],
+      { timeout: 30_000 }
+    )
+    return { mime: 'image/jpeg', buf: await readFile(jpg) }
+  } catch {
+    return null
+  } finally {
+    await rm(png, { force: true }).catch(() => undefined)
+    await rm(jpg, { force: true }).catch(() => undefined)
   }
 }
 
@@ -393,9 +433,14 @@ export function registerIpc(d: IpcDeps): void {
         let dataUrl: string | undefined
         let tokens = 0
         if (isImage && info.size < 8 * 1024 * 1024) {
-          const buf = await readFile(path)
-          const mime = ext === 'svg' ? 'svg+xml' : ext === 'jpg' ? 'jpeg' : ext
-          dataUrl = `data:image/${mime};base64,${buf.toString('base64')}`
+          const native = `image/${ext === 'svg' ? 'svg+xml' : ext === 'jpg' ? 'jpeg' : ext}`
+          /* Converted here rather than at send time: this runs once when the
+             file is picked, where a second of sips is invisible, instead of on
+             every request that carries the attachment. */
+          const wire = WIRE_IMAGE_MIMES.includes(native)
+            ? { mime: native, buf: await readFile(path) }
+            : await transcodeForWire(path)
+          if (wire) dataUrl = `data:${wire.mime};base64,${wire.buf.toString('base64')}`
           // Vision tokens do not track file size; this is the usual ballpark for
           // a full-frame image and is labelled an estimate in the UI.
           tokens = 1200
@@ -408,7 +453,10 @@ export function registerIpc(d: IpcDeps): void {
           kind: isImage ? 'image' : 'file',
           path,
           name: path.split('/').pop() ?? path,
-          mimeType: isImage ? `image/${ext}` : 'text/plain',
+          /* The mime of what will be SENT, which after a conversion is not the
+             mime of the file on disk. `path` still points at the original, so
+             Open and Reveal are unaffected. */
+          mimeType: isImage ? (dataUrl?.slice(5, dataUrl.indexOf(';')) ?? `image/${ext}`) : 'text/plain',
           dataUrl,
           tokens
         })
