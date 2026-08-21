@@ -33,6 +33,9 @@ export type WorkflowId =
 export type PanelKind =
   | 'none'
   | 'transcript'
+  /** The orb, over the spoken transcript. Converse shows the conversation in
+   *  the centre, so the voice UI lives here instead of taking the main pane. */
+  | 'voice'
   | 'flights'
   | 'files'
   | 'gallery'

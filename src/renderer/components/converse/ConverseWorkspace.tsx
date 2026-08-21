@@ -21,6 +21,7 @@
 import { useCallback, type JSX } from 'react'
 
 import ChatView from '@renderer/components/chat/ChatView'
+import LiveWorkspace from '@renderer/components/live/LiveWorkspace'
 import { useStore } from '@renderer/state/store'
 import './converse.css'
 
@@ -82,6 +83,28 @@ export default function ConverseWorkspace(): JSX.Element {
           </button>
         }
       />
+
+      {/*
+        LiveWorkspace, mounted and hidden. This is machinery, not decoration.
+
+        The microphone lives in the RENDERER: useAudioCapture runs
+        getUserMedia, does the energy VAD, keeps the pre-roll buffer and posts
+        each utterance up. LiveWorkspace is the only thing that mounts it, and
+        it also owns TTS playback, barge-in and the echo suppression that stops
+        a reply coming back through the mic as a new question.
+
+        Leaving it out is exactly what broke this: pressing Talk started a
+        session on the main side — Kokoro loaded, the state reached 'listening'
+        — and then nothing, because nothing was listening. Reimplementing those
+        two hundred lines here would be a second copy of subtle audio
+        coordination to keep in step.
+
+        Hidden with display:none, which affects layout and nothing else. Audio
+        capture and playback do not care whether their component is painted.
+      */}
+      <div className="cv-machinery" aria-hidden="true">
+        <LiveWorkspace />
+      </div>
 
       {/*
         A status line only while a call is up.

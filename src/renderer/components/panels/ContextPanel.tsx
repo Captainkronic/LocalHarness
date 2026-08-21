@@ -15,6 +15,7 @@ import TablesPanel from './TablesPanel'
 import FilesPanel from './FilesPanel'
 import EditsPanel from '@renderer/components/edit/EditsPanel'
 import TranscriptPanel from '@renderer/components/live/TranscriptPanel'
+import VoicePanel from './VoicePanel'
 import FlightsPanel from './FlightsPanel'
 import HealthPanel from './HealthPanel'
 import './panels.css'
@@ -27,6 +28,7 @@ import './panels.css'
 
 const TITLES: Record<Exclude<PanelKind, 'none'>, string> = {
   transcript: 'Transcript',
+  voice: 'Voice',
   flights: 'Flights',
   health: 'Case notes',
   files: 'Workspace',
@@ -206,6 +208,7 @@ export function ContextPanel(): JSX.Element | null {
         {kind === 'files' ? <FilesPanel /> : null}
         {kind === 'edits' ? <EditsPanel /> : null}
         {kind === 'transcript' ? <TranscriptPanel /> : null}
+        {kind === 'voice' ? <VoicePanel /> : null}
         {kind === 'flights' ? <FlightsPanel /> : null}
         {kind === 'health' ? <HealthPanel /> : null}
       </div>

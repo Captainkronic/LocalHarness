@@ -123,3 +123,10 @@
 .cv-mic-label {
   font-weight: 500;
 }
+
+/* LiveWorkspace, present for its microphone and playback rather than its UI.
+   display:none affects layout only — getUserMedia, the AudioWorklet and the
+   TTS playback are all indifferent to whether their component is painted. */
+.cv-machinery {
+  display: none;
+}

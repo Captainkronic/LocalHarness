@@ -1753,3 +1753,35 @@
   font-size: var(--fs-micro);
   color: var(--danger);
 }
+
+/* Converse's voice panel: the orb above what was said. */
+.vp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.vp-orb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) 0;
+  flex: none;
+}
+
+/* Dimmed rather than hidden when nothing is happening: an empty space where a
+   control was is harder to understand than a quiet one. */
+.vp-orb.is-idle {
+  opacity: 0.45;
+}
+
+.vp-hint {
+  font-size: var(--fs-micro);
+  color: var(--fg-faint);
+  text-align: center;
+  line-height: 1.45;
+  max-width: 30ch;
+}
