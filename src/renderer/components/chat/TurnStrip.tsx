@@ -100,6 +100,23 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
   const reasoningTok = useStore((s) => s.live.reasoningTokens)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
   const prefillEtaMs = useStore((s) => s.live.prefillEtaMs)
+  const ttftMs = useStore((s) => s.live.ttftMs)
+  const prefillTps = useStore((s) => s.live.prefillTps)
+  const prefillEstimated = useStore((s) => s.live.prefillEstimated)
+
+  /*
+   * The step's SUSTAINED rate, not the two-second rolling gauge in the header.
+   *
+   * Same arithmetic the finished-turn stamp uses — generated tokens over the
+   * time since the first one — so this line converges on the number the turn
+   * ends up stamping instead of disagreeing with it. The rolling gauge is
+   * useful for spotting a stall; it is bad at answering "how fast is this
+   * going", because every pause between frames drags it down.
+   */
+  const sustainedTps =
+    ttftMs !== null && elapsedMs > ttftMs && completionTok > 0
+      ? completionTok / ((elapsedMs - ttftMs) / 1000)
+      : null
 
   const approvalName = useStore((s) => s.approvals[0]?.toolName ?? null)
   const approvalCount = useStore((s) => s.approvals.length)
@@ -326,7 +343,11 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
       if (promptTokens === 0) {
         return { text: 'Sending the prompt', detail: PHASE_TIP.prefill, tone: 'live' }
       }
-      const head = `Reading ${formatTokens(promptTokens)} tokens of context`
+      const head =
+        `Reading ${formatTokens(promptTokens)} tokens of context` +
+        (prefillTps !== null && prefillTps > 0
+          ? ` at ${prefillEstimated ? '≈' : ''}${Math.round(prefillTps)} tok/s`
+          : '')
       if (typeof prefillEtaMs === 'number' && prefillEtaMs > 1500) {
         return {
           text: `${head} — ≈${formatMs(prefillEtaMs)} left, estimated`,
@@ -397,7 +418,7 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
        */
       if (reasoningTok > 0 && completionTok <= reasoningTok) {
         return {
-          text: `Thinking — ${formatTokens(reasoningTok)} tokens so far`,
+          text: `Thinking — ${formatTokens(reasoningTok)} tokens so far${rate(sustainedTps)}`,
           detail:
             'The model is reasoning, not writing. Reasoning is generated at the same cost as the reply and counts toward the same budget, but none of it is the answer — and none of it is replayed to the model on the next request.',
           tone: 'live'
@@ -406,7 +427,9 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
       return {
         // "this step", never "this turn": the meter resets at every tool call,
         // and an agentic turn is several requests back to back.
-        text: `Writing the reply — ${formatTokens(Math.max(0, completionTok - reasoningTok))} tokens this step`,
+        text:
+          `Writing the reply — ${formatTokens(Math.max(0, completionTok - reasoningTok))} ` +
+          `tokens this step${rate(sustainedTps)}`,
         detail:
           'Tokens of REPLY generated since the last tool call, with reasoning excluded. An agentic turn is several requests back to back, so this count restarts at each one and is not a total for the whole turn.',
         tone: 'live'
@@ -431,6 +454,17 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
     }
     return { text: `Running ${callName}${toolFor}`, detail: PHASE_TIP.tool, tone: 'live' }
   }
+}
+
+/**
+ * " · 18.4 tok/s", or nothing at all.
+ *
+ * Nothing until a rate exists, rather than a placeholder: a rate of zero and a
+ * rate not yet known look identical once rendered, and one of them is alarming.
+ */
+function rate(tps: number | null): string {
+  if (tps === null || !Number.isFinite(tps) || tps <= 0) return ''
+  return ` · ${tps >= 10 ? tps.toFixed(1) : tps.toFixed(2)} tok/s`
 }
 
 function COMPOSING_TIP(name: string | null): string {
