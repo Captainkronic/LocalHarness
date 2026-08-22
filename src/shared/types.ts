@@ -1225,6 +1225,20 @@ export interface Settings {
   approvalMode: ApprovalMode
   /** Directories the agent tools are allowed to touch. */
   workspaceRoots: string[]
+  /**
+   * This app's OWN skills folder, scanned before any other.
+   *
+   * Skills were read only out of the other harnesses' directories —
+   * ~/.claude/skills first, then lmstudio, opencode, copilot, continue — which
+   * is fine for reading a shared library and wrong for owning one. A skill
+   * written FOR this app had nowhere of its own to live, so it went in
+   * ~/.claude/skills and quietly became Claude Code's problem too.
+   *
+   * Scanned first, so a name defined here wins over the same name anywhere
+   * else. Editable because the whole point is that you can put it on a synced
+   * volume, or point two machines at one folder, without recompiling.
+   */
+  skillsRoot: string
   /** Shell commands that never need approval (exact prefix match). */
   shellAllowlist: string[]
   /** Warn when the assembled prompt exceeds this fraction of the window. */

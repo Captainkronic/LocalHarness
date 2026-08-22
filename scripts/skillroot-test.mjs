@@ -110,12 +110,24 @@ check('a DISABLED skill is not readable', !d1.ok, d1.ok ? 'READ IT' : '')
  * model is never told that craft exists. Silent, and easy to miss when a
  * workflow lists five. Checked against the canonical root; sync-skills.sh
  * copies from there to the other harnesses. */
-const skillRoot = join(homedir(), '.claude', 'skills')
-const onDisk = new Set(
-  (await readdir(skillRoot, { withFileTypes: true }))
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-)
+/* Two roots, because this app now owns one. ~/.claude/skills is the shared
+   library it reads; Application Support/localharness/skills is where a skill
+   written FOR this app lives, and the registry scans that one first. A workflow
+   may legitimately name a skill from either. */
+const skillRoots = [
+  join(homedir(), 'Library', 'Application Support', 'localharness', 'skills'),
+  join(homedir(), '.claude', 'skills')
+]
+const onDisk = new Set()
+for (const root of skillRoots) {
+  let entries = []
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch {
+    continue // a root that does not exist yet is not a failure
+  }
+  for (const e of entries) if (e.isDirectory()) onDisk.add(e.name)
+}
 for (const wf of WORKFLOWS) {
   for (const name of wf.skills ?? []) {
     check(`${wf.id} names a skill that exists: ${name}`, onDisk.has(name),

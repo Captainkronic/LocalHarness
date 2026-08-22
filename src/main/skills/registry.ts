@@ -29,7 +29,7 @@
  * not an error at all; four of the five normally do not exist on a fresh box.
  */
 
-import { watch, type Dirent, type FSWatcher } from 'node:fs'
+import { watch, type Dirent, type FSWatcher, mkdirSync} from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
@@ -405,10 +405,25 @@ export class SkillRegistry {
       this.opts.onLog('warn', LOG_SCOPE, `settings unavailable: ${message(err)}`)
     }
 
+    /* Ours first. A name defined in this app's own folder wins over the same
+       name in any harness we merely read from — otherwise a skill written FOR
+       this app could be shadowed by a stale copy in ~/.claude/skills, which is
+       exactly the collision the de-duplication was built to hide. */
+    const own = settings === null ? [] : [expandTilde(settings.skillsRoot.trim())]
     const candidates = [
+      ...own,
       ...homeSkillRoots(),
       ...(settings === null ? [] : projectSkillRoots(settings))
     ]
+    /* Created rather than merely scanned: a folder the user is told about in
+       Settings, and can be asked to reveal in Finder, has to exist. */
+    for (const dir of own) {
+      try {
+        mkdirSync(dir, { recursive: true })
+      } catch (err) {
+        this.opts.onLog('warn', LOG_SCOPE, `could not create ${collapseHome(dir)}: ${message(err)}`)
+      }
+    }
 
     // Two workspace roots can resolve to the same directory, and so can
     // XDG_CONFIG_HOME=~/.config. Scan each one once.

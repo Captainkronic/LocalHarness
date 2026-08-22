@@ -43,6 +43,9 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModelId: null,
   approvalMode: 'always_ask',
   workspaceRoots: [join(HOME, 'Documents'), join(HOME, 'Desktop'), join(HOME, 'LocalHarness')],
+  /* Beside settings.json, in this app's own Application Support folder — the
+     one directory that is unambiguously ours. Created on first run. */
+  skillsRoot: join(HOME, 'Library', 'Application Support', 'localharness', 'skills'),
   // Deliberately excludes `cat` and `ls`: both take an arbitrary path, so
   // allowlisting them would let the model read any file on the disk with no
   // approval, straight past the workspace sandbox. `read_file` and `list_dir`
@@ -252,6 +255,8 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     shellAllowlist: allowlist ? dedupe(allowlist.map((c) => c.trim()).filter(Boolean)) : base.shellAllowlist,
     contextWarnFraction: asClampedNumber(src.contextWarnFraction, 0.1, 1) ?? base.contextWarnFraction,
     contextSlots: Math.round(asClampedNumber(src.contextSlots, 1, 16) ?? base.contextSlots),
+    /* A blank or whitespace path would silently scan the filesystem root. */
+    skillsRoot: asNonEmptyString(src.skillsRoot) ?? base.skillsRoot,
     autoContinueTurns: Math.round(asClampedNumber(src.autoContinueTurns, 0, 50) ?? base.autoContinueTurns),
     theme:
       theme !== undefined && (THEMES as readonly string[]).includes(theme)

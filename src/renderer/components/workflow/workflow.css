@@ -1140,3 +1140,29 @@
   max-height: 46vh;
   overflow-y: auto;
 }
+
+/* Two buttons on one settings row — Reveal and Change sit together, so the
+   head needs a group rather than a single trailing control. */
+.set-row-actions {
+  display: flex;
+  gap: var(--s2);
+  flex: none;
+  /* Pushed right. The head's label does not grow, so without this the two
+     buttons crowd the label instead of anchoring to the edge. */
+  margin-left: auto;
+}
+
+/* An absolute path, shown as data rather than prose: it is long, it is the
+   thing being configured, and it must be selectable to paste elsewhere. */
+.set-path {
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  background: var(--bg-void);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+  user-select: text;
+}

@@ -183,6 +183,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
     }
   }, [settings.workspaceRoots, updateSettings])
 
+  const pickSkillsRoot = useCallback(async (): Promise<void> => {
+    setPicking(true)
+    try {
+      const dir = await window.harness.invoke('settings:pickDirectory')
+      if (dir) await updateSettings({ skillsRoot: dir })
+    } finally {
+      setPicking(false)
+    }
+  }, [updateSettings])
+
   const removeRoot = useCallback(
     (dir: string): void => {
       patch({ workspaceRoots: settings.workspaceRoots.filter((r) => r !== dir) })
@@ -490,6 +500,42 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           </section>
 
           {/* ---- Display ---- */}
+          <section className="set-section">
+            <div className="set-section-head">
+              <span className="section-label">Skills</span>
+            </div>
+
+            <div className="set-list-block">
+              <div className="set-list-head">
+                <span className="set-field-label">This app's skills folder</span>
+                <span className="set-row-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => void window.harness.invoke('artifacts:reveal', settings.skillsRoot)}
+                  >
+                    Reveal
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={picking}
+                    onClick={() => void pickSkillsRoot()}
+                  >
+                    Change…
+                  </button>
+                </span>
+              </div>
+              <p className="set-path">{settings.skillsRoot}</p>
+              <span className="set-hint">
+                Scanned before every other harness's folder, so a skill defined here wins over the
+                same name in <code>~/.claude/skills</code> and the rest. Created for you if it is
+                missing. A skill costs only its one-line description per message — the body is read
+                only when the model actually opens it.
+              </span>
+            </div>
+          </section>
+
           <section className="set-section">
             <div className="set-section-head">
               <span className="section-label">Display</span>
