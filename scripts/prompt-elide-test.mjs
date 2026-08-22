@@ -29,7 +29,7 @@ const check = (name, ok, note = '') => {
 const dir = await mkdtemp(join(tmpdir(), 'lh-elide-'))
 await writeFile(
   join(dir, 'e.ts'),
-  `export { elideBulkArguments, buildMessages, trimToBudget } from '${ROOT}/src/main/llm/prompt'\n`
+  `export { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine } from '${ROOT}/src/main/llm/prompt'\n`
 )
 const outfile = join(dir, 'b.mjs')
 await build({
@@ -42,7 +42,8 @@ await build({
   logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main') }
 })
-const { elideBulkArguments, buildMessages, trimToBudget } = await import(pathToFileURL(outfile).href)
+const { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine } =
+  await import(pathToFileURL(outfile).href)
 
 const BIG = 'x'.repeat(12867)
 
@@ -239,6 +240,49 @@ console.log('\n\x1b[1mthe brief is never trimmed away\x1b[0m')
   ]
   check('a conversation under budget is returned unchanged',
     trimToBudget(small, 100000) === small)
+}
+
+console.log('\n\x1b[1mthe model is told what it has written\x1b[0m')
+/* Measured across 33 reasoning blocks of one agentic build: 21% went on
+   re-reading its own work, 18% on uncertainty about its own state. Verbatim:
+   "I'm not sure what I wrote in index.html. The transcript was truncated." That
+   one produced a real defect — index.html said one town name, data.js another. */
+{
+  const call = (name, path, result, status = 'ok') => ({
+    id: `c${path}`, name, status, result, arguments: JSON.stringify({ path })
+  })
+  const msgs = [
+    { id: 'u', role: 'user', content: 'build it', createdAt: 1 },
+    { id: 'a1', role: 'assistant', content: '', createdAt: 2, toolCalls: [
+      call('write_file', 'src/data.js', 'Created src/data.js (189 lines). 8.0 KB on disk, verified.'),
+      call('write_file', 'index.html', 'Created index.html (27 lines). 1.2 KB on disk, verified.')
+    ] },
+    { id: 'a2', role: 'assistant', content: '', createdAt: 3, toolCalls: [
+      call('edit_file', 'src/data.js', 'Edited src/data.js: 1 occurrence replaced (+11 -5).'),
+      call('write_file', 'src/nope.js', 'refused', 'denied')
+    ] }
+  ]
+  const line = writtenFilesLine(msgs)
+  check('every written file is listed', /src\/data\.js/.test(line) && /index\.html/.test(line))
+  check('with its size, so "did it work" is answerable without a read',
+    /8\.0 kB/i.test(line) && /1\.2 kB/i.test(line))
+  check('a file written twice appears once',
+    (line.match(/src\/data\.js/g) ?? []).length === 1)
+  check('a DENIED write is not claimed as written',
+    !/nope\.js/.test(line),
+    'listing a file that was refused would be worse than listing nothing')
+  check('it says the list is the app\'s record, not the model\'s memory',
+    /app's own record/.test(line))
+  check('and tells it not to read back merely to check success',
+    /do not read it back to find out whether it worked/.test(line))
+  check('nothing written yields nothing at all', writtenFilesLine([
+    { id: 'u', role: 'user', content: 'hi', createdAt: 1 }
+  ]) === '')
+
+  /* It has to reach the wire. */
+  const conv = { id: 'c', workflowId: 'code', messages: msgs }
+  const wire = JSON.stringify(buildMessages(conv, 'You are an engineer.', false, {}))
+  check('and it reaches the system prompt', wire.includes('index.html'))
 }
 
 await rm(dir, { recursive: true, force: true })

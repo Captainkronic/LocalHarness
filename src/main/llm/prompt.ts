@@ -82,6 +82,86 @@ export interface BuildOptions {
  * problem: `minigolf/game.js` resolved under the workspace root and missed, and
  * nothing in the prompt said what it would be resolved against.
  */
+/**
+ * What this conversation has already written, as a list the model can read.
+ *
+ * The single biggest waste of thinking measured on a live agentic build was the
+ * model recovering state the app already had. Three verbatim examples from one
+ * run:
+ *
+ *   "I'm not sure what I wrote in index.html. The transcript was truncated."
+ *   "on disk it's 1 line, 323 bytes. That doesn't add up."
+ *   "something in the pipeline (context compression of my own output?)
+ *    replaced it."
+ *
+ * The first of those produced a real content defect — index.html said one town
+ * name and data.js another, because it could not see what it had written — and
+ * then cost further thinking to notice and blame. Across 33 reasoning blocks,
+ * 21% went on re-reading its own work and 18% on uncertainty about its own
+ * state.
+ *
+ * Bulk arguments are elided from history for good reasons that have not
+ * changed. But eliding the CONTENT does not require eliding the FACT: the app
+ * knows every path written, how big each one is, and whether the write
+ * verified. That costs a couple of hundred tokens to state and removes a class
+ * of doubt that costs whole re-prefills to resolve.
+ *
+ * Sizes, not contents. This is a map, not a cache — enough to know the file
+ * exists and roughly what shape it is, so the decision to read it back is made
+ * on evidence rather than on anxiety.
+ */
+export function writtenFilesLine(messages: readonly ChatMessage[]): string {
+  const seen = new Map<string, { lines: number; bytes: number }>()
+  for (const msg of messages) {
+    for (const call of msg.toolCalls ?? []) {
+      if (call.name !== 'write_file' && call.name !== 'edit_file') continue
+      if (call.status !== 'ok') continue
+      let path: string | undefined
+      try {
+        const args: unknown = JSON.parse(call.arguments)
+        if (typeof args === 'object' && args !== null && 'path' in args) {
+          const p = (args as { path: unknown }).path
+          if (typeof p === 'string' && p.trim() !== '') path = p.trim()
+        }
+      } catch {
+        continue
+      }
+      if (path === undefined) continue
+      const result = call.result ?? ''
+      const lines = Number(/\((\d+) lines\)/.exec(result)?.[1] ?? 0)
+      const bytes = sizeFromResult(result)
+      const prev = seen.get(path)
+      seen.set(path, {
+        lines: lines > 0 ? lines : (prev?.lines ?? 0),
+        bytes: bytes > 0 ? bytes : (prev?.bytes ?? 0)
+      })
+    }
+  }
+  if (seen.size === 0) return ''
+
+  const rows = [...seen.entries()].map(([path, f]) => {
+    const size = f.bytes > 0 ? `${(f.bytes / 1024).toFixed(1)} kB` : f.lines > 0 ? `${f.lines} lines` : 'written'
+    return `  ${path} — ${size}`
+  })
+  return (
+    `Files you have already written in this conversation, with their size on disk:\n` +
+    `${rows.join('\n')}\n` +
+    `This list is the app's own record, not your memory of it. If a file is here it exists and ` +
+    `is that size, whatever your earlier messages look like — their contents are trimmed out of ` +
+    `the transcript to save room. Read one back only when you need its exact text; do not read ` +
+    `it back to find out whether it worked.`
+  )
+}
+
+/** "8.0 KB on disk, verified." / "4.4 kB" — whichever the executor phrased. */
+function sizeFromResult(result: string): number {
+  const m = /([\d.]+)\s*(B|kB|KB|MB)\b/.exec(result)
+  if (!m) return 0
+  const n = Number(m[1])
+  const unit = m[2].toLowerCase()
+  return unit === 'b' ? n : unit === 'mb' ? n * 1024 * 1024 : n * 1024
+}
+
 export function workspaceLine(roots: string[]): string {
   if (roots.length === 0) return ''
   if (roots.length === 1) {
@@ -215,9 +295,15 @@ export function buildMessages(
     // current". Roughly a dozen tokens, and it removes a whole class of
     // confident nonsense.
     const where = workspaceLine(opts.workspaceRoots ?? [])
+    /* Rebuilt every request rather than accumulated, so a file written this
+       turn appears immediately and nothing has to be invalidated. */
+    const written = writtenFilesLine(conv.messages)
     out.push({
       role: 'system',
-      content: `${systemPrompt}\n\n${todayLine()}${where === '' ? '' : `\n${where}`}`
+      content:
+        `${systemPrompt}\n\n${todayLine()}` +
+        `${where === '' ? '' : `\n${where}`}` +
+        `${written === '' ? '' : `\n\n${written}`}`
     })
   }
 
