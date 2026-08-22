@@ -401,7 +401,14 @@ export function trimToBudget(
     `If the user refers to something you cannot see, say so and ask them to repeat it ` +
     `rather than guessing at what it was.]`
 
-  onTrim?.({ messages: droppedMessages, tokens: droppedTokens, kept: kept.flat().length })
+  /* `kept` means "messages the model can still see", so the pinned brief counts
+     — it is in the output. Reporting the eviction-walk total instead made this
+     disagree with what was actually sent, by exactly one. */
+  onTrim?.({
+    messages: droppedMessages,
+    tokens: droppedTokens,
+    kept: kept.flat().length + anchor.length
+  })
   /* Brief first, then the note about what went missing, then what survived —
      so the model reads the task before it reads the apology. */
   return [...system, ...anchor, marker, ...kept.flat()]
