@@ -1174,6 +1174,14 @@ export interface ContextUsage {
     messages: number
     attachments: number
   }
+  /**
+   * Whether `used` has been corrected by a measured estimate-vs-actual ratio
+   * for this model, or is still a raw four-characters-per-token guess.
+   *
+   * The meter is the number a user reads to decide whether there is room left.
+   * It must be able to say which of those two it is showing.
+   */
+  calibrated: boolean
   /** used / max, or null when max is unknown. */
   fraction: number | null
 }

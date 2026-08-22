@@ -23,7 +23,7 @@ const SEGMENTS: ReadonlyArray<{ key: BreakdownKey; label: string; cls: string }>
 export function ContextMeter(): ReactElement {
   const usage = useStore((s) => s.usage)
   const warnAt = useStore((s) => s.settings.contextWarnFraction)
-  const { used, max, fraction, breakdown } = usage
+  const { used, max, fraction, breakdown, calibrated } = usage
   // Narrowed once, so every readout below agrees about whether we know the window.
   const maxTokens: number | null = max !== null && max > 0 ? max : null
   const known = maxTokens !== null
@@ -94,6 +94,16 @@ export function ContextMeter(): ReactElement {
           {known
             ? 'Denominator is the window the model was actually loaded with, as reported while it is resident.'
             : 'The model’s real context window is unknown until it is resident. LocalHarness will not fall back to the architectural maximum — that figure is usually several times the loaded window, so the percentage would be a comfortable lie.'}
+        </p>
+        {/* The denominator was always explained here; the numerator never was,
+            and the numerator is a count of text this app has not tokenised. It
+            read 29% low on a real run until the measured ratio was applied to
+            it. Whether that correction is in force changes what this number
+            means, so it is stated rather than implied. */}
+        <p className="mx-pop-note">
+          {calibrated
+            ? 'Numerator is our own count, corrected by the measured gap between what we estimate and what this model’s server actually reports.'
+            : 'Numerator is our own estimate. This model has not finished a turn yet, so there is no measured correction — expect it to read low on code, which tokenises worse than prose.'}
         </p>
       </div>
     </div>

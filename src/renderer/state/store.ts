@@ -298,6 +298,7 @@ const IDLE_LIVE_SESSION: LiveSessionStatus = {
 const EMPTY_USAGE: ContextUsage = {
   used: 0,
   max: null,
+  calibrated: false,
   breakdown: { system: 0, tools: 0, messages: 0, attachments: 0 },
   fraction: null
 }

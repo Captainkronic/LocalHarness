@@ -28,7 +28,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = await mkdtemp(join(tmpdir(), 'lh-ratio-'))
-await writeFile(join(dir, 'e.ts'), `export { RateCalibrator } from '${ROOT}/src/main/telemetry/meter'\n`)
+await writeFile(join(dir, 'e.ts'),
+  `export { RateCalibrator } from '${ROOT}/src/main/telemetry/meter'\n` +
+  `export { buildContextUsage } from '${ROOT}/src/main/llm/prompt'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -38,9 +40,9 @@ await build({
   entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },
-  alias: { '@shared': join(ROOT, 'src/shared'), electron: shim }
+  alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim }
 })
-const { RateCalibrator } = await import(pathToFileURL(out).href)
+const { RateCalibrator, buildContextUsage } = await import(pathToFileURL(out).href)
 
 let failed = 0
 const check = (name, cond, extra = '') => {
@@ -87,6 +89,50 @@ const spendable = Math.floor(real / learned)
 check('a 1.5x undercount roughly two-thirds the spendable estimate',
   spendable > 28000 && spendable < 31000, String(spendable))
 check('and it is strictly less than the raw budget', spendable < real)
+
+console.log('\n\x1b[1mThe ratio must reach the METER, not just the budget\x1b[0m')
+/*
+ * Caught live, 126 minutes into an autonomous React build. The header read
+ * "CTX 22.7k / 98.3k  23%" while the run rail, which prints the server's own
+ * prompt_tokens for the last completed request, read 29.3k for that same
+ * conversation at that same moment. The ratio was being learned and was being
+ * applied to the history budget; it had simply never been applied to the number
+ * on screen. The meter is what a user reads to decide whether there is room
+ * left, and it was understating by 29% -- in the direction that looks safe.
+ */
+const usageArgs = (ratio) => ({
+  system: 'x'.repeat(4000),
+  tools: [],
+  messages: [{ role: 'user', content: 'y'.repeat(80000) }],
+  attachments: [{ tokens: 1500 }],
+  max: 98300,
+  ratio
+})
+const raw = buildContextUsage(usageArgs(undefined))
+const cal = buildContextUsage(usageArgs(1.29))
+
+check('an uncalibrated meter is unchanged', raw.used === buildContextUsage(usageArgs(1)).used)
+check('and says so', raw.calibrated === false,
+  'a raw guess and a measured figure must not render identically')
+check('a measured ratio raises the reading', cal.used > raw.used)
+check('and says so', cal.calibrated === true)
+check('the breakdown still sums to the total',
+  cal.breakdown.system + cal.breakdown.tools + cal.breakdown.messages +
+    cal.breakdown.attachments === cal.used,
+  'the segmented bar would otherwise not fill to the number beside it')
+check('attachments are NOT scaled',
+  cal.breakdown.attachments === raw.breakdown.attachments,
+  'image tokens are exact counts, not character estimates -- a text correction would corrupt them')
+check('text IS scaled', cal.breakdown.messages > raw.breakdown.messages)
+check('the percentage moves with it', cal.fraction > raw.fraction,
+  'the fraction is what colours the bar and fires the warning threshold')
+
+/* The live numbers, end to end. */
+const under = buildContextUsage({ ...usageArgs(1), messages: [{ role: 'user', content: 'z'.repeat(88000) }] })
+const fixed = buildContextUsage({ ...usageArgs(1.29), messages: [{ role: 'user', content: 'z'.repeat(88000) }] })
+check('a 23%-looking reading becomes a ~30% one',
+  Math.round(fixed.fraction * 100) - Math.round(under.fraction * 100) >= 5,
+  `${Math.round(under.fraction * 100)}% -> ${Math.round(fixed.fraction * 100)}%`)
 
 await rm(dir, { recursive: true, force: true })
 console.log(failed === 0 ? '\n\x1b[32mall prompt-ratio checks passed\x1b[0m\n' : `\n\x1b[31m${failed} failed\x1b[0m\n`)

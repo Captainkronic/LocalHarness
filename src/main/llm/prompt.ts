@@ -405,6 +405,20 @@ export function buildContextUsage(args: {
   messages: WireMessage[]
   attachments: Attachment[]
   max: number | null
+  /**
+   * Measured actual-prompt-tokens / our-estimate for this model, or 1 when
+   * nothing has been measured yet.
+   *
+   * Without this the meter reads low, and it reads low in the direction that
+   * looks safe. Caught live at 126 minutes into an autonomous React build: the
+   * header said 22.7k of 98.3k (23%) while the server had just reported 29.3k
+   * for the same conversation — a 29% understatement on the one number a user
+   * consults to decide whether there is room left. The ratio was already being
+   * learned and was already applied to the history budget; it simply never
+   * reached the display, so the internal accounting and the visible accounting
+   * had quietly diverged.
+   */
+  ratio?: number
 }): ContextUsage {
   const system = estimateTokens(args.system)
 
@@ -427,13 +441,27 @@ export function buildContextUsage(args: {
     .map(stripImageParts)
   const messages = countConversationTokens(conversational)
 
-  const used = system + tools + messages + attachments
+  /* Attachments are deliberately NOT scaled. The ratio is learned against a
+     character estimate of text and tool schemas; attachment figures are real
+     per-image token counts, already exact, and multiplying them by a text
+     correction would corrupt a number that was right. */
+  const r = args.ratio !== undefined && args.ratio > 0 ? args.ratio : 1
+  const scale = (n: number): number => Math.round(n * r)
+  const scaled = {
+    system: scale(system),
+    tools: scale(tools),
+    messages: scale(messages),
+    attachments
+  }
+
+  const used = scaled.system + scaled.tools + scaled.messages + scaled.attachments
   const max = args.max !== null && args.max > 0 ? args.max : null
 
   return {
     used,
     max,
-    breakdown: { system, tools, messages, attachments },
+    calibrated: r !== 1,
+    breakdown: scaled,
     fraction: max === null ? null : used / max
   }
 }

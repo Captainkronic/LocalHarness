@@ -317,6 +317,7 @@ export class Orchestrator {
         used: 0,
         max: null,
         breakdown: { system: 0, tools: 0, messages: 0, attachments: 0 },
+        calibrated: false,
         fraction: null
       }
     }
@@ -330,7 +331,8 @@ export class Orchestrator {
       tools,
       messages,
       attachments,
-      max: model ? this.d.models.contextWindow(model.id) : null
+      max: model ? this.d.models.contextWindow(model.id) : null,
+      ratio: model ? this.calibrator.promptTokenRatio(model.id) : 1
     })
   }
 
@@ -1478,7 +1480,8 @@ export class Orchestrator {
       tools,
       messages,
       attachments: conv.messages.flatMap((m) => m.attachments ?? []),
-      max: this.d.models.contextWindow(model.id)
+      max: this.d.models.contextWindow(model.id),
+      ratio: this.calibrator.promptTokenRatio(model.id)
     })
     this.d.emit('event:contextUsage', { conversationId: conv.id, usage })
   }
