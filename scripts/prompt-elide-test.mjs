@@ -30,7 +30,7 @@ const check = (name, ok, note = '') => {
 const dir = await mkdtemp(join(tmpdir(), 'lh-elide-'))
 await writeFile(
   join(dir, 'e.ts'),
-  `export { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine, ELIDED_MARK } from '${ROOT}/src/main/llm/prompt'\n`
+  `export { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine } from '${ROOT}/src/main/llm/prompt'\nexport { ELIDED_MARK } from '${ROOT}/src/shared/types'\n`
 )
 const outfile = join(dir, 'b.mjs')
 await build({

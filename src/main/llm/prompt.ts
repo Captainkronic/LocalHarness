@@ -14,6 +14,7 @@ import type {
   ToolCall,
   WireTool
 } from '@shared/types'
+import { ELIDED_MARK } from '@shared/types'
 import { WIRE_IMAGE_MIMES } from '@shared/types'
 import { estimateTokens, toolSchemaTokens } from '@main/mcp/tokens'
 import type { WireMessage } from './client'
@@ -229,10 +230,6 @@ const BULK_LIMIT = 1200
  * bytes on disk were fine, which was the one fact that would have ended it — so
  * that is now stated outright, before the instruction to go and look.
  */
-/** The opening of every elision marker. Exported so the executor can refuse to
- *  write one to disk — see ELIDED_MARK's use in agent/executor.ts. */
-export const ELIDED_MARK = '[CaptainLlama removed '
-
 function markElided(field: string, length: number): string {
   return (
     `${ELIDED_MARK}${length} characters of "${field}" from this transcript ` +

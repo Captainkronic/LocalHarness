@@ -30,7 +30,7 @@ import type {
   ShellResultFacts,
   WriteResultFacts
 } from '@shared/types'
-import { ELIDED_MARK } from '@main/llm/prompt'
+import { ELIDED_MARK } from '@shared/types'
 
 import { augmentedPath, isInsideAny } from '../store/paths'
 import { changedLinesFromDiff, type ActivityInput } from './activity'

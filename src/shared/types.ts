@@ -1223,6 +1223,18 @@ export interface TurnMetrics {
 }
 
 /** Rolling context accounting for the active conversation. */
+/**
+ * The opening of the note that replaces a bulk argument in replayed history.
+ *
+ * Lives here rather than beside the code that emits it because BOTH sides need
+ * it: prompt.ts writes the note, and the executor refuses to write a file whose
+ * content contains it. A model once copied that note out of its own transcript
+ * into a write_file call and produced a 323-byte Gallery.jsx made entirely of
+ * bookkeeping. The executor importing the prompt builder for one string would
+ * drag request-building into the tool runner; a shared constant will not.
+ */
+export const ELIDED_MARK = '[CaptainLlama removed '
+
 export interface ContextUsage {
   /** Tokens currently in the conversation window (messages + tools + system). */
   used: number
