@@ -31,6 +31,19 @@ const FILE_TOOLS: Record<string, Op> = {
  */
 const STAT_RE = /\(\+(\d+) -(\d+)/
 
+/** "Created src/data.js (189 lines)." — a new file has no +N -M to match. */
+const CREATED_RE = /\((\d+) lines\)/
+
+function isWriteFacts(v: unknown): v is { added: number; removed: number } {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    (v as { kind?: unknown }).kind === 'write' &&
+    typeof (v as { added?: unknown }).added === 'number' &&
+    typeof (v as { removed?: unknown }).removed === 'number'
+  )
+}
+
 export interface Touched {
   path: string
   ops: Op[]
@@ -78,10 +91,30 @@ export function deriveTouched(messages: ChatMessage[]): Touched[] {
 
       /* Only a write or an edit has a diff to report. A read's result is
          arbitrary file content and can contain anything at all. */
-      const stat = op === 'read' ? null : STAT_RE.exec(call.result ?? '')
-      if (stat) {
-        existing.added += Number(stat[1])
-        existing.removed += Number(stat[2])
+      if (op !== 'read') {
+        /*
+         * Structured facts first, prose only for messages recorded before the
+         * executor carried them.
+         *
+         * STAT_RE matches "(+12 -3)", which a CREATED file's result does not
+         * have — it reads "Created src/data.js (189 lines)". So every new file
+         * scored zero, and this panel disagreed with the workspace header by
+         * 444 lines on one run while both claimed to describe the same edits.
+         */
+        const f = call.structured
+        if (isWriteFacts(f)) {
+          existing.added += f.added
+          existing.removed += f.removed
+        } else {
+          const stat = STAT_RE.exec(call.result ?? '')
+          if (stat) {
+            existing.added += Number(stat[1])
+            existing.removed += Number(stat[2])
+          } else {
+            const created = CREATED_RE.exec(call.result ?? '')
+            if (created) existing.added += Number(created[1])
+          }
+        }
       }
       byPath.set(path, existing)
     }

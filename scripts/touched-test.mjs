@@ -18,15 +18,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = await mkdtemp(join(tmpdir(), 'touched-'))
-await writeFile(join(dir, 'e.ts'), `export { deriveTouched } from '${ROOT}/src/renderer/lib/touched'\n`)
+await writeFile(join(dir, 'e.ts'),
+  `export { deriveTouched } from '${ROOT}/src/renderer/lib/touched'\n` +
+  `export { buildTabs } from '${ROOT}/src/renderer/lib/tabs'\n`)
 const out = join(dir, 'b.mjs')
 await build({
   entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },
-  alias: { '@shared': join(ROOT, 'src/shared') }
+  alias: { '@shared': join(ROOT, 'src/shared'), '@renderer': join(ROOT, 'src/renderer') }
 })
-const { deriveTouched } = await import(pathToFileURL(out).href)
+const { deriveTouched, buildTabs } = await import(pathToFileURL(out).href)
 
 let failed = 0
 const check = (name, cond, extra = '') => {
@@ -122,6 +124,66 @@ check('an empty path is skipped', (() => {
   return deriveTouched(msg(c)).length === 0
 })())
 check('no messages yields no rows', deriveTouched([]).length === 0)
+
+console.log('\nA created file is a change, not a zero')
+/* STAT_RE matches "(+12 -3)". A new file's result reads "Created src/data.js
+   (189 lines)" and has no such pair, so every file the run CREATED scored zero.
+   This panel and the workspace header disagreed by 444 lines on one run while
+   both claimed to describe the same edits. */
+{
+  const created = deriveTouched(msg(
+    call('write_file', 'src/data.js', 'Created src/data.js (189 lines). 8.0 KB on disk, verified.')))
+  check('a created file counts its lines as additions', created[0].added === 189,
+    `got +${created[0].added}`)
+  check('and removes nothing', created[0].removed === 0)
+
+  const edited = deriveTouched(msg(
+    call('write_file', 'src/App.jsx', 'Wrote src/App.jsx (+97 -3). 4.4 KB on disk, verified.')))
+  check('an overwrite still reads its diff', edited[0].added === 97 && edited[0].removed === 3)
+
+  /* Structured facts win over the prose, which exists to be reworded. */
+  const structured = deriveTouched(msg(
+    call('write_file', 'src/x.js', 'Wrote src/x.js (+1 -1).',
+      { structured: { kind: 'write', added: 40, removed: 5, verified: true, syntax: 'ok', created: false } })))
+  check('structured facts beat the sentence',
+    structured[0].added === 40 && structured[0].removed === 5,
+    `got +${structured[0].added} -${structured[0].removed}`)
+
+  /* The original bug this file was written for must stay fixed. */
+  const readWithLines = deriveTouched(msg(
+    call('read_file', 'notes.md', 'the file says (12 lines) somewhere in its body')))
+  check('a READ is still never counted, even saying "(12 lines)"',
+    readWithLines[0].added === 0,
+    'reads carry arbitrary file content and can contain anything')
+}
+
+console.log('\n"across N files" must count files that CHANGED')
+/* It used the tab count, and the strip holds a tab for everything touched. Two
+   of ten files in one run were never written to, and a write the user DENIED at
+   the approval gate still added its file to the total, unmarked. */
+{
+  const act = (kind, target, over = {}) =>
+    ({ kind, target, displayPath: target, phase: 'done', at: 1, added: 0, removed: 0, ...over })
+
+  const tabs = buildTabs([
+    act('write', '/w/a.js', { added: 10, removed: 1 }),
+    act('read', '/w/b.js'),
+    act('edit', '/w/c.js', { added: 2, removed: 2 }),
+    act('write', '/w/denied.js', { phase: 'error' })
+  ])
+  check('every touched file still gets a tab', tabs.length === 4,
+    'the Watch strip is how you open a file you only read')
+  const changed = tabs.filter((t) => t.changed)
+  check('but only written and edited files count as changed', changed.length === 2,
+    changed.map((t) => t.name).join(','))
+  check('a file that was only read is not a change',
+    tabs.find((t) => t.name === 'b.js').changed === false)
+  check('a denied write is not a change',
+    tabs.find((t) => t.name === 'denied.js').changed === false,
+    'it never reached the disk')
+  check('and the denied one is marked failed',
+    tabs.find((t) => t.name === 'denied.js').failed === true)
+}
 
 console.log(failed === 0 ? '\n\x1b[32mall touched-file checks passed\x1b[0m' : `\n\x1b[31m${failed} failed\x1b[0m`)
 process.exit(failed === 0 ? 0 : 1)

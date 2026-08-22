@@ -50,7 +50,7 @@ import {
 import type { FileActivity } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename } from '@renderer/lib/format'
-import type { Tab } from './CodeWorkspace'
+import type { Tab } from '@renderer/lib/tabs'
 import FileViewer from './FileViewer'
 import ActivityTicker from './ActivityTicker'
 import CodeStats from './CodeStats'

@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { FileActivity, FileOpKind } from '@shared/types'
 import { useStore } from '@renderer/state/store'
 import { basename } from '@renderer/lib/format'
+import { buildTabs, type Tab } from '@renderer/lib/tabs'
 import ChatView from '@renderer/components/chat/ChatView'
 import WatchPane from './WatchPane'
 import BrowserPane from './BrowserPane'
@@ -52,19 +53,6 @@ const JUMP_DEBOUNCE_MS = 260
 /** How long the sweep stays on a newly focused tab. */
 const SWEEP_MS = 900
 
-export interface Tab {
-  path: string
-  displayPath: string
-  name: string
-  lastKind: FileOpKind
-  added: number
-  removed: number
-  touches: number
-  lastAt: number
-  /** Newest write/edit that produced content the viewer can show. */
-  latest: FileActivity | null
-  failed: boolean
-}
 
 export function CodeWorkspace(): JSX.Element {
   const activityAll = useStore((s) => s.fileActivity)
@@ -122,6 +110,9 @@ export function CodeWorkspace(): JSX.Element {
       : null
 
   const tabs = useMemo(() => buildTabs(rows), [rows])
+  /* Files actually modified. The strip holds a tab for everything touched,
+     including reads and denied writes; a change summary must count changes. */
+  const changedFileCount = useMemo(() => tabs.filter((t) => t.changed).length, [tabs])
   const tabIndex = useMemo(() => new Map(tabs.map((t) => [t.path, t])), [tabs])
   /** Identity of the strip's order, for effects that must re-run when it moves. */
   const tabOrder = useMemo(() => tabs.map((t) => t.path).join('\0'), [tabs])
@@ -265,6 +256,7 @@ export function CodeWorkspace(): JSX.Element {
           mode={mode}
           onMode={setMode}
           files={tabs.length}
+          changedFiles={changedFileCount}
           frames={frameCount}
           mirrorLive={mirrorLive}
           busy={browserBusy}
@@ -286,6 +278,7 @@ export function CodeWorkspace(): JSX.Element {
           mode={mode}
           onMode={setMode}
           files={tabs.length}
+          changedFiles={changedFileCount}
           frames={frameCount}
           mirrorLive={mirrorLive}
           busy={browserBusy}
@@ -306,6 +299,7 @@ export function CodeWorkspace(): JSX.Element {
         mode={mode}
         onMode={setMode}
         files={tabs.length}
+        changedFiles={changedFileCount}
         frames={frameCount}
         mirrorLive={mirrorLive}
         busy={browserBusy}
@@ -382,7 +376,10 @@ function AutoApprove(): JSX.Element {
 function ModeBar(props: {
   mode: 'chat' | 'watch' | 'browser'
   onMode: (m: 'chat' | 'watch' | 'browser') => void
+  /** Every file touched, including ones only read — the Watch tab badge. */
   files: number
+  /** Only files actually modified — what the "+N -M across K" line counts. */
+  changedFiles: number
   frames: number
   mirrorLive: boolean
   busy: boolean
@@ -390,7 +387,8 @@ function ModeBar(props: {
   added: number
   removed: number
 }): JSX.Element {
-  const { mode, onMode, files, frames, mirrorLive, busy, writing, added, removed } = props
+  const { mode, onMode, files, changedFiles, frames, mirrorLive, busy, writing, added, removed } =
+    props
   return (
     <div className="cw-modebar">
       <div className="cw-segmented" role="tablist" aria-label="Code view">
@@ -443,14 +441,14 @@ function ModeBar(props: {
         ) : null}
       </div>
       <AutoApprove />
-      {files > 0 ? (
+      {changedFiles > 0 ? (
         <span className="cw-modebar-stat tnum">
           {/* cw-add / cw-del were defined in no stylesheet, so the only change
               readout visible while typing rendered in inherited grey. Fourth
               instance of this exact bug; these are the canonical pair. */}
           <span className="cw-stat-add">+{added}</span>{' '}
           <span className="cw-stat-del">-{removed}</span>{' '}
-          across {files} file{files === 1 ? '' : 's'}
+          across {changedFiles} file{changedFiles === 1 ? '' : 's'}
         </span>
       ) : null}
     </div>
@@ -494,53 +492,7 @@ export function reconcile(activities: FileActivity[]): FileActivity[] {
   return rows
 }
 
-function isFileKind(kind: FileOpKind): boolean {
-  return kind === 'read' || kind === 'write' || kind === 'edit'
-}
 
-/** One tab per file, newest touch first, with the change stat accumulated. */
-export function buildTabs(rows: FileActivity[]): Tab[] {
-  const byPath = new Map<string, Tab>()
-
-  for (const a of rows) {
-    if (!isFileKind(a.kind)) continue
-    const prev = byPath.get(a.target)
-    const tab: Tab = prev ?? {
-      path: a.target,
-      displayPath: a.displayPath,
-      name: basename(a.target),
-      lastKind: a.kind,
-      added: 0,
-      removed: 0,
-      touches: 0,
-      lastAt: 0,
-      latest: null,
-      failed: false
-    }
-    tab.displayPath = a.displayPath
-    tab.lastKind = a.kind
-    tab.lastAt = Math.max(tab.lastAt, a.at)
-    if (a.phase === 'done') {
-      tab.touches += 1
-      tab.added += a.added ?? 0
-      tab.removed += a.removed ?? 0
-      tab.failed = false
-      // A read has no diff and no content; it must not displace the last write,
-      // or opening the file would lose the change markers.
-      if (a.kind === 'write' || a.kind === 'edit') tab.latest = a
-      else if (tab.latest === null) tab.latest = a
-    } else if (a.phase === 'error') {
-      tab.failed = true
-    }
-    byPath.set(a.target, tab)
-  }
-
-  // FIRST-TOUCH order, deliberately not recency. Re-sorting on every activity
-  // made each tab a moving target: the one you were reaching for slid sideways
-  // whenever the agent touched a different file. Recency is already carried by
-  // the sweep and the is-live styling, which do not move anything.
-  return [...byPath.values()]
-}
 
 /* ------------------------------------------------------------------ */
 /* Icons                                                               */
