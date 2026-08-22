@@ -266,6 +266,7 @@ const IDLE_LIVE: LiveMetrics = {
   prefillProgress: null,
   prefillEtaMs: null,
   decodeTps: null,
+  decodeTpsSustained: null,
   reasoningTokens: 0,
   phaseElapsedMs: 0
 }

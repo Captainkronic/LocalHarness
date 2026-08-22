@@ -33,7 +33,18 @@ const TIP: Record<SpeedGaugeProps['kind'], string> = {
  */
 export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
   const livePrefill = useStore((s) => s.live.prefillTps)
-  const liveDecode = useStore((s) => s.live.decodeTps)
+  /*
+   * The sustained rate, not the two-second window.
+   *
+   * Adam: "the tok/sec readout at the bottom of the screen does not seem
+   * syncronized [with] the tok/sec monitor at the top". They were two different
+   * metrics wearing the same unit — this gauge showed the rolling window while
+   * the status line showed the step average, so they disagreed by 3-4x during
+   * any pause. Both now read one field the meter computes once. The sparkline
+   * beside this number still carries the per-request history, which is where
+   * variation belongs.
+   */
+  const liveDecode = useStore((s) => s.live.decodeTpsSustained)
   const prefillEstimated = useStore((s) => s.live.prefillEstimated)
   const labHistory = useStore((s) => s.labHistory)
 

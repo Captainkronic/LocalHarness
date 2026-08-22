@@ -208,6 +208,19 @@ export class TurnMeter {
       prefillProgress,
       prefillEtaMs,
       decodeTps: this.decodeTps(now),
+      /*
+       * The whole step's rate, as opposed to `decodeTps`'s two-second window.
+       *
+       * Computed here rather than in each component because two places
+       * rendering "tok/s" from different arithmetic is how the header and the
+       * status line came to disagree on screen at the same moment. This is the
+       * same arithmetic finish() stamps on the message, so the live figure
+       * converges on the one the turn ends up printing.
+       */
+      decodeTpsSustained:
+        this.firstTokenAt === null || now <= this.firstTokenAt || this.completionTokens <= 0
+          ? null
+          : this.completionTokens / ((now - this.firstTokenAt) / 1000),
       reasoningTokens: this.reasoningTokens,
       phaseElapsedMs: this.phaseStartedAt === null ? elapsedMs : now - this.phaseStartedAt
     }

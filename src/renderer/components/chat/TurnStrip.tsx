@@ -100,23 +100,11 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
   const reasoningTok = useStore((s) => s.live.reasoningTokens)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
   const prefillEtaMs = useStore((s) => s.live.prefillEtaMs)
-  const ttftMs = useStore((s) => s.live.ttftMs)
   const prefillTps = useStore((s) => s.live.prefillTps)
   const prefillEstimated = useStore((s) => s.live.prefillEstimated)
-
-  /*
-   * The step's SUSTAINED rate, not the two-second rolling gauge in the header.
-   *
-   * Same arithmetic the finished-turn stamp uses — generated tokens over the
-   * time since the first one — so this line converges on the number the turn
-   * ends up stamping instead of disagreeing with it. The rolling gauge is
-   * useful for spotting a stall; it is bad at answering "how fast is this
-   * going", because every pause between frames drags it down.
-   */
-  const sustainedTps =
-    ttftMs !== null && elapsedMs > ttftMs && completionTok > 0
-      ? completionTok / ((elapsedMs - ttftMs) / 1000)
-      : null
+  /* One field, computed once in the meter, so this line and the header gauge
+     cannot drift apart the way they did. */
+  const sustainedTps = useStore((s) => s.live.decodeTpsSustained)
 
   const approvalName = useStore((s) => s.approvals[0]?.toolName ?? null)
   const approvalCount = useStore((s) => s.approvals.length)
@@ -353,6 +341,22 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
           text: `${head} — ≈${formatMs(prefillEtaMs)} left, estimated`,
           detail:
             'The model is re-reading the whole conversation before it writes anything. No tokens are produced during this phase and the streaming protocol reports no progress through it, so the time left is a projection from the prefill rate this model reached on earlier turns — it is not measured. That is what ≈ means.',
+          tone: 'live'
+        }
+      }
+      /*
+       * Three cases, not two. This branch used to catch both "no rate has ever
+       * been learned" and "the projection has run out", and told the user the
+       * former in both — while the same line quoted a tok/s rate two words
+       * earlier. It claimed to have no estimate and showed one in the same
+       * sentence, during exactly the stretch where a person is trying to work
+       * out whether anything is wrong.
+       */
+      if (prefillEtaMs !== null) {
+        return {
+          text: `${head} — any moment now`,
+          detail:
+            'The projected prefill time has elapsed. That projection comes from the rate this model reached on earlier turns, so a longer prompt, a colder cache or a busier machine all overrun it. Nothing is wrong yet; the streaming protocol reports no progress through prefill, so there is nothing more precise to show until the first token lands.',
           tone: 'live'
         }
       }

@@ -29,6 +29,15 @@ export interface ToolOutcome {
   detailIsError: boolean
   /** Dim trailing context, e.g. "47 lines". */
   note: string
+  /**
+   * What produced this, so an empty `detail` can be rendered honestly.
+   *
+   * "no output" is a SHELL idea — a command that ran and printed nothing. A
+   * write that printed nothing wrote a file, and captioning it "no output"
+   * described the one tool whose whole purpose is output as having produced
+   * none. Seen on five consecutive created files in a live run.
+   */
+  kind: 'shell' | 'serve' | 'write'
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -54,6 +63,7 @@ function writeOutcome(f: WriteResultFacts): ToolOutcome {
   const churn = f.created ? `${f.added} lines` : `+${f.added} -${f.removed}`
   if (!f.verified) {
     return {
+    kind: 'write',
       status: 'not verified',
       tone: 'bad',
       detail: 'bytes on disk do not match what was written',
@@ -63,6 +73,7 @@ function writeOutcome(f: WriteResultFacts): ToolOutcome {
   }
   if (f.syntax === 'broken') {
     return {
+    kind: 'write',
       status: f.created ? 'created, does not parse' : 'written, does not parse',
       tone: 'bad',
       detail: 'the file is on disk and is not valid',
@@ -72,6 +83,7 @@ function writeOutcome(f: WriteResultFacts): ToolOutcome {
   }
   if (f.syntax === 'unchecked') {
     return {
+    kind: 'write',
       status: f.created ? 'created' : 'written',
       tone: 'warn',
       detail: 'syntax not checked — run the build',
@@ -80,6 +92,7 @@ function writeOutcome(f: WriteResultFacts): ToolOutcome {
     }
   }
   return {
+    kind: 'write',
     status: f.created ? 'created' : 'written',
     tone: 'ok',
     detail: '',
@@ -106,6 +119,7 @@ function shellOutcome(f: ShellResultFacts): ToolOutcome {
   }
 
   return {
+    kind: 'shell',
     status,
     tone: failed ? 'bad' : 'ok',
     detail: f.headline,
@@ -118,6 +132,7 @@ function shellOutcome(f: ShellResultFacts): ToolOutcome {
 
 function serveOutcome(f: ServeResultFacts): ToolOutcome {
   return {
+    kind: 'serve',
     status: f.reused ? 'already up' : 'serving',
     tone: 'ok',
     detail: f.origin,
@@ -129,5 +144,7 @@ function serveOutcome(f: ServeResultFacts): ToolOutcome {
 /** Empty output with a clean exit still deserves a word. */
 export function outcomeDetail(o: ToolOutcome): string {
   if (o.detail !== '') return o.detail
-  return o.tone === 'ok' ? 'no output' : ''
+  /* Only a command can have produced no output. A quiet write is just a write;
+     its churn is already in `note`. */
+  return o.kind === 'shell' && o.tone === 'ok' ? 'no output' : ''
 }

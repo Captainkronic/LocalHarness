@@ -1141,6 +1141,15 @@ export interface LiveMetrics {
   /** Tokens generated so far this turn. */
   completionTokens: number
   /**
+   * Generated tokens over the time since the first one — the whole step's rate.
+   *
+   * `decodeTps` is a two-second window, which is the right instrument for
+   * spotting a stall and the wrong one for "how fast is this going": every gap
+   * between frames drags it down. Both are published so each surface can use
+   * the one it means, and neither has to reimplement the other.
+   */
+  decodeTpsSustained: number | null
+  /**
    * How many of `completionTokens` were reasoning rather than reply.
    *
    * Reasoning deltas are folded into the completion count, so without this the
