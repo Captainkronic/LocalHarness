@@ -49,13 +49,49 @@ const BIG = 'x'.repeat(12867)
 console.log('\n\x1b[1meliding a written file\x1b[0m')
 const written = elideBulkArguments(JSON.stringify({ path: 'index.html', content: BIG }))
 check('the payload is gone', !written.includes(BIG))
-check('it is far smaller', written.length < 300, `${written.length} chars`)
+check('it is far smaller', written.length < BIG.length / 10, `${written.length} chars`)
 check('the path survives', JSON.parse(written).path === 'index.html')
 check('and it is still valid JSON', typeof JSON.parse(written) === 'object')
-/* A silent truncation would teach the model it had written a short file. */
 check('it says how much was there', written.includes('12867'))
-check('and that the write already happened', /already applied/i.test(written))
-check('and where to get it', /read the file/i.test(written))
+
+/*
+ * The marker is read by a model that is looking at its OWN message and trying to
+ * work out whether its file survived. The first wording lost that argument: on a
+ * live React build the model read it, decided the harness was corrupting writes,
+ * and spent fifty messages capping itself at "keep each write under about 2KB"
+ * and splitting finished stylesheets to fit a limit that did not exist. Every
+ * one of those writes had verified clean on disk.
+ *
+ * So these are not wording preferences. Each one is a sentence that had to be
+ * there for the model to reach the right conclusion unaided.
+ */
+console.log('\n\x1b[1mit must not read as a truncation\x1b[0m')
+check('it does not use the angle-bracket placeholder form',
+  !/<\d+ characters/.test(written),
+  'that shape reads as the truncation itself rather than a note about one')
+check('the harness names itself as the actor',
+  /CaptainLlama/.test(written),
+  '"already applied" never says applied by what, which leaves the transport as the suspect')
+check('it states outright that nothing was truncated', /nothing was truncated/i.test(written))
+check('and that the file on disk is complete',
+  /on disk is complete/i.test(written),
+  'the one fact that ends the theory before it starts')
+check('it scopes the change to the transcript',
+  /transcript/i.test(written),
+  'otherwise the model cannot tell whether the file or the record was changed')
+check('and it names the tool that shows the truth', /read_file/.test(written))
+
+/* The marker replaces the value, so below some size eliding costs more than it
+   saves. BULK_LIMIT has to clear it. */
+console.log('\n\x1b[1mthe saving is real at the threshold\x1b[0m')
+const atLimit = 'y'.repeat(1201)
+const elidedAtLimit = elideBulkArguments(JSON.stringify({ path: 'a.ts', content: atLimit }))
+check('a value just over the limit still shrinks',
+  elidedAtLimit.length < JSON.stringify({ path: 'a.ts', content: atLimit }).length,
+  `marker is longer than the payload it replaced — raise BULK_LIMIT`)
+check('a value under the limit is kept whole',
+  JSON.parse(elideBulkArguments(JSON.stringify({ path: 'a.ts', content: 'z'.repeat(900) }))).content.length === 900,
+  'small edits stay legible in the transcript')
 
 console.log('\n\x1b[1mwhat must NOT be touched\x1b[0m')
 check('a short argument is returned unchanged', elideBulkArguments('{"path":"a.ts"}') === '{"path":"a.ts"}')

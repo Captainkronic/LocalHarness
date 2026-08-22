@@ -115,8 +115,48 @@ export function todayLine(now: Date = new Date()): string {
  */
 const BULK_FIELDS = new Set(['content', 'new_string', 'old_string', 'text', 'body'])
 
-/** Beyond this a value is a payload, not an argument. */
-const BULK_LIMIT = 600
+/**
+ * Beyond this a value is a payload, not an argument.
+ *
+ * The floor also has to clear the marker that replaces the value. The marker
+ * below is deliberately wordy — it has an hour of wasted run time to argue
+ * against — so eliding a 700-character value would save almost nothing while
+ * still costing the model the text. Above 1200 the saving is always real, and
+ * edits small enough to stay legible in the transcript now stay whole.
+ */
+const BULK_LIMIT = 1200
+
+/**
+ * What the model sees where its own payload used to be.
+ *
+ * The first version of this read `<8102 characters, already applied — read the
+ * file if you need them>`, and on a live React build the model hit it and
+ * concluded the harness was corrupting its writes:
+ *
+ *   "did I write <8102 characters...> as the actual content?? ... it seems like
+ *    something got truncated in transit"
+ *
+ * It spent the next fifty messages on that theory — re-reading files that were
+ * already correct, capping itself at "keep each write under about 2KB", and
+ * splitting finished stylesheets in half to stay under a limit that did not
+ * exist. Every write in that run had verified clean on disk.
+ *
+ * Three things caused it, and all three are addressed here. Angle brackets read
+ * as a placeholder token, so the marker looked like the truncation rather than a
+ * note about it — square brackets read as an editorial aside. "Already applied"
+ * never says applied BY WHAT, leaving the transport as the natural suspect — so
+ * the harness now names itself as the actor. And nothing told the model the
+ * bytes on disk were fine, which was the one fact that would have ended it — so
+ * that is now stated outright, before the instruction to go and look.
+ */
+function markElided(field: string, length: number): string {
+  return (
+    `[CaptainLlama removed ${length} characters of "${field}" from this transcript ` +
+    'to save context. The tool received the full value and applied all of it — nothing ' +
+    'was truncated, and the file on disk is complete. This affects only what you are ' +
+    'reading back here, never what was written. Call read_file to see the current contents.]'
+  )
+}
 
 /**
  * Replaces bulk argument values in REPLAYED tool calls with a note of their size.
@@ -149,7 +189,7 @@ export function elideBulkArguments(raw: string): string {
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (BULK_FIELDS.has(key) && typeof value === 'string' && value.length > BULK_LIMIT) {
-      out[key] = `<${value.length} characters, already applied — read the file if you need them>`
+      out[key] = markElided(key, value.length)
       touched = true
     } else {
       out[key] = value
