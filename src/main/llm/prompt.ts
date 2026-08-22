@@ -353,20 +353,40 @@ export function trimToBudget(
   const groups = groupExchanges(messages.slice(head))
   if (groups.length <= 1) return messages
 
+  /*
+   * The first user message is never dropped. It is the task.
+   *
+   * Trimming kept the newest groups walking backwards, which on an agentic run
+   * eventually reaches the oldest message — and on an agentic run the oldest
+   * message is the brief, because everything after it is the model talking to
+   * itself. Measured here: a 32-request build, one user message, and at 79% of
+   * the window the trimmer dropped it. The server then refused the request
+   * outright — "Chat template error: No user query found in messages" — and
+   * every retry re-trimmed and re-dropped it, so the turn could not recover at
+   * all. An hour of work, ended by losing the sentence that started it.
+   *
+   * It is also the cheapest thing in the conversation to keep. A brief is a
+   * paragraph; the tool results around it are tens of kilobytes.
+   */
+  const anchorIdx = groups.findIndex((g) => g[0]?.role === 'user')
+  const anchor = anchorIdx === -1 ? [] : groups[anchorIdx]
+
   const marker: WireMessage = { role: 'system', content: '' }
-  const fixed = countConversationTokens(system)
+  const fixed = countConversationTokens(system) + countConversationTokens(anchor)
 
   // Keep the newest groups, walking backwards, and always keep at least one.
   const kept: WireMessage[][] = []
   let total = fixed + PER_MESSAGE_OVERHEAD_TOKENS + MARKER_RESERVE_TOKENS
   for (let i = groups.length - 1; i >= 0; i--) {
+    if (i === anchorIdx) continue // already counted in `fixed`, and always kept
     const cost = countConversationTokens(groups[i])
     if (kept.length > 0 && total + cost > budget) break
     kept.unshift(groups[i])
     total += cost
   }
 
-  const droppedGroups = groups.slice(0, groups.length - kept.length)
+  const keptSet = new Set(kept)
+  const droppedGroups = groups.filter((g, i) => i !== anchorIdx && !keptSet.has(g))
   if (droppedGroups.length === 0) return messages
 
   const droppedMessages = droppedGroups.reduce((n, g) => n + g.length, 0)
@@ -382,7 +402,9 @@ export function trimToBudget(
     `rather than guessing at what it was.]`
 
   onTrim?.({ messages: droppedMessages, tokens: droppedTokens, kept: kept.flat().length })
-  return [...system, marker, ...kept.flat()]
+  /* Brief first, then the note about what went missing, then what survived —
+     so the model reads the task before it reads the apology. */
+  return [...system, ...anchor, marker, ...kept.flat()]
 }
 
 /**

@@ -29,7 +29,7 @@ const check = (name, ok, note = '') => {
 const dir = await mkdtemp(join(tmpdir(), 'lh-elide-'))
 await writeFile(
   join(dir, 'e.ts'),
-  `export { elideBulkArguments, buildMessages } from '${ROOT}/src/main/llm/prompt'\n`
+  `export { elideBulkArguments, buildMessages, trimToBudget } from '${ROOT}/src/main/llm/prompt'\n`
 )
 const outfile = join(dir, 'b.mjs')
 await build({
@@ -42,7 +42,7 @@ await build({
   logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main') }
 })
-const { elideBulkArguments, buildMessages } = await import(pathToFileURL(outfile).href)
+const { elideBulkArguments, buildMessages, trimToBudget } = await import(pathToFileURL(outfile).href)
 
 const BIG = 'x'.repeat(12867)
 
@@ -203,6 +203,43 @@ console.log(
   `\n  one write_file in history: ${before} chars -> ${after} ` +
     `(~${Math.round((before - after) / 4)} tokens saved per later turn)`
 )
+
+console.log('\n\x1b[1mthe brief is never trimmed away\x1b[0m')
+/* Measured on a live 32-request build: one user message, and at 79% of the
+   window the trimmer dropped it walking backwards. The server refused outright
+   — "Chat template error: No user query found in messages" — and every retry
+   re-trimmed and re-dropped it, so the turn could not recover. An hour of work
+   ended by losing the sentence that started it. */
+{
+  const big = (n) => 'y'.repeat(n)
+  const history = [
+    { role: 'user', content: 'Build me a website for Luminary Glassworks.' }
+  ]
+  for (let i = 0; i < 30; i++) {
+    history.push({ role: 'assistant', content: `step ${i} ${big(4000)}` })
+    history.push({ role: 'tool', tool_call_id: `c${i}`, content: big(4000) })
+  }
+
+  const trimmed = trimToBudget(history, 4000)
+  const users = trimmed.filter((m) => m.role === 'user')
+  check('the brief survives a trim that drops most of the history',
+    users.length === 1 && /Luminary Glassworks/.test(users[0].content),
+    `${users.length} user messages survived`)
+  check('and it really did trim', trimmed.length < history.length)
+  check('the brief comes FIRST, before the dropped-messages note',
+    trimmed.findIndex((m) => m.role === 'user') <
+      trimmed.findIndex((m) => /were dropped/.test(String(m.content ?? ''))),
+    'the model should read the task before the apology')
+  check('the note is still there', trimmed.some((m) => /were dropped/.test(String(m.content ?? ''))))
+
+  /* Nothing to trim must stay untouched. */
+  const small = [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'hello' }
+  ]
+  check('a conversation under budget is returned unchanged',
+    trimToBudget(small, 100000) === small)
+}
 
 await rm(dir, { recursive: true, force: true })
 console.log(failures === 0 ? '\n\x1b[32mall checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
