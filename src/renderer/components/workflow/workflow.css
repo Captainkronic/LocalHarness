@@ -1166,3 +1166,29 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+
+/* Additional servers: a name and a URL per row, sharing the section's rhythm.
+   Two of these classes were written before the markup that uses them existed —
+   the fourth time a set-* class has been referenced with no rule behind it,
+   which renders as inherited grey and looks like a styling bug rather than a
+   missing rule. */
+.set-subhead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  flex-wrap: wrap;
+}
+
+.set-endpoint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--s2);
+  align-items: start;
+}
+
+@media (max-width: 620px) {
+  .set-endpoint-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

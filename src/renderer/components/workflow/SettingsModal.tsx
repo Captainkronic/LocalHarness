@@ -44,10 +44,24 @@ const THEMES: Array<{ id: Settings['theme']; label: string }> = [
   { id: 'light', label: 'Light' }
 ]
 
+/** A stable id from a name or URL, so a hand-added server survives a restart. */
+function slugId(from: string): string {
+  const slug = from
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+  return slug === '' ? 'server' : slug
+}
+
 function modelOptionLabel(m: ModelInfo): string {
   const bits = [m.id, m.quantization || m.arch, m.compatibilityType]
   if (m.loadedContextLength !== null) bits.push(`${formatTokens(m.loadedContextLength)} ctx`)
-  if (m.state !== 'loaded') bits.push('not loaded')
+  /* Only say "not loaded" when the server actually said so. A backend that
+     reports no state at all is unknown, and printing a confident "not loaded"
+     beside a model that is resident and answering is worse than saying nothing. */
+  if (m.state === 'not-loaded') bits.push('not loaded')
   return bits.filter(Boolean).join(' · ')
 }
 
@@ -324,6 +338,67 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
               onCommit={(v) => patch({ apiKey: v })}
               placeholder="lm-studio"
             />
+
+            {/*
+              * Additional servers, editable.
+              *
+              * These existed in settings and had no control anywhere, so the
+              * only way to point the app at a second backend was to write the
+              * settings file by hand. oMLX on this machine is 37% faster to
+              * decode than LM Studio's MLX path, which is not a thing to hide
+              * behind a text editor.
+              *
+              * Each row routes by model: a turn goes to whichever endpoint
+              * offered the model it is using, so these are peers of the base URL
+              * above rather than fallbacks for it.
+              */}
+            <div className="set-subhead">
+              <span className="section-label">Additional servers</span>
+              <span className="set-hint-inline">
+                Peers of the base URL. A turn goes to whichever one offers the model it is using.
+              </span>
+            </div>
+            {[...settings.extraEndpoints, { id: '', label: '', baseUrl: '' }].map((ep, i) => (
+              <div className="set-endpoint-row" key={ep.id || `new-${i}`}>
+                <Field
+                  label={i < settings.extraEndpoints.length ? 'Name' : 'Add a server'}
+                  value={ep.label}
+                  onCommit={(v) => {
+                    const next = [...settings.extraEndpoints]
+                    const label = v.trim()
+                    if (i < next.length) next[i] = { ...next[i]!, label }
+                    else if (label !== '') next.push({ id: slugId(label), label, baseUrl: '' })
+                    else return
+                    patch({ extraEndpoints: next })
+                  }}
+                  placeholder="oMLX"
+                />
+                <Field
+                  label="Base URL"
+                  value={ep.baseUrl}
+                  onCommit={(v) => {
+                    const url = v.trim()
+                    const next = [...settings.extraEndpoints]
+                    if (i < next.length) {
+                      /* Clearing the URL removes the server. Nothing else in
+                         this dialog deletes anything, so it is worth being
+                         explicit that this does. */
+                      if (url === '') next.splice(i, 1)
+                      else next[i] = { ...next[i]!, baseUrl: url }
+                    } else if (url !== '') {
+                      next.push({ id: slugId(url), label: ep.label || 'server', baseUrl: url })
+                    } else return
+                    patch({ extraEndpoints: next })
+                  }}
+                  placeholder="http://host:8000/v1"
+                  hint={
+                    i < settings.extraEndpoints.length
+                      ? 'Clear this to remove the server.'
+                      : undefined
+                  }
+                />
+              </div>
+            ))}
           </section>
 
           {/* ---- Model ---- */}

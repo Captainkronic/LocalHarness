@@ -183,7 +183,12 @@ export class ModelRegistry {
         }
         const res = await this.timedFetch(url, { headers }, LIST_TIMEOUT_MS)
         if (!res.ok) continue
-        out.push(...parseModels(await res.json(), endpoint))
+        const payload: unknown = await res.json()
+        /* Best effort, and optional. oMLX publishes /v1/models/status with a
+           `loaded` flag per model; a backend without it simply reports unknown
+           rather than being described as unloaded on no evidence. */
+        const loadedIds = await this.pollExtraState(endpoint, headers)
+        out.push(...parseModels(payload, endpoint, 'unknown', loadedIds))
       } catch (err) {
         this.opts.onLog?.(
           'warn',
@@ -195,6 +200,35 @@ export class ModelRegistry {
       }
     }
     return out
+  }
+
+  /**
+   * Which of an extra endpoint's models are actually resident, when it says.
+   *
+   * Deliberately quiet: no such endpoint is part of the OpenAI surface, so a
+   * 404 is the normal case and must not look like a fault.
+   */
+  private async pollExtraState(
+    endpoint: LlmEndpoint,
+    headers: Record<string, string>
+  ): Promise<ReadonlySet<string> | null> {
+    try {
+      const url = `${trimTrailingSlash(endpoint.baseUrl)}/models/status`
+      const res = await this.timedFetch(url, { headers }, LIST_TIMEOUT_MS)
+      if (!res.ok) return null
+      const body = asRecord(await res.json())
+      const rows = body === null ? null : body.models
+      if (!Array.isArray(rows)) return null
+      const loaded = new Set<string>()
+      for (const row of rows) {
+        const rec = asRecord(row)
+        const id = rec === null ? null : asString(rec.id)
+        if (id !== null && rec?.loaded === true) loaded.add(id)
+      }
+      return loaded
+    } catch {
+      return null
+    }
   }
 
   residentModelId(): string | null {
@@ -359,7 +393,10 @@ export class ModelRegistry {
           })
         }
       }
-      this.resident = models.find((m) => m.state === 'loaded')?.id ?? null
+      /* Every endpoint, not just the primary. A model resident on a second
+         backend is still the resident model, and reporting null while one was
+         answering is what made the picker read "none loaded". */
+      this.resident = this.models.find((m) => m.state === 'loaded')?.id ?? null
 
       this.emitHealth({
         endpoint: settings.baseUrl,
@@ -413,7 +450,22 @@ export class ModelRegistry {
 /* parsing                                                             */
 /* ------------------------------------------------------------------ */
 
-function parseModels(payload: unknown, endpoint: LlmEndpoint): ModelInfo[] {
+/**
+ * @param unknownState what to record when the payload carries no `state` field.
+ *   LM Studio's /api/v0 always reports one. A plain OpenAI /v1 never does, and
+ *   defaulting those to 'not-loaded' asserted something we had not been told —
+ *   which is why every model on a second backend rendered with a dead grey dot
+ *   and the picker said "none loaded" while one of them was resident and
+ *   answering.
+ * @param loadedIds ids a companion status endpoint says are resident, when the
+ *   backend offers one.
+ */
+export function parseModels(
+  payload: unknown,
+  endpoint: LlmEndpoint,
+  unknownState: string = 'not-loaded',
+  loadedIds: ReadonlySet<string> | null = null
+): ModelInfo[] {
   const root = asRecord(payload)
   if (root === null) return []
   const data = root.data
@@ -453,7 +505,9 @@ function parseModels(payload: unknown, endpoint: LlmEndpoint): ModelInfo[] {
       // A server that advertises `max_model_len` is stating what it will serve
       // right now, so that counts as observed rather than aspirational.
       loadedContextLength: asNumber(rec.loaded_context_length) ?? asNumber(rec.max_model_len),
-      state: asString(rec.state) ?? 'not-loaded',
+      state:
+        asString(rec.state) ??
+        (loadedIds !== null ? (loadedIds.has(id) ? 'loaded' : 'not-loaded') : unknownState),
       capabilities,
       supportsVision: type === 'vlm',
       supportsTools: capabilities.includes('tool_use')

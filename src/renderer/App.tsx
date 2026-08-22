@@ -434,7 +434,10 @@ function ModelPicker({
 
 function stateDot(state: string | undefined): string {
   if (state === 'loaded') return 'dot-ok'
-  if (state === 'loading') return 'dot-busy'
+  if (state === 'loading' || state === 'is_loading') return 'dot-busy'
+  /* 'unknown' is a backend that never told us, not a backend that said no. It
+     gets the same neutral dot as 'not-loaded' — there is nothing to show — but
+     it must not be turned into the words "not loaded" anywhere. */
   return ''
 }
 

@@ -29,7 +29,8 @@ await writeFile(join(dir, 'e.ts'),
   `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n` +
   `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n` +
   `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n` +
-  `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n`)
+  `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n` +
+  `export { parseModels } from '${ROOT}/src/main/llm/models'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -42,7 +43,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -305,6 +306,34 @@ console.log('\n\x1b[1mA delta is not a token\x1b[0m')
   check('a spiral now trips at the cap it was written for',
     summed > perFrame,
     'with frames, the same stream would have to be ~4x longer to trip')
+}
+
+console.log('\n\x1b[1m"Not loaded" must mean the server said so\x1b[0m')
+/* A plain OpenAI /v1 reports an id and nothing else. Defaulting that to
+   'not-loaded' asserted something we had never been told: every model on the
+   second backend drew a dead grey dot, the picker read "none loaded", and one of
+   them was resident and answering at the time. */
+{
+  const ep = { id: 'omlx', label: 'oMLX', baseUrl: 'http://x/v1' }
+  const body = { data: [{ id: 'A' }, { id: 'B' }] }
+
+  const naive = parseModels(body, ep)
+  check('the old default still applies where nothing is passed',
+    naive[0].state === 'not-loaded', 'LM Studio always reports a state, so this path is unchanged')
+
+  const unknown = parseModels(body, ep, 'unknown')
+  check('a silent backend reports unknown, not "not loaded"',
+    unknown[0].state === 'unknown' && unknown[1].state === 'unknown')
+
+  const withStatus = parseModels(body, ep, 'unknown', new Set(['A']))
+  check('a companion status endpoint gives real state',
+    withStatus[0].state === 'loaded' && withStatus[1].state === 'not-loaded',
+    'once the backend HAS told us, "not loaded" is honest')
+
+  /* An explicit state in the payload always wins. */
+  const explicit = parseModels({ data: [{ id: 'A', state: 'loading' }] }, ep, 'unknown', new Set(['A']))
+  check('a state the payload states beats anything inferred',
+    explicit[0].state === 'loading')
 }
 
 await rm(dir, { recursive: true, force: true })
