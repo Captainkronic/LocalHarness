@@ -796,15 +796,38 @@ export class Orchestrator {
           },
           onContent: (delta) => {
             assistant.content += delta
-            meter.countCompletionToken()
+            meter.countCompletionToken(estimateTokens(delta))
             this.persist(conv, false)
           },
           onReasoning: (delta) => {
             assistant.reasoning = (assistant.reasoning ?? '') + delta
             // Counts toward decode rate and the completion total, but tracked
             // separately so TurnMetrics.reasoningTokens is actually populated.
-            meter.countReasoningToken()
-            reasoningSoFar += 1
+            /*
+             * Tokens in this delta, not "one delta".
+             *
+             * These counted 1 per SSE frame, and a frame carries several tokens
+             * — measured against oMLX and the server's own usage figures, about
+             * four. Two things were wrong as a result, and only one of them was
+             * cosmetic.
+             *
+             * The live decode gauge read 5.5 tok/s while the finished turn
+             * stamped 18.4, and the server's dashboard agreed with the stamp.
+             * Every live token readout in the app was low by the same factor.
+             *
+             * The one that matters: `reasoningSoFar` is compared against
+             * `reasoningCap`, which is a count of TOKENS. Feeding it a frame
+             * count meant the runaway-reasoning breaker — the thing that exists
+             * to stop a spiral at ~12k tokens — did not fire until roughly 49k.
+             * It was letting through four times the thinking it was written to
+             * catch, while logging the frame count as "reasoning tokens".
+             *
+             * estimateTokens is chars/4 and imperfect, but it is wrong by a few
+             * percent where counting frames was wrong by 4x.
+             */
+            const reasoningTokens = estimateTokens(delta)
+            meter.countReasoningToken(reasoningTokens)
+            reasoningSoFar += reasoningTokens
             // The circuit breaker. Past this much thinking with nothing written
             // and no tool reached for, the turn is not deliberating, it is
             // spiralling — observed at sixteen minutes and 12.4k tokens,
@@ -863,7 +886,7 @@ export class Orchestrator {
             // a tool call — and writing a whole file into a write_file argument
             // is the longest generation in the app. The UI looked frozen at
             // exactly the moment it most needed to show progress.
-            meter.countCompletionToken()
+            meter.countCompletionToken(estimateTokens(argsDelta))
             assistant.toolCalls = [...pendingCalls.values()]
             this.persist(conv, false)
           },

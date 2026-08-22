@@ -28,7 +28,8 @@ await writeFile(join(dir, 'e.ts'),
   `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n` +
   `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n` +
   `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n` +
-  `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n`)
+  `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n` +
+  `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -41,7 +42,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -256,6 +257,54 @@ console.log('\n\x1b[1mThe window a request actually gets\x1b[0m')
   check('and compose the other way round too', effectiveWindow(131072, 4, 50000) === 32768)
   check('cap 0 means no cap', effectiveWindow(262144, 1, 0) === 262144)
   check('a nonsense slot count is treated as one', effectiveWindow(1000, 0, 0) === 1000)
+}
+
+console.log('\n\x1b[1mA delta is not a token\x1b[0m')
+/*
+ * These counters were incremented once per SSE frame. A frame carries several
+ * tokens — about four here, measured against oMLX's own usage figures. The live
+ * gauge read 5.5 tok/s while the finished turn stamped 18.4 and the server
+ * dashboard agreed with the stamp.
+ *
+ * The cosmetic half is the gauge. The half that matters is that reasoningSoFar
+ * is compared against reasoningCap, a count of TOKENS, so the runaway-reasoning
+ * breaker did not fire until roughly four times the thinking it was written to
+ * catch.
+ */
+{
+  /* A realistic reasoning stream: frames of a few words each. */
+  const frames = []
+  for (let i = 0; i < 300; i++) frames.push(' the harbour master kept a ledger')
+  const trueTokens = estimateTokens(frames.join(''))
+
+  const perFrame = frames.length
+  check('counting frames undercounts badly',
+    perFrame < trueTokens / 3,
+    `${perFrame} frames vs ~${trueTokens} tokens — the old behaviour`)
+
+  const summed = frames.reduce((n, f) => n + estimateTokens(f), 0)
+  check('counting each frame\'s tokens lands close to the truth',
+    Math.abs(summed - trueTokens) / trueTokens < 0.2,
+    `${summed} vs ~${trueTokens}`)
+
+  /* And the meter reports it, so the gauge and the breaker see the same number. */
+  const m = new TurnMeter()
+  m.start('qwen', 5000, null)
+  m.markFirstToken()
+  for (const f of frames) m.countReasoningToken(estimateTokens(f))
+  const snap = m.snapshot()
+  check('the meter reports tokens, not frames',
+    snap.reasoningTokens === summed && snap.reasoningTokens > perFrame * 3)
+  check('and reasoning still counts toward the completion total',
+    snap.completionTokens === summed,
+    'it is generated at the same cost and comes out of the same budget')
+
+  /* The breaker's threshold is in tokens. Feeding it frames moves the trip
+     point out by whatever the frame size happens to be. */
+  const cap = 12288
+  check('a spiral now trips at the cap it was written for',
+    summed > perFrame,
+    'with frames, the same stream would have to be ~4x longer to trip')
 }
 
 await rm(dir, { recursive: true, force: true })
