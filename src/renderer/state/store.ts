@@ -239,6 +239,7 @@ const INITIAL_SETTINGS: Settings = {
   shellAllowlist: [],
   contextWarnFraction: 0.8,
   contextSlots: 1,
+  contextCap: 0,
   skillsRoot: '',
   autoContinueTurns: 0,
   theme: 'system',

@@ -1322,6 +1322,21 @@ export interface Settings {
    */
   contextSlots: number
   /**
+   * Never treat a model's window as larger than this, in tokens. 0 = no cap.
+   *
+   * A server can advertise a window it cannot actually hold. oMLX reports
+   * max_model_len 262144 for a 27B on a 36 GiB machine whose KV allocation
+   * stops fitting somewhere around 50-70k — the number is the architecture's
+   * ceiling, not this box's. Believing it means trimming never fires and the
+   * prompt grows until the server refuses it, which on an unattended run is
+   * discovered hours in.
+   *
+   * Deliberately a ceiling rather than a divisor: contextSlots divides because
+   * llama.cpp genuinely splits n_ctx between slots, which is a different fact
+   * and composes with this one.
+   */
+  contextCap: number
+  /**
    * Turns the app will start again on its own after a RECOVERABLE stop.
    *
    * Two things end a turn without the model being finished: the step cap, and

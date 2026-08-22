@@ -65,6 +65,29 @@ interface WindowObservation {
  * only one of the two that knows state, quantization and the real loaded
  * window. An extra contributes only models the primary has never heard of.
  */
+/**
+ * The window a single request actually gets.
+ *
+ * Two independent corrections to what a server advertises, and they compose.
+ *
+ * `slots` divides because llama.cpp's --parallel genuinely splits n_ctx between
+ * concurrent slots and says so nowhere in either models API; a meter reading the
+ * whole n_ctx was four times too generous.
+ *
+ * `cap` is a ceiling the operator sets because a server can advertise a window
+ * the machine cannot hold — oMLX reports max_model_len 262144 for a 27B on a
+ * 36 GiB box whose KV stops fitting somewhere around 50-70k. That number is the
+ * architecture's limit, not this machine's. Believing it means trimming never
+ * fires and the prompt grows until the server refuses it, which on an
+ * unattended overnight run is discovered hours later.
+ */
+export function effectiveWindow(raw: number, slots: number, cap: number): number {
+  const n = Math.max(1, Math.round(slots || 1))
+  const perRequest = Math.floor(raw / n)
+  const ceiling = Math.max(0, Math.round(cap || 0))
+  return ceiling > 0 ? Math.min(perRequest, ceiling) : perRequest
+}
+
 export function mergeModelLists(primary: ModelInfo[], extra: ModelInfo[]): ModelInfo[] {
   const byId = new Map<string, ModelInfo>()
   for (const model of primary) byId.set(model.id, model)
@@ -190,8 +213,8 @@ export class ModelRegistry {
   contextWindow(modelId: string): number | null {
     const raw = this.windows.get(modelId)?.contextLength ?? null
     if (raw === null || raw <= 0) return raw
-    const slots = Math.max(1, Math.round(this.opts.getSettings().contextSlots || 1))
-    return Math.floor(raw / slots)
+    const settings = this.opts.getSettings()
+    return effectiveWindow(raw, settings.contextSlots, settings.contextCap)
   }
 
   health(): ServerHealth {
@@ -408,9 +431,20 @@ function parseModels(payload: unknown, endpoint: LlmEndpoint): ModelInfo[] {
       arch: asString(rec.arch) ?? '',
       quantization: asString(rec.quantization) ?? '',
       compatibilityType: asString(rec.compatibility_type) ?? '',
-      maxContextLength: asNumber(rec.max_context_length) ?? 0,
+      /*
+       * `max_model_len` is oMLX's spelling of the same fact.
+       *
+       * A second backend on this box serves plain OpenAI /v1 and reports its
+       * window under that name. Without reading it the window is unknown, and
+       * an unknown window does not merely blank the meter — it switches history
+       * trimming OFF, which on a long agentic run means the prompt grows until
+       * the server refuses it.
+       */
+      maxContextLength: asNumber(rec.max_context_length) ?? asNumber(rec.max_model_len) ?? 0,
       // Present only while resident. Absent means unknown, never max_context_length.
-      loadedContextLength: asNumber(rec.loaded_context_length),
+      // A server that advertises `max_model_len` is stating what it will serve
+      // right now, so that counts as observed rather than aspirational.
+      loadedContextLength: asNumber(rec.loaded_context_length) ?? asNumber(rec.max_model_len),
       state: asString(rec.state) ?? 'not-loaded',
       capabilities,
       supportsVision: type === 'vlm',

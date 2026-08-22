@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shellAllowlist: ['pwd', 'git status', 'git diff', 'git log', 'npm run typecheck', 'node -v'],
   contextWarnFraction: 0.75,
   contextSlots: 1,
+  contextCap: 0,
   autoContinueTurns: 0,
   theme: 'dark',
   modelPollMs: 600000,
@@ -255,6 +256,7 @@ export function mergeSettings(base: Settings, raw: unknown): Settings {
     shellAllowlist: allowlist ? dedupe(allowlist.map((c) => c.trim()).filter(Boolean)) : base.shellAllowlist,
     contextWarnFraction: asClampedNumber(src.contextWarnFraction, 0.1, 1) ?? base.contextWarnFraction,
     contextSlots: Math.round(asClampedNumber(src.contextSlots, 1, 16) ?? base.contextSlots),
+    contextCap: Math.round(asClampedNumber(src.contextCap, 0, 1_000_000) ?? base.contextCap),
     /* A blank or whitespace path would silently scan the filesystem root. */
     skillsRoot: asNonEmptyString(src.skillsRoot) ?? base.skillsRoot,
     autoContinueTurns: Math.round(asClampedNumber(src.autoContinueTurns, 0, 50) ?? base.autoContinueTurns),

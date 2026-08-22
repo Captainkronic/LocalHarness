@@ -28,7 +28,7 @@ await writeFile(join(dir, 'e.ts'),
   `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n` +
   `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n` +
   `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n` +
-  `export { mergeModelLists } from '${ROOT}/src/main/llm/models'\n`)
+  `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -41,7 +41,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -237,6 +237,25 @@ console.log('\n\x1b[1mOne entry per model, whatever the endpoints say\x1b[0m')
   check('primary ordering is preserved', m[0].id === P[0].id && m[1].id === P[1].id)
   check('no extras at all is fine', mergeModelLists(P, []).length === 2)
   check('no primary at all still lists the extra', mergeModelLists([], X).length === 3)
+}
+
+console.log('\n\x1b[1mThe window a request actually gets\x1b[0m')
+{
+  check('with neither correction it is what the server said',
+    effectiveWindow(98304, 1, 0) === 98304)
+  check('slots divide, because --parallel really does split n_ctx',
+    effectiveWindow(98304, 4, 0) === 24576,
+    'reading the whole n_ctx was four times too generous')
+  check('a cap ceilings an advertised window the box cannot hold',
+    effectiveWindow(262144, 1, 65536) === 65536,
+    'oMLX advertises the architecture limit, not this machine\'s')
+  check('the cap does not INFLATE a smaller real window',
+    effectiveWindow(49152, 1, 65536) === 49152,
+    'it is a ceiling, never a floor — this is the one that would overflow silently')
+  check('the two compose', effectiveWindow(262144, 4, 50000) === 50000)
+  check('and compose the other way round too', effectiveWindow(131072, 4, 50000) === 32768)
+  check('cap 0 means no cap', effectiveWindow(262144, 1, 0) === 262144)
+  check('a nonsense slot count is treated as one', effectiveWindow(1000, 0, 0) === 1000)
 }
 
 await rm(dir, { recursive: true, force: true })
