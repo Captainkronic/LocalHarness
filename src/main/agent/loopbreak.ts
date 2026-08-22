@@ -560,3 +560,36 @@ export function canAutoContinue(
   if (last === undefined || last.role !== 'assistant') return false
   return last.stoppedAtCap === true || last.stoppedLooping === true
 }
+
+/**
+ * Settle any tool call still marked in-flight when its turn ends.
+ *
+ * Mutates in place and reports whether anything changed, so the caller only
+ * persists when there is something to persist.
+ *
+ * A call that outlives its turn renders as a busy dot with a frozen character
+ * count beside it — the card's own tick stops once arguments have arrived, so
+ * it is a stopped clock wearing a live indicator, and the animation is the more
+ * believable half. The throw path already handled this; the cancel path did not,
+ * which is reachable any time Stop is pressed during a step that issued more
+ * than one call.
+ *
+ * A pure function because the inline version of the same cleanup elsewhere in
+ * this codebase was only ever covered by grepping for it, and a grep cannot tell
+ * whether the code it found can run.
+ */
+export function demoteOrphanedCalls(
+  calls: Array<{ status: string; error?: string; finishedAt?: number }> | undefined,
+  now: number
+): boolean {
+  if (calls === undefined) return false
+  let changed = false
+  for (const call of calls) {
+    if (call.status !== 'pending' && call.status !== 'running') continue
+    call.status = 'error'
+    call.error = call.error ?? 'The turn ended before this call ran.'
+    call.finishedAt = now
+    changed = true
+  }
+  return changed
+}

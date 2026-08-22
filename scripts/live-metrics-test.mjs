@@ -24,7 +24,9 @@ const check = (name, ok, note = '') => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const dir = await mkdtemp(join(tmpdir(), 'lh-live-'))
-await writeFile(join(dir, 'e.ts'), `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n`)
+await writeFile(join(dir, 'e.ts'),
+  `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n` +
+  `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -36,7 +38,7 @@ await build({
   banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim }
 })
-const { TurnMeter } = await import(pathToFileURL(out).href)
+const { TurnMeter, demoteOrphanedCalls } = await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
 /* It rendered elapsedMs, stamped once when the request left the client. So
@@ -121,6 +123,48 @@ console.log('\n\x1b[1mA name and a clock survive a multi-call step\x1b[0m')
   check('and stops at the first non-tool, non-assistant message',
     /role !== 'tool'/.test(fn),
     'without that it would reach back into an unrelated earlier turn')
+}
+
+console.log('\n\x1b[1mNo tool call outlives its turn\x1b[0m')
+/* Press Stop during a step that issued several calls: main treats the rest as
+   denied, the renderer's last snapshot still has them pending, and because
+   characters had already arrived the card's own tick is disabled. The result is
+   a frozen character count under an animated busy dot. */
+{
+  const calls = [
+    { status: 'ok' },
+    { status: 'pending' },
+    { status: 'running' },
+    { status: 'error', error: 'the real reason' }
+  ]
+  const changed = demoteOrphanedCalls(calls, 1234)
+  check('it reports that it changed something', changed === true)
+  check('a pending call is settled', calls[1].status === 'error')
+  check('a running call is settled', calls[2].status === 'error')
+  check('and both get a finish time so the clock stops',
+    calls[1].finishedAt === 1234 && calls[2].finishedAt === 1234)
+  check('a call that already succeeded is untouched', calls[0].status === 'ok')
+  check('and a real failure keeps its own reason',
+    calls[3].error === 'the real reason',
+    'overwriting it would hide why the call actually failed')
+  check('nothing to do is reported as nothing done',
+    demoteOrphanedCalls([{ status: 'ok' }], 1) === false,
+    'the caller persists only when this says so')
+  check('no calls at all is safe', demoteOrphanedCalls(undefined, 1) === false)
+}
+
+console.log('\n\x1b[1mA finished message must not claim to be thinking\x1b[0m')
+{
+  const msg = await (await import('node:fs/promises')).readFile(
+    join(ROOT, 'src/renderer/components/chat/Message.tsx'), 'utf8')
+  check('reaching for a tool counts as an answer',
+    /answered=\{message\.content\.trim\(\) !== '' \|\| \(message\.toolCalls\?\.length \?\? 0\) > 0\}/.test(msg),
+    'in Code mode content is empty on nearly every step, so without this every step looked unanswered')
+  check('liveness is taken from streaming, not inferred from a clock',
+    /const live = streaming && !answered/.test(msg))
+  check('and growth must be observed before it counts',
+    /useRef\(\{ len: text\.length, at: 0 \}\)/.test(msg),
+    'seeding at mount time made every historical block read as live on first render')
 }
 
 await rm(dir, { recursive: true, force: true })

@@ -89,7 +89,14 @@ function AssistantMessage({
           text={message.reasoning}
           tokens={message.metrics?.reasoningTokens}
           budget={WORKFLOW_BY_ID[activeWorkflow]?.sampling.maxTokens}
-          answered={message.content.trim() !== ''}
+          /* Reaching for a tool IS an answer, and the engine's loop breaker has
+             always known that — it stands down the moment a step emits
+             tool_calls. This clause was missing here, and in Code mode content
+             is empty on nearly every step, so `answered` was false for all 46
+             steps of a live run: every one of them eligible for the red runaway
+             banner, and every one of them treated as still thinking. */
+          answered={message.content.trim() !== '' || (message.toolCalls?.length ?? 0) > 0}
+          streaming={message.streaming === true}
         />
       ) : null}
 
@@ -142,14 +149,23 @@ function Reasoning({
   text,
   tokens,
   budget,
-  answered
+  answered,
+  streaming
 }: {
   text: string
   tokens?: number
   /** The workflow's maxTokens — reasoning is billed against the same ceiling. */
   budget?: number
-  /** True once any answer text has arrived. */
+  /** True once an answer has arrived — written text OR a tool call. */
   answered: boolean
+  /**
+   * Whether this message is the one being generated right now.
+   *
+   * Liveness used to be inferred from a timer, which meant a finished message
+   * could claim to be thinking. It is a fact the message already carries, so it
+   * is passed rather than guessed.
+   */
+  streaming: boolean
 }) {
   // Open while it is still thinking. Minutes of reasoning behind a collapsed
   // header is the app hiding the only thing happening; once the answer lands
@@ -173,9 +189,19 @@ function Reasoning({
   // the timer should not keep implying progress.
   const [startedAt] = useState(() => Date.now())
   const [tick, setTick] = useState(0)
-  const lastLen = useRef({ len: text.length, at: Date.now() })
+  /*
+   * Seeded at 0, not at mount.
+   *
+   * With `Date.now()` here, the first render of EVERY message computed an age
+   * of ~0ms and so declared itself live. Opening the conversation made all 46
+   * finished reasoning blocks auto-expand at once, each with a pulsing dot and
+   * a clock reading "Thinking 0s", for turns that had ended hours earlier —
+   * then collapse together four seconds later. Growth has to be OBSERVED before
+   * it counts as growth, and `streaming` is the authoritative fact anyway.
+   */
+  const lastLen = useRef({ len: text.length, at: 0 })
   if (text.length !== lastLen.current.len) lastLen.current = { len: text.length, at: Date.now() }
-  const live = !answered && Date.now() - lastLen.current.at < 4000
+  const live = streaming && !answered && Date.now() - lastLen.current.at < 4000
 
   useEffect(() => {
     if (!live) return

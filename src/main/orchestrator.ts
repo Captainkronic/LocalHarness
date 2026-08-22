@@ -46,6 +46,7 @@ import {
   callKeyFor,
   canAutoContinue,
   collapseResultUrls,
+  demoteOrphanedCalls,
   isActing,
   loopAdvice,
   loopVerdict,
@@ -1512,6 +1513,31 @@ export class Orchestrator {
     const conversationId = this.active.conversationId
     this.active = null
     this.d.models.setActive(false)
+
+    /*
+     * No tool call may outlive the turn that issued it.
+     *
+     * The throw path already demoted pending calls (see the catch in
+     * runAndReport, which explains why: a pulsing "composing…" dot underneath a
+     * message saying the turn had stopped, with the animation the more
+     * believable of the two). The CANCEL path was missed. Press Stop during a
+     * message that issued more than one call and the main process treats the
+     * rest as denied while the renderer's last snapshot still has them pending
+     * — and because characters had already arrived, the card's own tick is
+     * disabled, so it settles into a frozen character count under an animated
+     * busy dot. A stopped clock wearing a live indicator.
+     *
+     * Doing it here covers every way a turn can end, including ones added later.
+     */
+    try {
+      const conv = this.d.conversations.get(conversationId)
+      const last = conv?.messages[conv.messages.length - 1]
+      const changed =
+        last?.role === 'assistant' ? demoteOrphanedCalls(last.toolCalls, Date.now()) : false
+      if (changed && conv) this.persist(conv, true)
+    } catch {
+      /* A conversation deleted mid-turn has nothing left to tidy. */
+    }
     // Context usage is otherwise only recomputed at the TOP of a turn, so the
     // moment a turn finished the figure still excluded the reply that had just
     // landed — thousands of tokens short after a step that writes a file. That
