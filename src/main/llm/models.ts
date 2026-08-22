@@ -343,7 +343,15 @@ export class ModelRegistry {
       const now = Date.now()
 
       this.models = mergeModelLists(models, extra)
-      for (const model of models) {
+      /*
+       * Windows are recorded for EXTRAS too, not just the primary.
+       *
+       * This iterated `models` alone, so a model served by a second backend
+       * never got a window — and an unknown window does not just blank the
+       * meter, it switches history trimming off. The failure is invisible until
+       * a long run's prompt has grown past what the server will accept.
+       */
+      for (const model of this.models) {
         if (model.loadedContextLength !== null) {
           this.windows.set(model.id, {
             contextLength: model.loadedContextLength,
