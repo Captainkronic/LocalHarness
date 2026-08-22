@@ -144,6 +144,59 @@ check('but still carries the tool call', serialised.includes('write_file'))
 check('and its id, so the reply is answerable', serialised.includes('call_1'))
 check('and the tool result', serialised.includes('Wrote index.html'))
 
+console.log('\n\x1b[1mthe newest write survives one step\x1b[0m')
+/* Watched live: the model wrote index.html and on its very next step reasoned
+   "let me check what's in it (it was truncated in the transcript), I'll read it
+   back" — spending a full re-prefill of a 22k conversation, about a minute, to
+   recover text this app had thrown away one step earlier. */
+{
+  const call = (id, content) => ({
+    id, name: 'write_file', status: 'ok', result: 'Wrote it',
+    arguments: JSON.stringify({ path: `${id}.html`, content })
+  })
+  const two = {
+    id: 'c2', workflowId: 'code',
+    messages: [
+      { id: 'u', role: 'user', content: 'build it', createdAt: 1 },
+      { id: 'a1', role: 'assistant', content: '', createdAt: 2, toolCalls: [call('older', BIG)] },
+      { id: 'a2', role: 'assistant', content: '', createdAt: 3, toolCalls: [call('newest', BIG)] }
+    ]
+  }
+  const wire = JSON.stringify(buildMessages(two, 'You are an engineer.', false, {}))
+  check('the newest write is still readable in full',
+    (wire.match(/x{2000,}/g) ?? []).length === 1,
+    'exactly one full payload should survive')
+  check('and the older one is still elided',
+    wire.includes('CaptainLlama removed'))
+
+  /* The property that matters most: one step of grace, never two. */
+  const three = {
+    ...two,
+    messages: [
+      ...two.messages,
+      { id: 'a3', role: 'assistant', content: '', createdAt: 4, toolCalls: [call('latest', BIG)] }
+    ]
+  }
+  const wire3 = JSON.stringify(buildMessages(three, 'You are an engineer.', false, {}))
+  check('a write ages out as soon as another one lands',
+    (wire3.match(/x{2000,}/g) ?? []).length === 1,
+    'otherwise this is the 12.8KB-resent-every-turn bug all over again')
+  check('and it is the LATEST one that survives',
+    wire3.indexOf('x'.repeat(2000)) > wire3.indexOf('CaptainLlama removed'),
+    'the surviving payload must sit after the elided one')
+
+  /* The boundary is the turn, not the call. Without that, a conversation that
+     ends with a big write and carries on in chat re-sends it forever. */
+  const answered = {
+    ...two,
+    messages: [...two.messages, { id: 'u2', role: 'user', content: 'now add a page', createdAt: 5 }]
+  }
+  const wireA = JSON.stringify(buildMessages(answered, 'You are an engineer.', false, {}))
+  check('a new user message ends the grace',
+    (wireA.match(/x{2000,}/g) ?? []).length === 0,
+    'this is the 12.8KB-resent-every-turn bug, and it must not come back')
+}
+
 const before = JSON.stringify({ path: 'index.html', content: BIG }).length
 const after = JSON.parse(serialised.match(/"arguments":("(?:[^"\\]|\\.)*")/)[1]).length
 console.log(

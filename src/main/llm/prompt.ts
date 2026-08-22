@@ -231,7 +231,35 @@ export function buildMessages(
     }
   }
 
-  for (const msg of conv.messages) {
+  /*
+   * The newest tool-calling message keeps its bulk arguments.
+   *
+   * Eliding everything is right for history and wrong for the turn that just
+   * happened: the model writes a file and, on its very next step, wants to know
+   * what is in it. Watched live — "the index.html I wrote, let me check what's
+   * in it (it was truncated in the transcript), I'll read it back" — and that
+   * read cost a full re-prefill of a 22k-token conversation, about a minute, to
+   * recover text the app had deliberately thrown away one step earlier.
+   *
+   * One step of grace is the whole fix. Keeping a 22 KB write costs ~5.5k
+   * tokens for a single turn; re-reading it costs the entire prompt again plus
+   * the file a second time. Keeping it FOREVER is the original bug this elision
+   * was written for — a 12.8 KB index.html re-sent on every turn for the rest
+   * of the build — and one step does not reintroduce it.
+   */
+  let lastUserIdx = -1
+  let newestCallIdx = -1
+  conv.messages.forEach((m, i) => {
+    if (m.role === 'user') lastUserIdx = i
+    if (m.role === 'assistant' && (m.toolCalls?.length ?? 0) > 0) newestCallIdx = i
+  })
+  /* Only within the CURRENT turn. "Newest tool call" alone was not a boundary:
+     a conversation that ends with a big write and then carries on in chat would
+     keep re-sending it for the rest of its life, which is precisely the bug the
+     elision exists to prevent. A new user message ends the grace. */
+  const keepIntactIdx = newestCallIdx > lastUserIdx ? newestCallIdx : -1
+
+  for (const [msgIdx, msg] of conv.messages.entries()) {
     switch (msg.role) {
       case 'system':
         if (msg.content.trim().length > 0) {
@@ -256,7 +284,13 @@ export function buildMessages(
             type: 'function' as const,
             // Arguments can still be a partial JSON fragment if the turn was cut
             // short; an empty object keeps the history parseable.
-            function: { name: c.name, arguments: elideBulkArguments(c.arguments.trim() || '{}') }
+            function: {
+              name: c.name,
+              arguments:
+                msgIdx === keepIntactIdx
+                  ? c.arguments.trim() || '{}'
+                  : elideBulkArguments(c.arguments.trim() || '{}')
+            }
           }))
         }
         out.push(wire)
