@@ -63,7 +63,28 @@ type Tone = 'idle' | 'live' | 'warn' | 'error'
  * component continuously — including through the silences it exists to report.
  */
 function openCall(s: AppState) {
-  const m = s.conversation?.messages.at(-1)
+  /*
+   * Scan back to the most recent ASSISTANT message rather than reading the last
+   * message.
+   *
+   * Every finished call pushes a `role: 'tool'` result, so from call #2 of a
+   * batch onward the last message was a tool result, this returned null, and
+   * the strip fell to the anonymous "Running a tool" — no name, no progress, and
+   * (because that branch returns before the clock is built) no elapsed either.
+   * A 59-second command in position 2 was indistinguishable from a hang, while
+   * the identical command in position 1 ticked correctly.
+   */
+  const msgs = s.conversation?.messages ?? []
+  let m: (typeof msgs)[number] | undefined
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const candidate = msgs[i]
+    if (candidate?.role === 'assistant') {
+      m = candidate
+      break
+    }
+    // Only tool results sit between an assistant message and its running calls.
+    if (candidate?.role !== 'tool') break
+  }
   const calls = m?.role === 'assistant' ? (m.toolCalls ?? []) : []
   return (
     calls.find((c) => c.status === 'running') ??
@@ -76,6 +97,7 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
   const phase = useStore((s) => s.live.phase)
   const promptTokens = useStore((s) => s.live.promptTokens)
   const completionTok = useStore((s) => s.live.completionTokens)
+  const reasoningTok = useStore((s) => s.live.reasoningTokens)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
   const prefillEtaMs = useStore((s) => s.live.prefillEtaMs)
 
@@ -366,12 +388,27 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
           tone: 'live'
         }
       }
+      /*
+       * Reasoning deltas are generated tokens, so the phase flips to 'decode' on
+       * the first one and everything below used to read "Writing the reply".
+       * On the run this was found, 51.0k of 68.6k generated tokens were
+       * reasoning: three quarters of all generation time announced as work that
+       * had not started, while the reply was still empty.
+       */
+      if (reasoningTok > 0 && completionTok <= reasoningTok) {
+        return {
+          text: `Thinking — ${formatTokens(reasoningTok)} tokens so far`,
+          detail:
+            'The model is reasoning, not writing. Reasoning is generated at the same cost as the reply and counts toward the same budget, but none of it is the answer — and none of it is replayed to the model on the next request.',
+          tone: 'live'
+        }
+      }
       return {
         // "this step", never "this turn": the meter resets at every tool call,
         // and an agentic turn is several requests back to back.
-        text: `Writing the reply — ${formatTokens(completionTok)} tokens this step`,
+        text: `Writing the reply — ${formatTokens(Math.max(0, completionTok - reasoningTok))} tokens this step`,
         detail:
-          'Tokens generated since the last tool call. An agentic turn is several requests back to back, so this count restarts at each one and is not a total for the whole turn.',
+          'Tokens of REPLY generated since the last tool call, with reasoning excluded. An agentic turn is several requests back to back, so this count restarts at each one and is not a total for the whole turn.',
         tone: 'live'
       }
     }

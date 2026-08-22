@@ -23,6 +23,7 @@ export function MetricsHud(): ReactElement {
   const [open, setOpen] = useState(false)
   const phase = useStore((s) => s.live.phase)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
+  const phaseElapsedMs = useStore((s) => s.live.phaseElapsedMs)
   const promptTokens = useStore((s) => s.live.promptTokens)
   const completionTokens = useStore((s) => s.live.completionTokens)
   const ttftMs = useStore((s) => s.live.ttftMs)
@@ -34,6 +35,10 @@ export function MetricsHud(): ReactElement {
     modelId ? `Model: ${modelId}` : '',
     active ? `Prompt: ${formatTokens(promptTokens)} tokens` : '',
     active ? `Generated: ${formatTokens(completionTokens)} tokens` : '',
+    /* The clock beside the phase word measures the PHASE. The request's own age
+       is the more surprising of the two once they differ, so it is named here
+       rather than dropped. */
+    active ? `This request has been open ${formatMs(elapsedMs)}` : '',
     ttftMs !== null ? `Time to first token: ${formatMs(ttftMs)}` : ''
   ]
     .filter((l) => l !== '')
@@ -45,7 +50,17 @@ export function MetricsHud(): ReactElement {
         <div className="mx-slot mx-phase" title={phaseTip}>
           <i className={`dot mx-dot-${phase}`} aria-hidden="true" />
           <span className="mx-phase-name">{phase}</span>
-          <span className="mx-phase-el tnum">{active ? formatMs(elapsedMs) : '—'}</span>
+          {/*
+            * The phase's own elapsed, not the request's.
+            *
+            * This rendered `elapsedMs`, stamped once when the request left the
+            * client and never re-stamped, so the number never reset when the
+            * phase word changed. "tool 3m 30s" meant the request was 3m30s old,
+            * not that the tool had run that long — and the turn strip directly
+            * below simultaneously showed the same command's true "(10.2s)", so
+            * the two surfaces contradicted each other on screen at once.
+            */}
+          <span className="mx-phase-el tnum">{active ? formatMs(phaseElapsedMs) : '—'}</span>
         </div>
 
         <span className="mx-sep" aria-hidden="true" />

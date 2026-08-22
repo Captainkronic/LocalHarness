@@ -75,6 +75,7 @@ export class TurnMeter {
   private startedAt: number | null = null
   private firstTokenAt: number | null = null
   private finishedAt: number | null = null
+  private phaseStartedAt: number | null = null
   private phase: InferencePhase = 'idle'
   private samples: DecodeSample[] = []
 
@@ -99,17 +100,17 @@ export class TurnMeter {
       estimatedPrefillTps !== null && estimatedPrefillTps > 0 ? estimatedPrefillTps : null
     this.estimatedOverheadMs = Math.max(0, estimatedOverheadMs)
     this.startedAt = Date.now()
-    this.phase = 'prefill'
+    this.setPhase('prefill')
   }
 
   markQueued(): void {
-    this.phase = 'queued'
+    this.setPhase('queued')
   }
 
   markFirstToken(): void {
     if (this.firstTokenAt !== null) return
     this.firstTokenAt = Date.now()
-    this.phase = 'decode'
+    this.setPhase('decode')
   }
 
   /** One generated content token (or `n` of them). */
@@ -145,11 +146,11 @@ export class TurnMeter {
   }
 
   markToolPhase(): void {
-    this.phase = 'tool'
+    this.setPhase('tool')
   }
 
   markDecodePhase(): void {
-    this.phase = 'decode'
+    this.setPhase('decode')
   }
 
   snapshot(): LiveMetrics {
@@ -199,7 +200,9 @@ export class TurnMeter {
       prefillEstimated,
       prefillProgress,
       prefillEtaMs,
-      decodeTps: this.decodeTps(now)
+      decodeTps: this.decodeTps(now),
+      reasoningTokens: this.reasoningTokens,
+      phaseElapsedMs: this.phaseStartedAt === null ? elapsedMs : now - this.phaseStartedAt
     }
   }
 
@@ -209,7 +212,7 @@ export class TurnMeter {
   ): TurnMetrics {
     const now = Date.now()
     this.finishedAt = now
-    this.phase = 'idle'
+    this.setPhase('idle')
 
     const startedAt = this.startedAt ?? now
     const totalMs = now - startedAt
@@ -250,6 +253,22 @@ export class TurnMeter {
     return metrics
   }
 
+  /**
+   * Every phase change goes through here so the clock beside the phase word can
+   * mean the phase.
+   *
+   * It used to render `elapsedMs`, which is stamped once when the request
+   * leaves the client and never re-stamped. So "tool 3m 30s" meant the request
+   * was 3m30s old, not that the tool had run that long — while the turn strip
+   * directly below it showed the same command's true "(10.2s)". Two surfaces
+   * contradicting each other on screen at the same moment.
+   */
+  private setPhase(next: InferencePhase): void {
+    if (this.phase === next) return
+    this.phase = next
+    this.phaseStartedAt = Date.now()
+  }
+
   reset(): void {
     this.modelId = null
     this.promptTokens = 0
@@ -263,6 +282,7 @@ export class TurnMeter {
     this.firstTokenAt = null
     this.finishedAt = null
     this.phase = 'idle'
+    this.phaseStartedAt = null
     this.samples = []
   }
 
@@ -275,6 +295,15 @@ export class TurnMeter {
 
   private decodeTps(now: number): number | null {
     if (this.firstTokenAt === null) return null
+    /*
+     * Nothing is decoding during a tool call, and a held number rendered in the
+     * live grammar is worse than no number. finish() stamps `finishedAt` but
+     * never clears `samples`, so the window below used to anchor to that stamp
+     * and return the SAME value forever: a 3-minute npm install sat under an
+     * unmoving "decode 13.9 tok/s" in full live colour. Returning null hands the
+     * gauge back its own held-value grammar — the '·' glyph and the dimming.
+     */
+    if (this.phase === 'tool' || this.phase === 'idle') return null
     const reference = this.finishedAt ?? now
     const windowStart = Math.max(reference - DECODE_WINDOW_MS, this.firstTokenAt)
     const span = reference - windowStart

@@ -264,7 +264,9 @@ const IDLE_LIVE: LiveMetrics = {
   prefillEstimated: true,
   prefillProgress: null,
   prefillEtaMs: null,
-  decodeTps: null
+  decodeTps: null,
+  reasoningTokens: 0,
+  phaseElapsedMs: 0
 }
 
 /** Model control is optional; until the websocket connects it reports

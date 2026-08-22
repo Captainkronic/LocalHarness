@@ -1115,6 +1115,21 @@ export interface LiveMetrics {
   promptTokens: number
   /** Tokens generated so far this turn. */
   completionTokens: number
+  /**
+   * How many of `completionTokens` were reasoning rather than reply.
+   *
+   * Reasoning deltas are folded into the completion count, so without this the
+   * renderer cannot tell thinking from writing and announced both as "Writing
+   * the reply". On the run this was found, 51.0k of 68.6k generated tokens were
+   * reasoning — three quarters of all generation described as work that had not
+   * started.
+   */
+  reasoningTokens: number
+  /**
+   * ms since the CURRENT phase began, as opposed to `elapsedMs` since the
+   * request left the client.
+   */
+  phaseElapsedMs: number
   /** Measured time to first token, ms. Null until the first token lands. */
   ttftMs: number | null
   /**
