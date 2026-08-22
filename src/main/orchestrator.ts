@@ -44,6 +44,7 @@ import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import {
   callKeyFor,
+  canAutoContinue,
   collapseResultUrls,
   isActing,
   loopAdvice,
@@ -443,11 +444,14 @@ export class Orchestrator {
        * error, a cancel, or a model that simply finished must all stay stopped.
        */
       let left = Math.max(0, Math.round(this.d.settings.get().autoContinueTurns ?? 0))
-      while (left > 0 && !this.active) {
+      while (
+        canAutoContinue(
+          conv.messages[conv.messages.length - 1],
+          left,
+          this.active?.controller.signal.aborted === true
+        )
+      ) {
         const last = conv.messages[conv.messages.length - 1]
-        const recoverable =
-          last?.role === 'assistant' && (last.stoppedAtCap === true || last.stoppedLooping === true)
-        if (!recoverable) break
         left -= 1
         this.log(
           'info',

@@ -529,3 +529,34 @@ export function loopAdvice(verdict: LoopVerdict, toolName: string): string {
     '  something you have not read, or measure the behaviour instead of the source.'
   ].join('\n')
 }
+
+/**
+ * Whether an unattended run may take another turn by itself.
+ *
+ * This lived inline in the orchestrator as `while (left > 0 && !this.active)`,
+ * and in that position the guard could never be true. `this.active` is cleared
+ * by `endTurn()`, which runs in the `finally` of the same try block the loop
+ * sits inside — so at the moment the condition was evaluated the turn that had
+ * just ended was still, correctly, marked active. The loop body never executed
+ * once. `autoContinueTurns` was set to 5 for a 132-minute unattended build and
+ * every step-cap and loop-breaker stop still ended the run for good.
+ *
+ * The old test asserted the loop existed, was driven by the setting, and was
+ * off by default. All three were true of dead code. That is the argument for
+ * this being a function: a condition that can be executed in a test can be
+ * proven reachable, and an inline one cannot.
+ *
+ * `aborted` is the thing that guard was reaching for. Cancel and shutdown both
+ * abort the controller, and neither should be followed by another turn. A model
+ * that simply finished, or errored, never sets the two markers and stops here
+ * regardless.
+ */
+export function canAutoContinue(
+  last: { role?: string; stoppedAtCap?: boolean; stoppedLooping?: boolean } | undefined,
+  left: number,
+  aborted: boolean
+): boolean {
+  if (left <= 0 || aborted) return false
+  if (last === undefined || last.role !== 'assistant') return false
+  return last.stoppedAtCap === true || last.stoppedLooping === true
+}

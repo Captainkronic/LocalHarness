@@ -29,11 +29,23 @@ const src = await readFile(join(ROOT, 'src/main/orchestrator.ts'), 'utf8')
 const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 const types = await readFile(join(ROOT, 'src/shared/types.ts'), 'utf8')
 const settings = await readFile(join(ROOT, 'src/main/store/settings.ts'), 'utf8')
+const lb = await readFile(join(ROOT, 'src/main/agent/loopbreak.ts'), 'utf8')
 
 console.log('\n\x1b[1mauto-continue\x1b[0m')
 
 const block = code.slice(code.indexOf('let left = Math'), code.indexOf('let left = Math') + 900)
 check('the loop exists', block.length > 50)
+/*
+ * The three checks below this were all true of code that never ran. The guard
+ * used to be `while (left > 0 && !this.active)`, and `this.active` is cleared by
+ * endTurn() in the `finally` of the try block this loop lives inside — so it was
+ * still set every time the condition was evaluated, and the body never executed
+ * once. A source-text test cannot see that. This one imports the decision and
+ * runs it, which is the only way the property survives.
+ */
+check('the guard does not test this.active',
+  !/while\s*\([^)]*!this\.active/.test(block),
+  'that condition is false at this point in the turn — the loop would be dead code')
 check('it is driven by a setting', /autoContinueTurns/.test(block))
 check('it is OFF by default',
   /autoContinueTurns: 0,/.test(settings),
@@ -42,23 +54,44 @@ check('the setting is clamped',
   /asClampedNumber\(src\.autoContinueTurns, 0, 50\)/.test(settings))
 
 console.log('\n\x1b[1mIt continues only RECOVERABLE stops\x1b[0m')
-check('the step cap continues', /stoppedAtCap === true/.test(block))
-check('a loop-breaker stop continues', /stoppedLooping === true/.test(block))
+/* These two now live in canAutoContinue and are PROVEN by executing it further
+   down. Here we only confirm the orchestrator still defers to it rather than
+   growing a second, divergent copy of the rule. */
+check('the orchestrator asks canAutoContinue', /canAutoContinue\(/.test(block))
+check('and does not re-implement the decision inline',
+  !/const recoverable\s*=/.test(block),
+  'two copies of this rule would drift, and the inline copy is the one that was dead')
+/* The log line does still read the markers, to name which stop happened. That
+   is reporting, not deciding, and it is why the check above targets the
+   `recoverable` binding rather than any mention of the marker names. */
+check('the log still names which stop it is recovering from',
+  /loop breaker stopped the last turn/.test(block))
 check('both are TYPED markers, not matched text',
   /stoppedLooping\?: boolean/.test(types) && /stoppedAtCap\?: boolean/.test(types),
   'deciding to spend another turn must not depend on a sentence that exists to be reworded')
 check('the loop breaker actually sets its marker',
   /assistant\.stoppedLooping = true/.test(code),
   'the marker is read but never written, so it would never continue')
-check('it stops when the last message is anything else',
-  /if \(!recoverable\) break/.test(block),
+check('the marker rule is stated once, in loopbreak',
+  /stoppedAtCap === true \|\| last\.stoppedLooping === true/.test(lb),
   'a real error, a cancel, or a finished model must all stay stopped')
 
 console.log('\n\x1b[1mIt cannot run away\x1b[0m')
 check('each continuation is counted off', /left -= 1/.test(block))
-check('the loop is bounded by the counter', /while \(left > 0/.test(block))
-check('it refuses to start on top of a running turn', /!this\.active/.test(block),
-  'two turns in one conversation would interleave their tool calls')
+check('the loop is bounded by the counter', /left <= 0 \|\| aborted/.test(lb))
+/* The old check here grepped for `!this.active`, calling it proof that a second
+   turn could not start on top of a running one. It was never doing that job —
+   at that point in the turn it was simply always false, which is what killed
+   the feature. The real guarantees are elsewhere and are checked as such: a NEW
+   turn is refused at the entry point, and continuations cannot interleave
+   because the loop awaits each one. */
+check('a new turn is still refused while one is running',
+  /if \(this\.active\) \{[\s\S]{0,160}already running/.test(code),
+  'that check belongs at the entry point, not in the continuation loop')
+check('continuations are sequential, so they cannot interleave',
+  /await this\.runTurn\(conv, model\)/.test(block))
+check('an aborted turn is not continued', /aborted/.test(block),
+  'cancel and shutdown both abort the controller')
 check('the counter is per user message, not global',
   /let left = Math\.max\(0, Math\.round\(this\.d\.settings\.get\(\)\.autoContinueTurns/.test(block),
   'read fresh inside runAndReport, so each thing asked for gets its own allowance')
@@ -102,4 +135,44 @@ check('the orchestrator exposes an id-free abort', /abortActive\(\): void \{/.te
 check('it aborts whatever is active', /this\.active\?\.controller\.abort\(\)/.test(code))
 
 console.log(failures === 0 ? '\n\x1b[32mall auto-continue checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
+
+console.log('\n\x1b[1mthe decision, executed rather than grepped\x1b[0m')
+{
+  const { build } = await import('esbuild')
+  const { mkdtemp, writeFile: wf, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { pathToFileURL } = await import('node:url')
+  const dir = await mkdtemp(join(tmpdir(), 'lh-autocont-'))
+  await wf(join(dir, 'e.ts'), `export { canAutoContinue } from '${ROOT}/src/main/agent/loopbreak'\n`)
+  const out = join(dir, 'b.mjs')
+  await build({
+    entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
+    platform: 'node', target: 'node22', logLevel: 'silent',
+    alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main') }
+  })
+  const { canAutoContinue } = await import(pathToFileURL(out).href)
+
+  const cap = { role: 'assistant', stoppedAtCap: true }
+  const loop = { role: 'assistant', stoppedLooping: true }
+
+  check('a step-cap stop continues', canAutoContinue(cap, 5, false) === true,
+    'this is the exact case that was dead for a 132-minute unattended run')
+  check('a loop-breaker stop continues', canAutoContinue(loop, 5, false) === true)
+  check('a turn that just finished normally does NOT',
+    canAutoContinue({ role: 'assistant' }, 5, false) === false)
+  check('an errored turn does NOT',
+    canAutoContinue({ role: 'assistant', error: 'boom' }, 5, false) === false)
+  check('a user message does NOT', canAutoContinue({ role: 'user' }, 5, false) === false)
+  check('nothing at all does NOT', canAutoContinue(undefined, 5, false) === false)
+
+  console.log('\n\x1b[1mit still has to stop\x1b[0m')
+  check('exhausted continuations stop', canAutoContinue(cap, 0, false) === false)
+  check('a negative count stops', canAutoContinue(cap, -1, false) === false)
+  check('Stop pressed mid-turn stops it', canAutoContinue(cap, 5, true) === false,
+    'cancel and shutdown both abort the controller; neither may be followed by another turn')
+  check('and abort beats a recoverable marker', canAutoContinue(loop, 99, true) === false)
+
+  await rm(dir, { recursive: true, force: true })
+}
+
 process.exit(failures === 0 ? 0 : 1)
