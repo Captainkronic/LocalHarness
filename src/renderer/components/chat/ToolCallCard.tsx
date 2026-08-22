@@ -111,9 +111,17 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
           {call.error !== undefined && call.error !== '' ? (
             <div>
               <div className="tool-block-label">
-                <span className="section-label">Error</span>
+                {/* Who is speaking. A denied call's text is not a tool's error
+                    output — it is this app explaining why it would not run the
+                    call, written in the second person to the model. Printed
+                    under "Error" it read as though the tool had emitted it. */}
+                <span className="section-label">
+                  {call.status === 'denied' ? 'CaptainLlama stopped this call' : 'Error'}
+                </span>
               </div>
-              <div className="tool-err">{call.error}</div>
+              <div className={call.status === 'denied' ? 'tool-err is-note' : 'tool-err'}>
+                {call.error}
+              </div>
             </div>
           ) : null}
 

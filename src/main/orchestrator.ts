@@ -1111,7 +1111,11 @@ export class Orchestrator {
         const spent = loopNudges > MAX_LOOP_NUDGES
         const advice = loopAdvice(verdict, calls[0]?.name ?? 'that tool')
         for (const call of calls) {
-          call.status = 'error'
+          /* 'denied', not 'error'. The call was never executed — nowhere else
+             in this codebase does 'error' mean that, and the card painted the
+             danger border and the word "failed" over a tool that had simply
+             been refused. */
+          call.status = 'denied'
           call.error = spent ? 'Stopped: this was going in circles.' : advice
           call.finishedAt = Date.now()
           // The model asked for these; it needs a result for each or the next

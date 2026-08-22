@@ -1611,6 +1611,11 @@
 }
 
 /* Succeeded, with something the reader still has to know. */
+/* A call this app refused to run. It did not fail; it did not happen. */
+.tool-err.is-note {
+  color: var(--fg-dim);
+}
+
 .tool-oc-stat.is-warn {
   color: var(--warn);
 }
