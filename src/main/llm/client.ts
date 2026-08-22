@@ -187,7 +187,48 @@ interface WireChunk {
 
 const MAX_ERROR_PREVIEW = 600
 
-export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<void> {
+/**
+ * The effort level to retry with, or null if this error is about something else.
+ *
+ * Reasoning effort has no agreed vocabulary across servers. OpenAI defines
+ * low/medium/high; this Qwen build's chat template defines xhigh/medium/low and
+ * rejects "high" with a message that lists what it will take. Rather than
+ * hardcode a mapping per model — which goes stale the moment a template changes
+ * — this reads the accepted values out of the complaint.
+ *
+ * Ordered low to high so "nearest supported at or above what was asked" is a
+ * single lookup; an unknown name sorts to the end, so a server offering
+ * something we have never heard of is treated as more effort rather than less.
+ */
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+export function remapReasoningEffort(detail: string, asked: string | undefined): string | null {
+  if (asked === undefined) return null
+  if (!/reasoning[ _]effort/i.test(detail)) return null
+
+  const supported = [...detail.matchAll(/\b(none|minimal|low|medium|high|xhigh|max)\b/gi)]
+    .map((m) => m[1].toLowerCase())
+    .filter((v) => v !== asked.toLowerCase())
+  if (supported.length === 0) return null
+
+  const rank = (v: string): number => {
+    const i = EFFORT_ORDER.indexOf(v)
+    return i === -1 ? EFFORT_ORDER.length : i
+  }
+  const want = rank(asked.toLowerCase())
+  const uniq = [...new Set(supported)].sort((a, b) => rank(a) - rank(b))
+
+  /* The nearest level at or above what was asked, so "high" on a server that
+     only knows xhigh/medium/low becomes xhigh rather than medium. Falling back
+     to the highest available keeps a downgrade from being silent about it. */
+  return uniq.find((v) => rank(v) >= want) ?? uniq[uniq.length - 1] ?? null
+}
+
+export async function streamChat(
+  req: ChatRequest,
+  ev: StreamEvents,
+  retried = false
+): Promise<void> {
   const url = `${trimTrailingSlash(req.baseUrl)}/chat/completions`
 
   const headers: Record<string, string> = {
@@ -300,6 +341,31 @@ export async function streamChat(req: ChatRequest, ev: StreamEvents): Promise<vo
     // out of memory. Pass it through verbatim; do not reinterpret it.
     const body = await response.text().catch(() => '')
     const detail = body.trim().length > 0 ? body.trim() : '(empty response body)'
+
+    /*
+     * One exception, because the server tells us exactly how to fix it.
+     *
+     * Reasoning effort has no agreed vocabulary. OpenAI says low/medium/high;
+     * this Qwen build's chat template says xhigh/medium/low and rejects "high"
+     * outright:
+     *
+     *   400: Chat template error: Unexpected reasoning effort high.
+     *        Supported types are xhigh (default), medium, and low.
+     *
+     * That killed a 32-request agentic run outright — an hour of work ended by
+     * a word. The error names the accepted values, so there is no reason to
+     * hand a person a 400 and ask them to translate: pick the nearest supported
+     * level and send it again, once.
+     */
+    const remap = remapReasoningEffort(detail, req.reasoningEffort)
+    if (remap !== null && !retried) {
+      console.log(
+        `[llm] !! ${String(req.model)} rejected reasoning_effort ` +
+          `'${String(req.reasoningEffort)}' — retrying as '${remap}'`
+      )
+      return streamChat({ ...req, reasoningEffort: remap }, ev, true)
+    }
+
     throw new Error(`${response.status} ${response.statusText} from ${url}: ${detail}`)
   }
 

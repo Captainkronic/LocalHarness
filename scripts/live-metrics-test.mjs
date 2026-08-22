@@ -30,7 +30,8 @@ await writeFile(join(dir, 'e.ts'),
   `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n` +
   `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n` +
   `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n` +
-  `export { parseModels } from '${ROOT}/src/main/llm/models'\n`)
+  `export { parseModels } from '${ROOT}/src/main/llm/models'\n` +
+  `export { remapReasoningEffort } from '${ROOT}/src/main/llm/client'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -43,7 +44,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels, remapReasoningEffort } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -372,6 +373,38 @@ console.log('\n\x1b[1mA part cannot exceed its whole\x1b[0m')
   m3.countReasoningToken(300)
   const t3 = m3.finish({ promptTokens: 0, completionTokens: 0 }, 'stop')
   check('no server usage leaves our figures alone', t3.reasoningTokens === 300)
+}
+
+console.log('\n\x1b[1mWhen a server names the words it will accept, use them\x1b[0m')
+/* A 32-request agentic run ended on this, an hour in:
+     400: Chat template error: Unexpected reasoning effort high.
+          Supported types are xhigh (default), medium, and low. */
+{
+  const QWEN = 'Chat template error: Unexpected reasoning effort high. ' +
+    'Supported types are xhigh (default), medium, and low.'
+
+  check('"high" becomes the nearest level AT OR ABOVE it',
+    remapReasoningEffort(QWEN, 'high') === 'xhigh',
+    'downgrading to medium would quietly buy less thinking than was asked for')
+  check('a level the server does support is never remapped',
+    remapReasoningEffort(QWEN, 'medium') === 'medium' ||
+      remapReasoningEffort('some other 400', 'medium') === null)
+
+  console.log('\n\x1b[1mand leave everything else alone\x1b[0m')
+  check('an unrelated 400 is not touched',
+    remapReasoningEffort('Failed to load model: insufficient system resources', 'high') === null,
+    'retrying an out-of-memory error with a different word helps nobody')
+  check('no effort asked means nothing to remap',
+    remapReasoningEffort(QWEN, undefined) === null)
+  check('a complaint naming no alternatives gives up',
+    remapReasoningEffort('reasoning_effort is not supported', 'high') === null,
+    'better a clear 400 than a guess')
+
+  /* If only lower levels exist, take the highest rather than failing — but the
+     log says so, because that is less thinking than was asked for. */
+  const LOWONLY = 'Unexpected reasoning effort high. Supported types are low and medium.'
+  check('with nothing at or above, the highest available is used',
+    remapReasoningEffort(LOWONLY, 'high') === 'medium')
 }
 
 await rm(dir, { recursive: true, force: true })
