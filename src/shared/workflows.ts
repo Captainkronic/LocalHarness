@@ -595,16 +595,27 @@ and if it is not true, do not say it.`,
     firstMove:
       'Add a workspace folder, then describe the change you want. Nothing outside that folder can be touched.',
     /**
-     * None. The web-dev skills were removed from every harness deliberately:
-     * measured on qwen3.8, web-game-dev handed it full SRS kick tables and lock
-     * delay before any code existed and it worked through them instead of
-     * writing the game — twenty-five minutes, nothing on disk. Code performs
-     * better with no skill at all than with a good reference offered too early.
+     * One, and it is a PROCESS skill rather than a reference.
+     *
+     * The web-dev skills were removed from every harness deliberately: measured
+     * on qwen3.8, web-game-dev handed it full SRS kick tables and lock delay
+     * before any code existed and it worked through them instead of writing the
+     * game — twenty-five minutes, nothing on disk. Code performs better with no
+     * skill at all than with a good REFERENCE offered too early.
+     *
+     * shipping-a-small-site is the opposite shape. It carries almost no facts;
+     * it carries decisions already made, so there is less to decide. Every rule
+     * in it came from measuring where a real build actually spent its thinking:
+     * a five-page site took 127 minutes and generated 72,112 tokens of which
+     * 38,963 — fifty-four percent — were reasoning rather than output. The
+     * largest sinks were reconciling invented timetables against each other,
+     * and reconciling a stylesheet against pages it had written separately.
      *
      * Naming a skill that is not installed is harmless at runtime but silently
-     * misleading in a definition, so the list is empty rather than aspirational.
+     * misleading in a definition, so this list stays exactly as long as what is
+     * actually on disk.
      */
-    skills: [],
+    skills: ['shipping-a-small-site'],
     glyph: '⌘',
     accent: '#5b9dd9',
     mcpServers: ['websearch'],
