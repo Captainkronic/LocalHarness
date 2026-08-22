@@ -27,7 +27,8 @@ import type {
   NativeToolId,
   ServeResultFacts,
   Settings,
-  ShellResultFacts
+  ShellResultFacts,
+  WriteResultFacts
 } from '@shared/types'
 
 import { augmentedPath, isInsideAny } from '../store/paths'
@@ -1095,23 +1096,46 @@ export class ToolExecutor {
      */
     const onDisk = await statOrNull(target)
     const intended = Buffer.byteLength(content)
-    const verified =
-      onDisk !== null && onDisk.size === intended
-        ? ` ${formatBytes(intended)} on disk, verified.`
-        : onDisk === null
-          ? ''
-          : ` WARNING: ${formatBytes(intended)} was written but the file is ${formatBytes(onDisk.size)} on disk.`
-    return ok(
-      (st
-        ? `Wrote ${shown} (+${stat.added} -${stat.removed}).${verified}`
-        : `Created ${shown} (${countLines(content)} lines).${verified}`) +
+    const sizeMatches = onDisk !== null && onDisk.size === intended
+    const verified = sizeMatches
+      ? ` ${formatBytes(intended)} on disk, verified.`
+      : onDisk === null
+        ? ''
+        : ` WARNING: ${formatBytes(intended)} was written but the file is ${formatBytes(onDisk.size)} on disk.`
+
+    /*
+     * The same three facts the sentence carries, in a form the UI can read.
+     *
+     * They were prose only, and prose is written for the model. ok() sets
+     * isError:false, so a write whose bytes did not match, or whose JavaScript
+     * does not parse, drew the same green dot and the same tidy +N/-M as a
+     * clean one. On one measured run every .jsx write said "its syntax was NOT
+     * checked here" and no part of the interface repeated it.
+     */
+    const facts: WriteResultFacts = {
+      kind: 'write',
+      verified: onDisk === null ? true : sizeMatches,
+      syntax: warned !== null ? 'broken' : unchecked(target) ? 'unchecked' : 'ok',
+      added: stat.added,
+      removed: stat.removed,
+      created: !st
+    }
+
+    return {
+      text:
+        (st
+          ? `Wrote ${shown} (+${stat.added} -${stat.removed}).${verified}`
+          : `Created ${shown} (${countLines(content)} lines).${verified}`) +
         (warned ? `\n\nWARNING: ${warned}` : '') +
         (unchecked(target)
           ? `\n\nNote: ${nodePath.extname(target)} is not plain JavaScript, so its syntax was NOT ` +
             `checked here. If the page misbehaves, run the project's own build — that is what will ` +
             `find a mismatched tag.`
-          : '')
-    )
+          : ''),
+      artifacts: [] as Artifact[],
+      isError: false,
+      structured: facts
+    }
   }
 
   /* ---------------- edit_file ---------------- */
@@ -1228,10 +1252,28 @@ export class ToolExecutor {
     })
 
     const warned = await syntaxWarning(target, next)
-    return ok(
-      `Edited ${shown}: ${count > 1 ? `${count} occurrences replaced` : '1 occurrence replaced'} ` +
-        `(+${stat.added} -${stat.removed}).${warned ? `\n\nWARNING: ${warned}` : ''}`
-    )
+    /* Same facts as write_file: an edit that leaves a file unparseable is not a
+       success, and one this harness cannot check is not a clean bill of health. */
+    const facts: WriteResultFacts = {
+      kind: 'write',
+      verified: true,
+      syntax: warned !== null ? 'broken' : unchecked(target) ? 'unchecked' : 'ok',
+      added: stat.added,
+      removed: stat.removed,
+      created: false
+    }
+    return {
+      text:
+        `Edited ${shown}: ${count > 1 ? `${count} occurrences replaced` : '1 occurrence replaced'} ` +
+        `(+${stat.added} -${stat.removed}).${warned ? `\n\nWARNING: ${warned}` : ''}` +
+        (unchecked(target)
+          ? `\n\nNote: ${nodePath.extname(target)} is not plain JavaScript, so its syntax was NOT ` +
+            `checked here. If the page misbehaves, run the project's own build.`
+          : ''),
+      artifacts: [] as Artifact[],
+      isError: false,
+      structured: facts
+    }
   }
 
   /* ---------------- list_dir ---------------- */

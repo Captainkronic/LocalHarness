@@ -26,7 +26,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const dir = await mkdtemp(join(tmpdir(), 'lh-live-'))
 await writeFile(join(dir, 'e.ts'),
   `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n` +
-  `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n`)
+  `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n` +
+  `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -36,9 +37,10 @@ await build({
   entryPoints: [join(dir, 'e.ts')], outfile: out, bundle: true, format: 'esm',
   platform: 'node', target: 'node22', logLevel: 'silent',
   banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },
-  alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'), electron: shim }
+  alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
+           '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls } = await import(pathToFileURL(out).href)
+const { TurnMeter, demoteOrphanedCalls, toolOutcome } = await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
 /* It rendered elapsedMs, stamped once when the request left the client. So
@@ -165,6 +167,40 @@ console.log('\n\x1b[1mA finished message must not claim to be thinking\x1b[0m')
   check('and growth must be observed before it counts',
     /useRef\(\{ len: text\.length, at: 0 \}\)/.test(msg),
     'seeding at mount time made every historical block read as live on first render')
+}
+
+console.log('\n\x1b[1mA write is only a success if it landed AND it parses\x1b[0m')
+/* All three facts used to be prose inside the result text, which only the model
+   reads. ok() sets isError:false, so a write whose bytes did not match on disk,
+   or whose JavaScript does not parse, drew the same green dot and the same tidy
+   +N/-M as a clean one. */
+{
+  const w = (over) => toolOutcome({
+    kind: 'write', verified: true, syntax: 'ok', added: 10, removed: 2, created: false, ...over })
+
+  const clean = w({})
+  check('a clean write reads ok', clean.tone === 'ok' && clean.status === 'written')
+  check('and shows its churn', clean.note === '+10 -2')
+  check('a new file says so', w({ created: true }).status === 'created')
+  check('and counts lines rather than a diff', w({ created: true }).note === '10 lines')
+
+  const unver = w({ verified: false })
+  check('bytes that did not match is BAD', unver.tone === 'bad')
+  check('and says which way it failed', /do not match/.test(unver.detail))
+
+  const broken = w({ syntax: 'broken' })
+  check('a file that does not parse is BAD', broken.tone === 'bad')
+  check('and admits it is on disk anyway', /on disk/.test(broken.detail),
+    'the model must not think the write was rejected')
+
+  const un = w({ syntax: 'unchecked' })
+  check('JSX we cannot parse is neither ok nor bad', un.tone === 'warn',
+    'green hid a broken component; red would be a verdict nobody made')
+  check('and it names the thing that CAN check it', /run the build/.test(un.detail))
+
+  check('an unknown structured kind still returns nothing',
+    toolOutcome({ kind: 'nope' }) === null)
+  check('and so does a non-object', toolOutcome('write') === null)
 }
 
 await rm(dir, { recursive: true, force: true })

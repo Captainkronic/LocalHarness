@@ -87,7 +87,7 @@ export default function ToolCallCard({ call, fallbackResult }: ToolCallCardProps
           onClick={() => setOpen(true)}
           title="Show the full result"
         >
-          <span className={outcome.tone === 'bad' ? 'tool-oc-stat is-bad' : 'tool-oc-stat'}>
+          <span className={`tool-oc-stat${outcome.tone === 'ok' ? '' : ` is-${outcome.tone}`}`}>
             {outcome.status}
           </span>
           <span

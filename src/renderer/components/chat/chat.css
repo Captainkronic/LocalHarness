@@ -1610,6 +1610,11 @@
   color: var(--danger);
 }
 
+/* Succeeded, with something the reader still has to know. */
+.tool-oc-stat.is-warn {
+  color: var(--warn);
+}
+
 .tool-oc-detail {
   flex: 1 1 auto;
   min-width: 0;

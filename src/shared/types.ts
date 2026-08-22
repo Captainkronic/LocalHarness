@@ -311,6 +311,31 @@ export interface ShellResultFacts {
   stderrLines: number
 }
 
+/**
+ * What a write or edit actually did, for the card and the activity row.
+ *
+ * All three of these facts were previously prose inside the result text, which
+ * only the model read. `ok()` sets isError:false, so a write whose bytes did not
+ * match on disk, or whose JavaScript does not parse, rendered as a green dot and
+ * a clean +N/-M like any other. On one run every .jsx write carried "its syntax
+ * was NOT checked here" and nothing on screen said so.
+ */
+export interface WriteResultFacts {
+  kind: 'write'
+  /** Bytes on disk matched what we asked for. False is a real problem. */
+  verified: boolean
+  /**
+   * 'ok'      — parsed cleanly.
+   * 'broken'  — did not parse; the file is on disk and is wrong.
+   * 'unchecked' — JSX/TS, which this harness cannot parse. Not a verdict.
+   */
+  syntax: 'ok' | 'broken' | 'unchecked'
+  added: number
+  removed: number
+  /** True when the file did not exist before. */
+  created: boolean
+}
+
 /** What `serve_dir` started, for the card and the workspace panel. */
 export interface ServeResultFacts {
   kind: 'serve'
@@ -1165,6 +1190,18 @@ export interface TurnMetrics {
    * what the picker said at the time.
    */
   reasoningEffortUsed?: string
+  /**
+   * The reasoning ceiling actually in force for THIS request, in tokens.
+   *
+   * The collapsed reasoning block used to divide by the workflow's maxTokens
+   * read straight from the frozen definition. Three things were wrong with that
+   * at once: it ignored the user's own Settings override, so raising Code's
+   * ceiling left the header saying 16.4k forever; maxTokens is the OUTPUT
+   * ceiling, not the reasoning one, which is a fraction of it that depends on
+   * the effort level; and the opening request of a turn gets double. Recording
+   * what was really used removes all three at the source.
+   */
+  reasoningCapUsed?: number
   ttftMs: number
   totalMs: number
   prefillTps: number

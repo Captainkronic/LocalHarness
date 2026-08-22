@@ -69,6 +69,7 @@ export class TurnMeter {
   /** What was actually sent as reasoning_effort, recorded so the footer can
    *  show the setting beside its cost. */
   private reasoningEffort: string | undefined
+  private reasoningCap: number | undefined
   private toolSchemaTokens = 0
   private estimatedPrefillTps: number | null = null
   private estimatedOverheadMs = 0
@@ -139,6 +140,12 @@ export class TurnMeter {
    */
   setReasoningEffort(effort: string | undefined): void {
     this.reasoningEffort = effort
+  }
+
+  /** The reasoning ceiling in force for this request, so the UI can divide by
+   *  the number that actually governs rather than by the output ceiling. */
+  setReasoningCap(cap: number | undefined): void {
+    this.reasoningCap = cap
   }
 
   setToolSchemaTokens(n: number): void {
@@ -250,6 +257,7 @@ export class TurnMeter {
     }
     if (this.reasoningTokens > 0) metrics.reasoningTokens = this.reasoningTokens
     if (this.reasoningEffort !== undefined) metrics.reasoningEffortUsed = this.reasoningEffort
+    if (this.reasoningCap !== undefined) metrics.reasoningCapUsed = this.reasoningCap
     return metrics
   }
 
@@ -275,6 +283,7 @@ export class TurnMeter {
     this.completionTokens = 0
     this.reasoningTokens = 0
     this.reasoningEffort = undefined
+    this.reasoningCap = undefined
     this.toolSchemaTokens = 0
     this.estimatedPrefillTps = null
     this.estimatedOverheadMs = 0

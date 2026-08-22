@@ -88,7 +88,16 @@ function AssistantMessage({
         <Reasoning
           text={message.reasoning}
           tokens={message.metrics?.reasoningTokens}
-          budget={WORKFLOW_BY_ID[activeWorkflow]?.sampling.maxTokens}
+          /* The cap that actually governed this request, recorded when it was
+             made. The workflow's maxTokens is the OUTPUT ceiling, is a frozen
+             default that ignores the user's Settings override, and is not
+             doubled the way an opening request's allowance is — three separate
+             errors stacked into one denominator. Falls back to the old figure
+             only for messages recorded before this was tracked. */
+          budget={
+            message.metrics?.reasoningCapUsed ??
+            WORKFLOW_BY_ID[activeWorkflow]?.sampling.maxTokens
+          }
           /* Reaching for a tool IS an answer, and the engine's loop breaker has
              always known that — it stands down the moment a step emits
              tool_calls. This clause was missing here, and in Code mode content
@@ -154,7 +163,7 @@ function Reasoning({
 }: {
   text: string
   tokens?: number
-  /** The workflow's maxTokens — reasoning is billed against the same ceiling. */
+  /** The reasoning ceiling that governed this request, in tokens. */
   budget?: number
   /** True once an answer has arrived — written text OR a tool call. */
   answered: boolean
@@ -265,9 +274,12 @@ function Reasoning({
           {formatTokens(used)}
           {/* Against the ceiling, because reasoning is billed from the same
               budget as the answer — a bare count cannot tell you it is about to
-              run out, and the whole failure is that the answer never arrives. */}
-          {share !== null ? ` / ${formatTokens(budget as number)} tok` : ' tok'} · {lines}{' '}
-          lines
+              run out, and the whole failure is that the answer never arrives.
+              Named "thinking cap" rather than left bare: this is the reasoning
+              ceiling, a fraction of the output ceiling that depends on the
+              effort level, and the two were previously indistinguishable. */}
+          {share !== null ? ` / ${formatTokens(budget as number)} thinking cap` : ' tok'} ·{' '}
+          {lines} lines
         </span>
         {runaway ? (
           <span className="reasoning-warn">

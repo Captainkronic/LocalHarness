@@ -302,9 +302,20 @@ export class Orchestrator {
     return inEstimateUnits > 0 ? inEstimateUnits : undefined
   }
 
-  /** Records a trim on the conversation and says so in the log. */
+  /**
+   * Records a trim on the conversation and says so in the log.
+   *
+   * ASSIGNS rather than accumulates. Trimming is recomputed from scratch on
+   * every request, so the same old messages are dropped again each time; adding
+   * them up counted one lost message once per request for the rest of the
+   * conversation. The banner grew without bound — "147 earlier messages are no
+   * longer being sent" on a conversation that had lost three — and since it only
+   * ever went up, it also went on asserting a present-tense fact long after a
+   * larger model had made it false. What the reader needs is how much the model
+   * cannot see RIGHT NOW, which is exactly this request's figure.
+   */
   private noteTrim(conv: Conversation, modelId: string, info: TrimInfo): void {
-    conv.trimmedMessages = (conv.trimmedMessages ?? 0) + info.messages
+    conv.trimmedMessages = info.messages
     this.log(
       'warn',
       'context',
@@ -721,6 +732,9 @@ export class Orchestrator {
       let trippedThisRequest = false
 
       const budget = this.historyBudget(model, conv.workflowId, toolTokensForBudget)
+      /* onTrim only fires when something IS dropped, so the count has to be
+         cleared here or it could never fall back to zero. */
+      conv.trimmedMessages = 0
       const messages = buildMessages(conv, wf.systemPrompt, model.supportsVision, {
         budget,
         onTrim: (info) => this.noteTrim(conv, model.id, info),
@@ -918,6 +932,7 @@ export class Orchestrator {
       assistant.streaming = false
       meter.setToolSchemaTokens(this.toolTokens(tools))
       meter.setReasoningEffort(requestEffort)
+      meter.setReasoningCap(reasoningCap)
       const turnMetrics = meter.finish(usage, finishReason)
       assistant.metrics = turnMetrics
 

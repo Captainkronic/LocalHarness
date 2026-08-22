@@ -10,12 +10,19 @@
  * model and gets reworded; the facts do not.
  */
 
-import type { ServeResultFacts, ShellResultFacts } from '@shared/types'
+import type {
+  WriteResultFacts, ServeResultFacts, ShellResultFacts } from '@shared/types'
 
 export interface ToolOutcome {
   /** Terse status, e.g. "exit 0", "timed out", "serving". */
   status: string
-  tone: 'ok' | 'bad'
+  /**
+   * 'warn' is for a result that succeeded but carries a caveat the user must
+   * see — a write this harness cannot syntax-check being the case it was added
+   * for. Painting that green was how a broken JSX component sat under a clean
+   * tick; painting it red would be a verdict nobody made.
+   */
+  tone: 'ok' | 'bad' | 'warn'
   /** The most informative single line the tool produced. May be empty. */
   detail: string
   /** True when `detail` is an error, so it can be coloured as one. */
@@ -32,7 +39,53 @@ export function toolOutcome(structured: unknown): ToolOutcome | null {
   if (!isRecord(structured)) return null
   if (structured.kind === 'shell') return shellOutcome(structured as unknown as ShellResultFacts)
   if (structured.kind === 'serve') return serveOutcome(structured as unknown as ServeResultFacts)
+  if (structured.kind === 'write') return writeOutcome(structured as unknown as WriteResultFacts)
   return null
+}
+
+/**
+ * A write is only a success if the bytes landed AND the file parses.
+ *
+ * 'unchecked' is deliberately not a failure and deliberately not silent. The
+ * harness cannot parse JSX, and saying nothing let a broken component sit under
+ * a green dot; claiming it was fine would be worse.
+ */
+function writeOutcome(f: WriteResultFacts): ToolOutcome {
+  const churn = f.created ? `${f.added} lines` : `+${f.added} -${f.removed}`
+  if (!f.verified) {
+    return {
+      status: 'not verified',
+      tone: 'bad',
+      detail: 'bytes on disk do not match what was written',
+      detailIsError: true,
+      note: churn
+    }
+  }
+  if (f.syntax === 'broken') {
+    return {
+      status: f.created ? 'created, does not parse' : 'written, does not parse',
+      tone: 'bad',
+      detail: 'the file is on disk and is not valid',
+      detailIsError: true,
+      note: churn
+    }
+  }
+  if (f.syntax === 'unchecked') {
+    return {
+      status: f.created ? 'created' : 'written',
+      tone: 'warn',
+      detail: 'syntax not checked — run the build',
+      detailIsError: false,
+      note: churn
+    }
+  }
+  return {
+    status: f.created ? 'created' : 'written',
+    tone: 'ok',
+    detail: '',
+    detailIsError: false,
+    note: churn
+  }
 }
 
 function shellOutcome(f: ShellResultFacts): ToolOutcome {
