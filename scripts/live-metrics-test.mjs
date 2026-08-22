@@ -27,7 +27,8 @@ const dir = await mkdtemp(join(tmpdir(), 'lh-live-'))
 await writeFile(join(dir, 'e.ts'),
   `export { TurnMeter } from '${ROOT}/src/main/telemetry/meter'\n` +
   `export { demoteOrphanedCalls } from '${ROOT}/src/main/agent/loopbreak'\n` +
-  `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n`)
+  `export { toolOutcome } from '${ROOT}/src/renderer/lib/toolFacts'\n` +
+  `export { mergeModelLists } from '${ROOT}/src/main/llm/models'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -40,7 +41,8 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome } = await import(pathToFileURL(out).href)
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists } =
+  await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
 /* It rendered elapsedMs, stamped once when the request left the client. So
@@ -201,6 +203,40 @@ console.log('\n\x1b[1mA write is only a success if it landed AND it parses\x1b[0
   check('an unknown structured kind still returns nothing',
     toolOutcome({ kind: 'nope' }) === null)
   check('and so does a non-object', toolOutcome('write') === null)
+}
+
+console.log('\n\x1b[1mOne entry per model, whatever the endpoints say\x1b[0m')
+/* An extra endpoint fronting the same server returns the same catalogue. These
+   lists were concatenated: 22 entries for 11 models, the primary copy marked
+   loaded and the extra copy marked as nothing, because plain OpenAI /v1 reports
+   no state. Picking the wrong twin asks the server to load a model it already
+   has loaded — which is how a live turn died with "Model loading was stopped
+   due to insufficient system resources" against a resident model. */
+{
+  const P = [
+    { id: 'qwen/qwen3.8-27b@4bit', state: 'loaded', loadedContextLength: 106496 },
+    { id: 'google/gemma-4-e4b', state: 'not-loaded', loadedContextLength: null }
+  ]
+  const X = [
+    { id: 'qwen/qwen3.8-27b@4bit', state: undefined, loadedContextLength: null },
+    { id: 'google/gemma-4-e4b', state: undefined, loadedContextLength: null },
+    { id: 'only-on-the-extra', state: undefined, loadedContextLength: null }
+  ]
+  const m = mergeModelLists(P, X)
+  check('the same model twice becomes once', m.filter((x) => x.id === P[0].id).length === 1)
+  check('no id appears more than once',
+    new Set(m.map((x) => x.id)).size === m.length, `${m.length} entries`)
+  check('the primary copy is the one kept',
+    m.find((x) => x.id === P[0].id).state === 'loaded',
+    'the extra copy knows no state, and a loaded model must not look unloaded')
+  check('and it keeps the real window',
+    m.find((x) => x.id === P[0].id).loadedContextLength === 106496)
+  check('a model only the extra has is still offered',
+    m.some((x) => x.id === 'only-on-the-extra'),
+    'dedupe must not become "ignore the extra endpoint"')
+  check('primary ordering is preserved', m[0].id === P[0].id && m[1].id === P[1].id)
+  check('no extras at all is fine', mergeModelLists(P, []).length === 2)
+  check('no primary at all still lists the extra', mergeModelLists([], X).length === 3)
 }
 
 await rm(dir, { recursive: true, force: true })

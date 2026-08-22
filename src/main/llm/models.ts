@@ -49,6 +49,29 @@ interface WindowObservation {
   observedAt: number
 }
 
+/**
+ * One entry per model id, primary first.
+ *
+ * An extra endpoint fronting the same server as the primary — a proxy on
+ * another port, a tunnel — returns the same catalogue, and these lists used to
+ * be concatenated. Observed live: 22 entries for 11 models, every one doubled,
+ * the primary's copy marked `loaded` and the extra's copy marked as nothing at
+ * all, because plain OpenAI /v1 reports no state. Picking the wrong twin asks
+ * the server to load a model it has already loaded, which is how a turn died
+ * with "Model loading was stopped due to insufficient system resources" against
+ * a model that was resident at the time.
+ *
+ * The primary wins every collision: it speaks LM Studio's /api/v0 and is the
+ * only one of the two that knows state, quantization and the real loaded
+ * window. An extra contributes only models the primary has never heard of.
+ */
+export function mergeModelLists(primary: ModelInfo[], extra: ModelInfo[]): ModelInfo[] {
+  const byId = new Map<string, ModelInfo>()
+  for (const model of primary) byId.set(model.id, model)
+  for (const model of extra) if (!byId.has(model.id)) byId.set(model.id, model)
+  return [...byId.values()]
+}
+
 export class ModelRegistry {
   private readonly opts: ModelRegistryOptions
   private models: ModelInfo[] = []
@@ -296,7 +319,7 @@ export class ModelRegistry {
       const extra = await this.pollExtras(settings)
       const now = Date.now()
 
-      this.models = [...models, ...extra]
+      this.models = mergeModelLists(models, extra)
       for (const model of models) {
         if (model.loadedContextLength !== null) {
           this.windows.set(model.id, {
