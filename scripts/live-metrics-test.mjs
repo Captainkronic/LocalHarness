@@ -336,6 +336,44 @@ console.log('\n\x1b[1m"Not loaded" must mean the server said so\x1b[0m')
     explicit[0].state === 'loading')
 }
 
+console.log('\n\x1b[1mA part cannot exceed its whole\x1b[0m')
+/* Reasoning is our chars/4 estimate; completion is the server's count. Caught by
+   reconciling a live run against oMLX's log: a request the server counted as
+   1,075 generated tokens rendered as "out 1075 · reasoning 1152". */
+{
+  const m = new TurnMeter()
+  m.start('qwen', 5000, null)
+  m.markFirstToken()
+  m.countReasoningToken(1152)   // our estimate, running high
+  m.countCompletionToken(0)
+  const t = m.finish({ promptTokens: 5000, completionTokens: 1075 }, 'stop')
+  check('reasoning never exceeds the server total',
+    t.reasoningTokens <= t.completionTokens,
+    `${t.reasoningTokens} of ${t.completionTokens}`)
+  check('and the share is preserved rather than clamped',
+    t.reasoningTokens === 1075,
+    'this turn was entirely reasoning, so the scaled figure is the whole of it')
+
+  /* A mixed turn keeps its split. */
+  const m2 = new TurnMeter()
+  m2.start('qwen', 5000, null)
+  m2.markFirstToken()
+  m2.countReasoningToken(600)
+  m2.countCompletionToken(400)   // our estimate: 1000 total, 60% reasoning
+  const t2 = m2.finish({ promptTokens: 5000, completionTokens: 500 }, 'stop')
+  check('a mixed turn keeps its reasoning SHARE after rescaling',
+    Math.abs(t2.reasoningTokens / t2.completionTokens - 0.6) < 0.02,
+    `${t2.reasoningTokens}/${t2.completionTokens}`)
+
+  /* When the server says nothing, our own count stands unchanged. */
+  const m3 = new TurnMeter()
+  m3.start('qwen', 5000, null)
+  m3.markFirstToken()
+  m3.countReasoningToken(300)
+  const t3 = m3.finish({ promptTokens: 0, completionTokens: 0 }, 'stop')
+  check('no server usage leaves our figures alone', t3.reasoningTokens === 300)
+}
+
 await rm(dir, { recursive: true, force: true })
 console.log(failures === 0 ? '\n\x1b[32mall live-metrics checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
 process.exit(failures === 0 ? 0 : 1)

@@ -268,7 +268,31 @@ export class TurnMeter {
       source: 'client',
       finishReason
     }
-    if (this.reasoningTokens > 0) metrics.reasoningTokens = this.reasoningTokens
+    /*
+     * Reasoning is OUR estimate; completion is the server's count. Rescale so
+     * the part cannot exceed the whole.
+     *
+     * Caught by reconciling a live run against oMLX's own log: a request the
+     * server counted as 1,075 generated tokens was shown as "out 1075 ·
+     * reasoning 1152". Both numbers were doing their job — completionTokens
+     * takes the server's authoritative usage, reasoningTokens sums
+     * estimateTokens() over the deltas — and chars/4 happened to run 7% high on
+     * that content. A part larger than its whole is nonsense on sight, and it is
+     * the kind of nonsense that makes a reader stop trusting the other figures
+     * on the row.
+     *
+     * Scaling by the ratio the whole estimate was off by keeps the SHARE, which
+     * is the quantity anyone actually reads — "how much of this turn was
+     * thinking" — rather than clamping and quietly reporting a wrong split.
+     */
+    if (this.reasoningTokens > 0) {
+      const ourTotal = this.completionTokens
+      const scaled =
+        ourTotal > 0 && completionTokens > 0 && ourTotal !== completionTokens
+          ? Math.round(this.reasoningTokens * (completionTokens / ourTotal))
+          : this.reasoningTokens
+      metrics.reasoningTokens = Math.min(scaled, completionTokens)
+    }
     if (this.reasoningEffort !== undefined) metrics.reasoningEffortUsed = this.reasoningEffort
     if (this.reasoningCap !== undefined) metrics.reasoningCapUsed = this.reasoningCap
     return metrics
