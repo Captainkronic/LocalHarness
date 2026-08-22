@@ -30,6 +30,7 @@ import type {
   ShellResultFacts,
   WriteResultFacts
 } from '@shared/types'
+import { ELIDED_MARK } from '@main/llm/prompt'
 
 import { augmentedPath, isInsideAny } from '../store/paths'
 import { changedLinesFromDiff, type ActivityInput } from './activity'
@@ -1040,6 +1041,36 @@ export class ToolExecutor {
     if (st) {
       existing = await fsp.readFile(target, 'utf8')
       existingIsBinary = isBinaryByName(target) || existing.includes('\0')
+    }
+
+    /*
+     * Never write the transcript's own elision marker to disk.
+     *
+     * Bulk arguments are replaced in REPLAYED history by a note explaining that
+     * the content was removed. The model reads its own history — and on a live
+     * run it copied that note back out as the `content` of a fresh write_file
+     * call. src/pages/Gallery.jsx became a 323-byte file containing nothing but
+     * the marker.
+     *
+     * What made that expensive is that the model was then RIGHT: the file on
+     * disk really did contain a placeholder, so it reasoned its way toward "the
+     * compactor replaced my content before the tool received it" and could not
+     * get out, because every fact it could check agreed with it. It spent 5.5k
+     * tokens there before a human stopped it.
+     *
+     * The marker is self-propagating and there is no case where writing it is
+     * correct, so it is refused here — with the reason, and with the one action
+     * that actually recovers.
+     */
+    if (content.includes(ELIDED_MARK)) {
+      return fail(
+        `Refused: the content for ${shown} is CaptainLlama's transcript-elision note, not code.\n\n` +
+          `That note appears in your replayed history where a large argument used to be. It ` +
+          `describes the transcript; it is never file content, and writing it would replace ` +
+          `real code with a sentence about bookkeeping.\n\n` +
+          `Nothing has been written. If you need what that file contains, call read_file — the ` +
+          `file on disk is untouched. Otherwise send the real content for ${shown}.`
+      )
     }
 
     if (st && !existingIsBinary && existing === content) {

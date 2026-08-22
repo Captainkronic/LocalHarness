@@ -229,9 +229,13 @@ const BULK_LIMIT = 1200
  * bytes on disk were fine, which was the one fact that would have ended it — so
  * that is now stated outright, before the instruction to go and look.
  */
+/** The opening of every elision marker. Exported so the executor can refuse to
+ *  write one to disk — see ELIDED_MARK's use in agent/executor.ts. */
+export const ELIDED_MARK = '[CaptainLlama removed '
+
 function markElided(field: string, length: number): string {
   return (
-    `[CaptainLlama removed ${length} characters of "${field}" from this transcript ` +
+    `${ELIDED_MARK}${length} characters of "${field}" from this transcript ` +
     'to save context. The tool received the full value and applied all of it — nothing ' +
     'was truncated, and the file on disk is complete. This affects only what you are ' +
     'reading back here, never what was written. Call read_file to see the current contents.]'

@@ -10,6 +10,7 @@
  *
  *   node scripts/prompt-elide-test.mjs
  */
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,7 +30,7 @@ const check = (name, ok, note = '') => {
 const dir = await mkdtemp(join(tmpdir(), 'lh-elide-'))
 await writeFile(
   join(dir, 'e.ts'),
-  `export { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine } from '${ROOT}/src/main/llm/prompt'\n`
+  `export { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine, ELIDED_MARK } from '${ROOT}/src/main/llm/prompt'\n`
 )
 const outfile = join(dir, 'b.mjs')
 await build({
@@ -42,7 +43,7 @@ await build({
   logLevel: 'silent',
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main') }
 })
-const { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine } =
+const { elideBulkArguments, buildMessages, trimToBudget, writtenFilesLine, ELIDED_MARK } =
   await import(pathToFileURL(outfile).href)
 
 const BIG = 'x'.repeat(12867)
@@ -283,6 +284,32 @@ console.log('\n\x1b[1mthe model is told what it has written\x1b[0m')
   const conv = { id: 'c', workflowId: 'code', messages: msgs }
   const wire = JSON.stringify(buildMessages(conv, 'You are an engineer.', false, {}))
   check('and it reaches the system prompt', wire.includes('index.html'))
+}
+
+console.log('\n\x1b[1mthe marker must never reach a file\x1b[0m')
+/* Live, Run 2: the model read the elision note in its own replayed history and
+   sent it back as the `content` of a write_file call. src/pages/Gallery.jsx
+   became 323 bytes containing nothing but the note. What made it expensive is
+   that the model was then RIGHT — the file really did hold a placeholder — so it
+   reasoned toward "the compactor replaced my content before the tool received
+   it" and could not escape, because every fact it could check agreed. 5.5k
+   tokens before a human stopped it. */
+{
+  check('the marker prefix is exported so the writer can recognise it',
+    typeof ELIDED_MARK === 'string' && ELIDED_MARK.length > 10)
+  const produced = elideBulkArguments(JSON.stringify({ path: 'a.js', content: BIG }))
+  check('and it is genuinely what elision emits',
+    produced.includes(ELIDED_MARK),
+    'if these two drift, the guard stops matching and the bug returns silently')
+
+  const exec = readFileSync(join(ROOT, 'src/main/agent/executor.ts'), 'utf8')
+  check('write_file refuses content containing it',
+    /content\.includes\(ELIDED_MARK\)/.test(exec))
+  check('and refuses rather than writing something wrong',
+    /Refused: the content for/.test(exec))
+  check('the refusal names the recovery',
+    /call read_file/.test(exec),
+    'the file on disk is untouched, and that is the fact that ends the confusion')
 }
 
 await rm(dir, { recursive: true, force: true })
