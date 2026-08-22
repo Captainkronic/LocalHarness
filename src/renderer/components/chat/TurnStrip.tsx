@@ -156,10 +156,20 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
       seen.current.el = elapsedMs
       seen.current.elAt = now
     }
-    // Strict INCREASE. The meter resets to zero at every tool call, and reading
-    // that reset as a token would falsely restart the gap at the exact moment a
-    // long silence begins.
-    if (completionTok > seen.current.gen) {
+    /*
+     * ANY change, not a strict increase.
+     *
+     * This required the count to grow, to stop the per-request reset to zero
+     * being read as a token. It does stop that — and it also means that once
+     * the meter resets, the count can never exceed the high-water mark from the
+     * previous request, so `genAt` is never stamped again and the gap grows
+     * without bound. The detector went permanently quiet after the first
+     * request of every turn, which is the opposite of the failure it guards.
+     *
+     * A reset IS movement: it means a new request just started. Both readings
+     * are handled by treating any change as life.
+     */
+    if (completionTok !== seen.current.gen) {
       seen.current.gen = completionTok
       seen.current.genAt = now
     }
@@ -420,6 +430,33 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
        * reasoning: three quarters of all generation time announced as work that
        * had not started, while the reply was still empty.
        */
+      /*
+       * A long silence with no tool call visible.
+       *
+       * Not every backend streams tool-call arguments. LM Studio sends them as
+       * deltas, so the app can say "Writing the write_file call — 4.1 kB of
+       * arguments". oMLX parses tool calls out of the finished text instead, so
+       * while the model composes a stylesheet nothing arrives at all: measured
+       * here at seven minutes of frozen counter under the words "Writing the
+       * reply", which reads as a hang.
+       *
+       * The gap was already tracked and was only ever consulted inside the
+       * tool-call branch — the one path this backend never takes.
+       */
+      if (tokenGapMs >= QUIET_WIRE_MS) {
+        const quiet = formatMs(tokenGapMs)
+        return {
+          text:
+            `${reasoningTok > 0 && completionTok <= reasoningTok ? 'Thinking' : 'Writing the reply'}` +
+            ` — nothing on the wire for ${quiet}`,
+          detail:
+            'The request is still open and the server has not failed — this is silence, not an error. ' +
+            'Some backends stream tool-call arguments as they are written and some only send the call once ' +
+            'it is finished; on the latter, composing a large file looks exactly like this. The turn will ' +
+            'resume on its own, and Stop is always available.',
+          tone: 'live'
+        }
+      }
       if (reasoningTok > 0 && completionTok <= reasoningTok) {
         return {
           text: `Thinking — ${formatTokens(reasoningTok)} tokens so far${rate(sustainedTps)}`,
