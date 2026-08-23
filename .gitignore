@@ -32,3 +32,6 @@ shots/
 
 # Overnight agentic run artifacts (transcripts, probes, browser profiles)
 .overnight/
+
+# Scratch probes. Agents write these into the repo; they must never be committed.
+scripts/_tmp-*
