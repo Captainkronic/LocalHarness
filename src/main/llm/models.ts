@@ -209,6 +209,36 @@ export class ModelRegistry {
    * Deliberately quiet: no such endpoint is part of the OpenAI surface, so a
    * 404 is the normal case and must not look like a fault.
    */
+  /**
+   * The primary, read as a plain OpenAI backend.
+   *
+   * Same two requests pollExtras makes, against the primary's own baseUrl. The
+   * state that LM Studio would have given for free is recovered from
+   * /v1/models/status where the backend offers it; where it does not, models are
+   * reported `unknown` rather than described as unloaded on no evidence.
+   *
+   * Returns null when even the OpenAI list is unavailable, so the caller can
+   * report a genuinely unreachable primary instead of an empty one.
+   */
+  private async pollPrimaryAsOpenAi(
+    primary: LlmEndpoint,
+    headers: Record<string, string>
+  ): Promise<ModelInfo[] | null> {
+    try {
+      const res = await this.timedFetch(
+        `${trimTrailingSlash(primary.baseUrl)}/models`,
+        { headers },
+        LIST_TIMEOUT_MS
+      )
+      if (!res.ok) return null
+      const payload: unknown = await res.json()
+      const loadedIds = await this.pollExtraState(primary, headers)
+      return parseModels(payload, primary, 'unknown', loadedIds)
+    } catch {
+      return null
+    }
+  }
+
   private async pollExtraState(
     endpoint: LlmEndpoint,
     headers: Record<string, string>
@@ -391,21 +421,44 @@ export class ModelRegistry {
       headers.Authorization = `Bearer ${settings.apiKey.trim()}`
     }
 
+    /*
+     * The primary does not have to be LM Studio.
+     *
+     * /api/v0/models is LM Studio's own extension, and all of this was built on
+     * it: state, quantization, the real loaded window. When LM Studio was shut
+     * down and oMLX promoted to primary, that request 404'd, the model list came
+     * back EMPTY, and resolveModel then found nothing — so every turn was
+     * refused with "No model is loaded on the server" while two models sat
+     * resident on that server, answering.
+     *
+     * That is the worst shape a failure can take: the app blamed the backend for
+     * its own assumption. So a primary that cannot answer the LM Studio shape is
+     * asked the OpenAI one instead, exactly as an extra endpoint already is —
+     * /v1/models for the list, /v1/models/status for which of them are loaded.
+     */
+    const primary: LlmEndpoint = {
+      id: 'lmstudio',
+      label: 'LM Studio',
+      baseUrl: settings.baseUrl
+    }
+
     try {
-      const res = await this.timedFetch(url, { headers }, LIST_TIMEOUT_MS)
-      if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        const detail = body.trim().length > 0 ? body.trim() : '(empty response body)'
-        throw new Error(`${res.status} ${res.statusText}: ${detail}`)
+      const res = await this.timedFetch(url, { headers }, LIST_TIMEOUT_MS).catch(() => null)
+      let models: ModelInfo[]
+      if (res === null || !res.ok) {
+        const openai = await this.pollPrimaryAsOpenAi(primary, headers)
+        if (openai === null) {
+          const detail =
+            res === null ? 'did not answer' : `${res.status} ${res.statusText}`
+          throw new Error(
+            `${url} ${detail}, and ${primary.baseUrl}/models did not answer either`
+          )
+        }
+        models = openai
+      } else {
+        const payload: unknown = await res.json()
+        models = parseModels(payload, primary)
       }
-      const payload: unknown = await res.json()
-      // The primary endpoint keeps LM Studio's richer /api/v0 shape — state,
-      // quantization, the real loaded window. Extras are plain OpenAI /v1.
-      const models = parseModels(payload, {
-        id: 'lmstudio',
-        label: 'LM Studio',
-        baseUrl: settings.baseUrl
-      })
       const extra = await this.pollExtras(settings)
       const now = Date.now()
 
