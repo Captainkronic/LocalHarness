@@ -53,8 +53,32 @@ export function LiveBrowserStrip(): JSX.Element | null {
    * the turn ends, or when the model moves on to something that is not the
    * browser.
    */
-  const busy = phase !== 'idle' && BROWSER_TOOL.test(lastToolName)
-  return busy ? <Strip /> : null
+  const driving = phase !== 'idle' && BROWSER_TOOL.test(lastToolName)
+
+  /* Widened a second time, for the same reason as the first.
+   *
+   * "Most recent tool was a browser one" is still too narrow on a build job.
+   * The model opens the page once, then writes files for twenty minutes, and a
+   * panel headed "Live browser" sits empty for all of it. Measured on the
+   * Nordlys run: 74 tool calls, of which 3 were browser calls — the strip was
+   * eligible for about 4% of the run, and someone reasonably read the empty
+   * panel as broken and went to the Browser tab to find the page rendering
+   * perfectly well.
+   *
+   * A page that is being served stays worth watching after the browsing stops;
+   * that is the whole point of having it beside the transcript. So once this
+   * conversation has opened a page, keep it for the rest of the live turn.
+   */
+  const opened = useMemo(
+    () =>
+      (conversation?.messages ?? []).some((m) =>
+        (m.toolCalls ?? []).some((c) => BROWSER_TOOL.test(c.name))
+      ),
+    [conversation]
+  )
+
+  if (phase === 'idle' || !(driving || opened)) return null
+  return <Strip driving={driving} />
 }
 
 /**
@@ -70,7 +94,7 @@ const MIN_H = 140
 const MAX_H = 760
 const STORE_KEY = 'lh.liveBrowser.height'
 
-function Strip(): JSX.Element {
+function Strip({ driving }: { driving: boolean }): JSX.Element {
   const frame = useStore((s) => s.browserFrame)
   const status = useStore((s) => s.browserMirror)
   useMirrorStream()
@@ -113,6 +137,10 @@ function Strip(): JSX.Element {
     <section className="lbs" style={{ '--lbs-h': `${Math.round(height)}px` } as CSSProperties}>
       <div className="lbs-head">
         <span className="section-label">Live browser</span>
+        {/* Say which of the two states this is. A still picture with a live dot
+            beside it invites the reading "frozen"; naming the reason it is
+            still is the difference between watching and worrying. */}
+        {driving ? null : <span className="lbs-note">model is working elsewhere</span>}
         <span className={status === 'live' ? 'lbs-dot is-on' : 'lbs-dot'} aria-hidden="true" />
       </div>
       <div className="lbs-stage" ref={stageRef}>
@@ -123,7 +151,11 @@ function Strip(): JSX.Element {
              page that has loaded and is sitting still produces nothing until
              the model touches it. Not an error, and worth not calling one. */
           <p className="lbs-idle">
-            {status === 'live' ? 'waiting for the page to change' : 'opening the page'}
+            {status !== 'live'
+              ? 'opening the page'
+              : driving
+                ? 'waiting for the page to change'
+                : 'the page has not changed since the model last looked'}
           </p>
         )}
       </div>

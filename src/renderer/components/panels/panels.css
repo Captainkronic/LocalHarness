@@ -1997,3 +1997,13 @@
   border-radius: var(--r-md);
   background: var(--bg-input);
 }
+
+/* Why the picture is holding still. Sits between the label and the dot, so it
+   is read as part of the heading rather than as a caption on the frame. */
+.lbs-note {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
