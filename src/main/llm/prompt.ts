@@ -362,15 +362,17 @@ export function buildMessages(
     // current". Roughly a dozen tokens, and it removes a whole class of
     // confident nonsense.
     const where = workspaceLine(opts.workspaceRoots ?? [])
-    /* Rebuilt every request rather than accumulated, so a file written this
-       turn appears immediately and nothing has to be invalidated. */
-    const written = writtenFilesLine(conv.messages)
+    /* Everything here must be byte-stable for the whole run. The system prompt
+       is token zero, and a prefix cache matches an exact prefix: change one
+       character of it and the server re-prefills the entire conversation.
+       The written-files manifest used to be appended here, which cost 32
+       minutes on one measured run — see the trailing block at the end of this
+       function for where it went and why. */
     out.push({
       role: 'system',
       content:
         `${systemPrompt}\n\n${todayLine()}` +
-        `${where === '' ? '' : `\n${where}`}` +
-        `${written === '' ? '' : `\n\n${written}`}`
+        `${where === '' ? '' : `\n${where}`}`
     })
   }
 
@@ -467,6 +469,26 @@ export function buildMessages(
         break
     }
   }
+
+  /* The written-files manifest goes LAST, and this position is the whole point.
+   *
+   * It was in the system prompt, on the reasoning that rebuilding it each
+   * request meant "nothing has to be invalidated". That was exactly backwards.
+   * The system prompt is token zero; a prefix cache matches an exact prefix, so
+   * every time this manifest changed it invalidated the cache for the entire
+   * conversation and the server re-prefilled all of it.
+   *
+   * Measured on the Nordlys run: the manifest took 9 distinct states, and there
+   * were exactly 9 full re-prefills in 87 requests — 32.4 minutes of wall clock,
+   * and the cost per event grows with the square of depth (7.1 minutes at 55k
+   * tokens, ~18 at 100k). Nine cache misses, nine manifest changes: not a
+   * correlation, a mechanism.
+   *
+   * At the tail it is the only thing that has to be re-read when it changes.
+   * The model still sees it immediately, which was the original goal.
+   */
+  const written = writtenFilesLine(conv.messages)
+  if (written !== '') out.push({ role: 'system', content: written })
 
   return opts.budget === undefined ? out : trimToBudget(out, opts.budget, opts.onTrim)
 }

@@ -328,6 +328,61 @@ console.log('\n\x1b[1mthe marker must never reach a file\x1b[0m')
     'the file on disk is untouched, and that is the fact that ends the confusion')
 }
 
+console.log('\n\x1b[1mthe system prompt is byte-stable while files are written\x1b[0m')
+/* A prefix cache matches an EXACT prefix. The system prompt is token zero, so
+   any per-turn variation there invalidates the cache for the whole
+   conversation and the server re-prefills all of it.
+
+   The written-files manifest used to live in the system prompt. Measured on the
+   Nordlys run: the manifest took 9 distinct states and there were exactly 9
+   full re-prefills in 87 requests — 32.4 minutes, with the cost per event
+   growing as the square of depth (7.1 min at 55k tokens, ~18 min at 100k).
+   Nine changes, nine misses: a mechanism, not a coincidence.
+
+   So the manifest must stay OUT of the system prompt, and at the tail where
+   re-reading it is cheap. */
+{
+  const call = (id, path, lines) => ({
+    id, name: 'write_file', status: 'ok',
+    arguments: JSON.stringify({ path, content: 'y'.repeat(200) }),
+    result: `wrote ${path} (${lines} lines)`
+  })
+  const convo = (calls) => ({
+    id: 'c', title: 't', createdAt: 0, updatedAt: 0,
+    messages: [
+      { id: 'u1', role: 'user', content: 'build me a site', createdAt: 0 },
+      { id: 'a1', role: 'assistant', content: '', createdAt: 0, toolCalls: calls }
+    ]
+  })
+
+  const early = buildMessages(convo([call('1', 'src/App.jsx', 12)]), 'SYSTEM', false, {})
+  const later = buildMessages(
+    convo([call('1', 'src/App.jsx', 12), call('2', 'src/styles.css', 733)]), 'SYSTEM', false, {}
+  )
+
+  check('a file has actually been written in the fixture',
+    writtenFilesLine(convo([call('1', 'src/App.jsx', 12)]).messages) !== '')
+  check('the manifest changed between the two turns',
+    writtenFilesLine(convo([call('1', 'src/App.jsx', 12)]).messages) !==
+      writtenFilesLine(convo([call('1', 'src/App.jsx', 12), call('2', 'src/styles.css', 733)]).messages),
+    'if it did not, this test proves nothing')
+
+  check('the FIRST message is a system message', early[0]?.role === 'system')
+  check('and it is byte-identical after another file is written',
+    early[0]?.content === later[0]?.content,
+    'a single changed character here re-prefills the entire conversation')
+  check('the manifest is not in the system prompt at all',
+    !String(early[0]?.content ?? '').includes('src/App.jsx'),
+    'token zero must not carry anything that varies turn to turn')
+
+  const tail = later[later.length - 1]
+  check('the manifest rides at the tail instead',
+    String(tail?.content ?? '').includes('src/styles.css'),
+    'the model still has to be told what it wrote — just not at position zero')
+  check('and it names every file written so far',
+    String(tail?.content ?? '').includes('src/App.jsx'))
+}
+
 await rm(dir, { recursive: true, force: true })
 console.log(failures === 0 ? '\n\x1b[32mall checks passed\x1b[0m\n' : `\n\x1b[31m${failures} failed\x1b[0m\n`)
 process.exit(failures === 0 ? 0 : 1)

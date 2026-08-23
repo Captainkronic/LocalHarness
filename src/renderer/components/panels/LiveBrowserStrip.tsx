@@ -58,12 +58,14 @@ export function LiveBrowserStrip(): JSX.Element | null {
   /* Widened a second time, for the same reason as the first.
    *
    * "Most recent tool was a browser one" is still too narrow on a build job.
-   * The model opens the page once, then writes files for twenty minutes, and a
-   * panel headed "Live browser" sits empty for all of it. Measured on the
-   * Nordlys run: 74 tool calls, of which 3 were browser calls — the strip was
-   * eligible for about 4% of the run, and someone reasonably read the empty
-   * panel as broken and went to the Browser tab to find the page rendering
-   * perfectly well.
+   * The model opens the page, then writes files for twenty minutes, and a panel
+   * headed "Live browser" sits empty for all of it — someone reasonably read
+   * the empty panel as broken and went to the Browser tab to find the page
+   * rendering perfectly well.
+   *
+   * Measured on the Nordlys run: 33 of 96 tool calls were browser calls, so the
+   * strip was eligible often enough — but never during the long stretches of
+   * writing, which is exactly when someone looks over to check on it.
    *
    * A page that is being served stays worth watching after the browsing stops;
    * that is the whole point of having it beside the transcript. So once this
