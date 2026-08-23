@@ -1130,6 +1130,24 @@ export interface ConfigField {
 export type InferencePhase = 'idle' | 'queued' | 'prefill' | 'decode' | 'tool'
 
 /** Live, per-request telemetry pushed to the renderer at ~4Hz. */
+/**
+ * What the inference server says it is doing, when it will say.
+ *
+ * The streaming protocol reports no progress through prefill, and on a backend
+ * that emits a tool call only when finished it reports none through a long write
+ * either. This is the server's own answer, polled rather than projected — the
+ * difference between "nothing on the wire for 8m 1s" and "reading 16,384 of
+ * 39,049 tokens at 159 tok/s".
+ */
+export interface ServerProgress {
+  phase: 'prefill' | 'generate'
+  processed: number
+  /** Null while generating: max_tokens is a ceiling, not a plan. */
+  total: number | null
+  tps: number | null
+  etaMs: number | null
+}
+
 export interface LiveMetrics {
   phase: InferencePhase
   /** Model the in-flight request was sent to. */
@@ -1164,6 +1182,11 @@ export interface LiveMetrics {
    * request left the client.
    */
   phaseElapsedMs: number
+  /**
+   * The server's own account of what it is doing, or null when it does not
+   * publish one. Measured; every other progress figure here is projected.
+   */
+  serverProgress: ServerProgress | null
   /** Measured time to first token, ms. Null until the first token lands. */
   ttftMs: number | null
   /**

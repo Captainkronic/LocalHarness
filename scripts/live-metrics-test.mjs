@@ -33,7 +33,8 @@ await writeFile(join(dir, 'e.ts'),
   `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n` +
   `export { parseModels } from '${ROOT}/src/main/llm/models'\n` +
   `export { remapReasoningEffort } from '${ROOT}/src/main/llm/client'\n` +
-  `export { windowRefusal } from '${ROOT}/src/main/orchestrator'\n`)
+  `export { windowRefusal } from '${ROOT}/src/main/orchestrator'\n` +
+  `export { parseActivity } from '${ROOT}/src/main/llm/activity'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -46,7 +47,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels, remapReasoningEffort, windowRefusal } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels, remapReasoningEffort, windowRefusal, parseActivity } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -463,6 +464,40 @@ console.log('\n\x1b[1mSilence has to be legible\x1b[0m')
   check('it is attached to more than one phase',
     (strip.match(/turnSteps\(/g) ?? []).length >= 4,
     'the definition plus at least three phases using it')
+}
+
+console.log('\n\x1b[1mAsk the server what it is doing\x1b[0m')
+/* Eight minutes of "nothing on the wire" while the Studio was flat out at 159
+   tok/s prefilling 39,049 tokens. The streaming protocol carries no progress;
+   the server publishes it and nobody was asking. */
+{
+  const PREFILL = { active_models: { models: [{
+    id: 'Qwen3.8-27B-MLX-4bit',
+    prefilling: [{ processed: 16384, total: 39049, speed: 159.3, eta: 142.3, phase: 'prefill' }],
+    generating: []
+  }] } }
+  const p = parseActivity(PREFILL)
+  check('prefill progress is read', p.phase === 'prefill' && p.processed === 16384 && p.total === 39049)
+  check('with the measured rate', Math.round(p.tps) === 159)
+  check('and the eta in milliseconds', Math.round(p.etaMs) === 142300,
+    'the server reports seconds; everything else in this app is ms')
+
+  const GEN = { active_models: { models: [{
+    prefilling: [], generating: [{ processed: 512, speed: 14.2 }]
+  }] } }
+  const g = parseActivity(GEN)
+  check('generation is reported as a count', g.phase === 'generate' && g.processed === 512)
+  check('with no total invented for it', g.total === null,
+    'max_tokens is a ceiling, not a plan — a fraction against it would be fiction')
+
+  console.log('\n\x1b[1mand every other backend is left alone\x1b[0m')
+  check('an idle server yields nothing',
+    parseActivity({ active_models: { models: [{ prefilling: [], generating: [] }] } }) === null)
+  check('a 404 body yields nothing', parseActivity({ detail: 'Not Found' }) === null)
+  check('junk yields nothing', parseActivity('nope') === null && parseActivity(null) === null)
+  check('a row missing its numbers is skipped',
+    parseActivity({ active_models: { models: [{ prefilling: [{ speed: 9 }], generating: [] }] } }) === null,
+    'a progress bar with no total is worse than none')
 }
 
 await rm(dir, { recursive: true, force: true })

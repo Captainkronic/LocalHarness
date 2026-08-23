@@ -100,6 +100,8 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
   const reasoningTok = useStore((s) => s.live.reasoningTokens)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
   const prefillEtaMs = useStore((s) => s.live.prefillEtaMs)
+  /* The server's own account of what it is doing. Measured, not projected. */
+  const serverProgress = useStore((s) => s.live.serverProgress)
   const prefillTps = useStore((s) => s.live.prefillTps)
   const prefillEstimated = useStore((s) => s.live.prefillEstimated)
   /* One field, computed once in the meter, so this line and the header gauge
@@ -467,6 +469,37 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
        * The gap was already tracked and was only ever consulted inside the
        * tool-call branch — the one path this backend never takes.
        */
+      /*
+       * If the server will say what it is doing, say that instead.
+       *
+       * Adam, on eight minutes of silence: "can you make the feedback clear that
+       * the studio is working on writing the file". It was — flat out at 159
+       * tok/s, prefilling 39,049 tokens — and the app had no idea, because
+       * nothing in the streaming protocol carries progress. The server publishes
+       * it; nobody was asking. These figures are MEASURED, unlike every other
+       * progress number on this line.
+       */
+      if (serverProgress !== null) {
+        const p = serverProgress
+        const rate = p.tps === null ? '' : ` · ${Math.round(p.tps)} tok/s`
+        const left = p.etaMs === null ? '' : ` · ${formatMs(p.etaMs)} left`
+        return {
+          text:
+            p.phase === 'prefill' && p.total !== null
+              ? `The server is reading ${formatTokens(p.processed)} of ` +
+                `${formatTokens(p.total)} tokens${rate}${left}`
+              : `The server is generating — ${formatTokens(p.processed)} tokens so far${rate}`,
+          detail:
+            'Reported by the inference server itself, not projected from earlier turns — this is ' +
+            'the one progress figure on this line that is measured. Nothing arrives over the ' +
+            'streaming connection during prefill, and on a backend that sends a tool call only ' +
+            'once it is finished, nothing arrives while a file is being written either. The work ' +
+            'is happening on the server regardless.\n\n' +
+            turnSteps(p.phase === 'prefill' ? 'prefill' : 'compose'),
+          tone: 'live'
+        }
+      }
+
       if (tokenGapMs >= QUIET_WIRE_MS) {
         /*
          * Adam, watching this line: "it feels stuck when it says nothing on the

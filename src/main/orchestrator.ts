@@ -40,6 +40,7 @@ import type { SkillRegistry } from './skills/registry'
 import type { ArtifactStore } from './store/artifacts'
 import type { LmStudioControl } from './llm/control'
 import { streamChat, type WireMessage } from './llm/client'
+import { fetchServerProgress } from './llm/activity'
 import { buildContextUsage, buildMessages, type TrimInfo } from './llm/prompt'
 import { TurnMeter, RateCalibrator } from './telemetry/meter'
 import {
@@ -155,6 +156,9 @@ const HARD_REASONING_TRIPS = 8
  * Two, not more: if a third identical request also comes back empty, the server
  * is not blinking, it is down, and retrying forever would hide that.
  */
+/** How often to ask the server what it is doing. See progressTimer. */
+const SERVER_PROGRESS_MS = 2_000
+
 const MAX_EMPTY_RETRIES = 2
 
 /**
@@ -192,6 +196,9 @@ interface ActiveTurn {
   controller: AbortController
   meter: TurnMeter
   metricTimer: NodeJS.Timeout
+  progressTimer: NodeJS.Timeout
+  /** Where to ask about progress — the model's own endpoint, not the default. */
+  progressBaseUrl: string
 }
 
 /**
@@ -577,9 +584,34 @@ export class Orchestrator {
       conversationId: conv.id,
       controller,
       meter,
+      progressBaseUrl: settings.baseUrl,
       metricTimer: setInterval(() => {
         this.d.emit('event:liveMetrics', meter.snapshot())
-      }, METRIC_EMIT_MS)
+      }, METRIC_EMIT_MS),
+      /*
+       * Ask the server what it is doing, on a slower beat than the UI tick.
+       *
+       * The streaming protocol reports nothing through prefill, and nothing
+       * through a tool call that this backend only sends once finished — so the
+       * app spent eight minutes showing a silence while the machine was flat
+       * out. The server publishes the real figures; nobody was asking.
+       *
+       * Every 2s rather than every 250ms: this is an HTTP round trip to another
+       * machine, the underlying number only advances one prefill chunk at a
+       * time, and polling it faster would cost more than it tells anyone.
+       */
+      progressTimer: setInterval(() => {
+        const a = this.active
+        if (!a) return
+        void fetchServerProgress(a.progressBaseUrl, a.controller.signal).then(
+          (p) => {
+            /* Still the same request? A late answer about a finished one would
+               paint progress over an idle turn. */
+            if (this.active === a) a.meter.setServerProgress(p)
+          },
+          () => undefined
+        )
+      }, SERVER_PROGRESS_MS)
     }
     this.d.models.setActive(true)
 
@@ -805,6 +837,10 @@ export class Orchestrator {
       const pendingCalls = new Map<number, ToolCall>()
       let finishReason = 'stop'
       let usage = { promptTokens, completionTokens: 0 }
+
+      /* Ask for progress at the endpoint this turn is actually using. A model
+         served by a second backend is the whole reason progress was invisible. */
+      if (this.active) this.active.progressBaseUrl = model.baseUrl || settings.baseUrl
 
       await streamChat(
         {
@@ -1592,6 +1628,7 @@ export class Orchestrator {
   private endTurn(): void {
     if (!this.active) return
     clearInterval(this.active.metricTimer)
+    clearInterval(this.active.progressTimer)
     this.active.meter.reset()
     this.d.emit('event:liveMetrics', this.active.meter.snapshot())
     const conversationId = this.active.conversationId

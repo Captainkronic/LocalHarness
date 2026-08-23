@@ -13,7 +13,8 @@
  * it reflects the current rate instead of being dragged down by TTFT.
  */
 
-import type { InferencePhase, LiveMetrics, TurnMetrics } from '@shared/types'
+import type {
+  ServerProgress, InferencePhase, LiveMetrics, TurnMetrics } from '@shared/types'
 
 /** Rolling window for the decode rate. */
 const DECODE_WINDOW_MS = 2_000
@@ -77,6 +78,7 @@ export class TurnMeter {
   private firstTokenAt: number | null = null
   private finishedAt: number | null = null
   private phaseStartedAt: number | null = null
+  private serverProgress: ServerProgress | null = null
   private phase: InferencePhase = 'idle'
   private samples: DecodeSample[] = []
 
@@ -152,6 +154,11 @@ export class TurnMeter {
     this.toolSchemaTokens = Math.max(0, Math.round(n))
   }
 
+  /** What the server last said it was doing. Null clears it. */
+  setServerProgress(p: ServerProgress | null): void {
+    this.serverProgress = p
+  }
+
   markToolPhase(): void {
     this.setPhase('tool')
   }
@@ -221,6 +228,7 @@ export class TurnMeter {
         this.firstTokenAt === null || now <= this.firstTokenAt || this.completionTokens <= 0
           ? null
           : this.completionTokens / ((now - this.firstTokenAt) / 1000),
+      serverProgress: this.serverProgress,
       reasoningTokens: this.reasoningTokens,
       phaseElapsedMs: this.phaseStartedAt === null ? elapsedMs : now - this.phaseStartedAt
     }
@@ -329,6 +337,7 @@ export class TurnMeter {
     this.finishedAt = null
     this.phase = 'idle'
     this.phaseStartedAt = null
+    this.serverProgress = null
     this.samples = []
   }
 
