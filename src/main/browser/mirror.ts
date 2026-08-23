@@ -53,6 +53,9 @@ const POLL_MS = 1000
 /* Base64 length below which a screencast frame is taken to be the headless
    blank rather than a picture. The measured blank was ~3,968 chars. */
 const BLANK_FRAME_MAX_B64 = 6_000
+/* Poll ticks between checks for a better target. Three seconds: long enough
+   not to hammer /json/list, short enough that nobody watches a blank box. */
+const RETARGET_EVERY = 3
 
 /** Retry while a viewer is watching, backing off so a browser that is not
  *  running does not turn into a reconnect storm. */
@@ -71,6 +74,8 @@ export class BrowserMirror {
   private retryMs = RETRY_START_MS
   private retryTimer: NodeJS.Timeout | null = null
   private closing = false
+  /** The page url currently mirrored, so a better one can be noticed later. */
+  private attachedUrl = ''
 
   constructor(opts: BrowserMirrorOptions) {
     this.o = opts
@@ -182,7 +187,9 @@ export class BrowserMirror {
         const u = t.url ?? ''
         return u !== '' && u !== 'about:blank' && !u.startsWith('chrome://') && !u.startsWith('devtools://')
       })
-      wsUrl = (real ?? pages[0])?.webSocketDebuggerUrl ?? null
+      const chosen = real ?? pages[0]
+      wsUrl = chosen?.webSocketDebuggerUrl ?? null
+      this.attachedUrl = chosen?.url ?? ''
     } catch {
       wsUrl = null
     }
@@ -309,11 +316,59 @@ export class BrowserMirror {
    */
   private startPolling(): void {
     this.stopPolling()
+    let tick = 0
     this.poll = setInterval(() => {
       if (this.ws === null || this.watchers === 0) return
       this.seed(true)
+      /*
+       * Attaching once is not enough.
+       *
+       * The strip mounts as soon as the model reaches for the browser, which is
+       * BEFORE the page it is about to open exists. At that moment the only
+       * target is the launch-time about:blank, so that is what gets mirrored —
+       * correctly, and uselessly — and it stays mirrored for the rest of the
+       * run however much the model then does. Picking the right target is not
+       * worth much if the right target has not been created yet.
+       *
+       * So the choice is revisited: while sitting on a blank, notice a real page
+       * appearing and move to it.
+       */
+      tick += 1
+      if (tick % RETARGET_EVERY === 0 && this.isBlankTarget()) void this.retarget()
     }, POLL_MS)
     this.poll.unref?.()
+  }
+
+  /** True while mirroring something with nothing on it. */
+  private isBlankTarget(): boolean {
+    const u = this.attachedUrl
+    return u === '' || u === 'about:blank' || u.startsWith('chrome://') || u.startsWith('devtools://')
+  }
+
+  /** Drop a blank target once a real page exists, and let connect() re-pick. */
+  private async retarget(): Promise<void> {
+    try {
+      const res = await fetch(`http://127.0.0.1:${this.o.getPort()}/json/list`)
+      const targets = (await res.json()) as { type: string; url?: string }[]
+      const better = targets.some((t) => {
+        if (t.type !== 'page') return false
+        const u = t.url ?? ''
+        return u !== '' && u !== 'about:blank' && !u.startsWith('chrome://') && !u.startsWith('devtools://')
+      })
+      if (!better) return
+      this.o.onLog('info', SCOPE, 'a real page appeared; moving the mirror off about:blank')
+      const ws = this.ws
+      this.ws = null
+      this.stopPolling()
+      try {
+        ws?.close()
+      } catch {
+        /* the reconnect below does not depend on a clean close */
+      }
+      void this.connect()
+    } catch {
+      /* the next tick tries again */
+    }
   }
 
   private stopPolling(): void {
