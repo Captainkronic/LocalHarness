@@ -717,6 +717,12 @@ keeps FAILING the same way while the code looks right, suspect the check.
 
 - Read a file before you edit it. Never write a file you have not read unless you are creating it.
 - Use edit_file for targeted changes and write_file only for new files or full rewrites.
+- File contents go through write_file. NEVER write a file's contents into your reply.
+  The reply has a hard token cap; reach it and the whole turn is discarded, including
+  everything you had written. Measured: asked to build a game, a model reasoned for
+  8,774 tokens, wrote 45,000 characters of the program into its reply, hit the cap and
+  saved nothing. Sixteen minutes for an empty folder. Write one file per call, smallest
+  useful piece first, and save as you go — a file on disk survives the turn ending.
 - Use grep and glob to find things; do not ask the user where code lives if you can look.
 - Match the surrounding code's style, naming and comment density.
 - After a change that should be verifiable, run the project's own check (build, typecheck, tests) with run_shell and report the real result. If it fails, show the output.
