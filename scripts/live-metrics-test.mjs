@@ -9,6 +9,7 @@
  *
  *   node scripts/live-metrics-test.mjs
  */
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -430,6 +431,38 @@ console.log('\n\x1b[1mA server refusing the prompt for size is recoverable\x1b[0
     'better a clear error than a clamp pulled from nowhere')
   check('a bare number in unrelated prose is ignored',
     windowRefusal('wrote 12345 bytes to disk') === null)
+}
+
+console.log('\n\x1b[1mSilence has to be legible\x1b[0m')
+/* Adam, watching a healthy run: "it feels stuck when it says nothing on the
+   wire... not sure exactly what that means." The server was generating at 18.3
+   tok/s the whole time. */
+{
+  const strip = readFileSync(join(ROOT, 'src/renderer/components/chat/TurnStrip.tsx'), 'utf8')
+  /* Comments still discuss the old wording — deliberately, since the reason it
+     changed is worth keeping. Assert on what is RENDERED. */
+  check('the line no longer names an absence',
+    !/nothing on the wire for \$\{/.test(strip),
+    'an absence reads as a fault however well the tooltip explains it')
+  check('it says what is happening instead', /Composing — \$\{formatMs\(tokenGapMs\)\}/.test(strip))
+  check('the duration is given something to be measured against',
+    /earlier steps took/.test(strip),
+    'a bare elapsed time cannot answer "is this normal"')
+  check('and the yardstick comes from THIS conversation',
+    /const stepRange = useStore/.test(strip),
+    'step length depends on model, backend and file size — a global average would mislead')
+  check('with a fallback when there is no history yet',
+    /only once it is finished/.test(strip))
+
+  /* And the reader is told where in a turn they are, not just what the state
+     is called — "composing" is only meaningful if you know it sits between
+     thinking and the tool running. */
+  check('the tooltip describes the whole sequence',
+    /A step of a turn runs in this order/.test(strip))
+  check('and marks where you are in it', /k === at \? '▸ '/.test(strip))
+  check('it is attached to more than one phase',
+    (strip.match(/turnSteps\(/g) ?? []).length >= 4,
+    'the definition plus at least three phases using it')
 }
 
 await rm(dir, { recursive: true, force: true })

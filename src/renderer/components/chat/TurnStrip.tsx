@@ -106,6 +106,29 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
      cannot drift apart the way they did. */
   const sustainedTps = useStore((s) => s.live.decodeTpsSustained)
 
+  /*
+   * How long this conversation's finished steps have taken.
+   *
+   * A duration on its own is not information. "Composing — 1m 21s" could be
+   * healthy or wedged and the reader has no way to tell; the same number beside
+   * "earlier steps took 45s–3m10s" answers the only question they actually have.
+   * Taken from this conversation rather than a global average because step
+   * length depends on the model, the backend and the size of what is being
+   * written, and all three change.
+   */
+  const stepRange = useStore((s) => {
+    const ms = s.conversation?.messages ?? []
+    const spans: number[] = []
+    for (let i = ms.length - 1; i >= 0 && spans.length < 6; i--) {
+      const m = ms[i]
+      if (m?.role !== 'assistant') continue
+      const t = m.metrics?.totalMs
+      if (typeof t === 'number' && t > 0) spans.push(t)
+    }
+    if (spans.length < 2) return null
+    return { lo: Math.min(...spans), hi: Math.max(...spans) }
+  })
+
   const approvalName = useStore((s) => s.approvals[0]?.toolName ?? null)
   const approvalCount = useStore((s) => s.approvals.length)
 
@@ -350,7 +373,8 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
         return {
           text: `${head} — ≈${formatMs(prefillEtaMs)} left, estimated`,
           detail:
-            'The model is re-reading the whole conversation before it writes anything. No tokens are produced during this phase and the streaming protocol reports no progress through it, so the time left is a projection from the prefill rate this model reached on earlier turns — it is not measured. That is what ≈ means.',
+            'The model is re-reading the whole conversation before it writes anything. No tokens are produced during this phase and the streaming protocol reports no progress through it, so the time left is a projection from the prefill rate this model reached on earlier turns — it is not measured. That is what ≈ means.\n\n' +
+            turnSteps('prefill'),
           tone: 'live'
         }
       }
@@ -444,16 +468,31 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
        * tool-call branch — the one path this backend never takes.
        */
       if (tokenGapMs >= QUIET_WIRE_MS) {
-        const quiet = formatMs(tokenGapMs)
+        /*
+         * Adam, watching this line: "it feels stuck when it says nothing on the
+         * wire... not sure exactly what that means."
+         *
+         * It said `nothing on the wire for 1m 21s`, which describes the plumbing
+         * rather than the work, and names an ABSENCE — and an absence reads as a
+         * fault however carefully the tooltip explains otherwise. The server was
+         * generating at 18.3 tok/s throughout.
+         *
+         * So: say what is happening, and give the duration something to be
+         * measured against. A bare "1m 21s" is not information; beside "earlier
+         * steps took 45s–3m10s" it answers the only question being asked.
+         */
+        const yard =
+          stepRange === null
+            ? ' · this server sends a tool call only once it is finished, so there is nothing to show yet'
+            : ` · earlier steps took ${formatMs(stepRange.lo)}–${formatMs(stepRange.hi)}`
         return {
-          text:
-            `${reasoningTok > 0 && completionTok <= reasoningTok ? 'Thinking' : 'Writing the reply'}` +
-            ` — nothing on the wire for ${quiet}`,
+          text: `Composing — ${formatMs(tokenGapMs)} so far${yard}`,
           detail:
-            'The request is still open and the server has not failed — this is silence, not an error. ' +
-            'Some backends stream tool-call arguments as they are written and some only send the call once ' +
-            'it is finished; on the latter, composing a large file looks exactly like this. The turn will ' +
-            'resume on its own, and Stop is always available.',
+            'The model is generating, and the request is still open — this is silence, not an error. ' +
+            'Some backends stream a tool call as it is written and some send it only when it is complete; ' +
+            'on the latter, writing a large file looks exactly like this and the whole file arrives at once. ' +
+            'The comparison is to finished steps in this conversation, which is the closest thing to an ' +
+            'expectation the app can honestly offer. Stop is always available.\n\n' + turnSteps('compose'),
           tone: 'live'
         }
       }
@@ -461,7 +500,8 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
         return {
           text: `Thinking — ${formatTokens(reasoningTok)} tokens so far${rate(sustainedTps)}`,
           detail:
-            'The model is reasoning, not writing. Reasoning is generated at the same cost as the reply and counts toward the same budget, but none of it is the answer — and none of it is replayed to the model on the next request.',
+            'The model is reasoning, not writing. Reasoning is generated at the same cost as the reply and counts toward the same budget, but none of it is the answer — and none of it is replayed to the model on the next request.\n\n' +
+            turnSteps('think'),
           tone: 'live'
         }
       }
@@ -506,6 +546,31 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
 function rate(tps: number | null): string {
   if (tps === null || !Number.isFinite(tps) || tps <= 0) return ''
   return ` · ${tps >= 10 ? tps.toFixed(1) : tps.toFixed(2)} tok/s`
+}
+
+/**
+ * The shape of a turn, appended to every live-phase tooltip.
+ *
+ * Adam, on the status line: "can you add a tooltip to this section with more
+ * detailed descriptions of each step happening". The individual states were each
+ * explained, but nothing said what the SEQUENCE was, so a reader could know what
+ * "composing" meant and still not know whether it came before or after the tool
+ * ran, or how many more of these a turn contains.
+ *
+ * The arrow marks where you are, so the same text answers both "what is this"
+ * and "how far along is it".
+ */
+function turnSteps(at: 'prefill' | 'think' | 'compose' | 'tool'): string {
+  const rows: Array<[typeof at, string]> = [
+    ['prefill', 'Reading — the model re-reads the whole conversation before it can write anything. No tokens are produced; this is the slowest part of a deep turn.'],
+    ['think', 'Thinking — reasoning tokens. Billed from the same budget as the answer, and not replayed to the model on the next step.'],
+    ['compose', 'Composing — writing a reply or a tool call. A file-sized tool call can take minutes and some backends send it only when finished.'],
+    ['tool', 'Running — the tool executes: a file is written, a command runs, a page is read. Then the loop repeats until the model stops asking for tools.']
+  ]
+  return (
+    'A step of a turn runs in this order, and a turn is many steps:\n\n' +
+    rows.map(([k, text]) => `${k === at ? '▸ ' : '  '}${text}`).join('\n')
+  )
 }
 
 function COMPOSING_TIP(name: string | null): string {
