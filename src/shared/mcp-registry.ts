@@ -50,6 +50,10 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     args: [`${HOME}/.config/comfy-mcp/server.py`],
     env: {
       COMFY_HOST: 'http://127.0.0.1:8188',
+      /* critique_image needs a VLM. It used to default to the sanitising proxy
+         on :1235, which forwards to the Studio — and the Studio no longer runs
+         LM Studio at all. Vision is local now; see the playwright entry. */
+      COMFY_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
       COMFY_AUTOSTART: '1',
       COMFY_GEN_TIMEOUT: '900',
       // Don't hand finished images to another app. The server defaults to
@@ -164,7 +168,15 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     blurb: 'Measure and critique a rendered page.',
     command: PY,
     args: [`${HOME}/.config/ui-review-mcp/server.py`],
-    env: { UIREVIEW_PORT: '9333', UIREVIEW_DSF: '2' },
+    env: {
+      UIREVIEW_PORT: '9333',
+      UIREVIEW_DSF: '2',
+      /* Same move as playwright and comfy-image: the critique model lives on
+         this machine, not behind the proxy to a Studio that no longer runs
+         LM Studio. */
+      UIREVIEW_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
+      UIREVIEW_VISION_MODEL: 'google/gemma-4-12b-qat'
+    },
     callTimeoutMs: 300_000,
     estimatedTokens: 806,
     autoStart: false
