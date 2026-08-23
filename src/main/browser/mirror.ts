@@ -47,6 +47,12 @@ const SCOPE = 'mirror'
  */
 const MAX_FPS = Number(process.env['LH_MIRROR_FPS'] ?? 24)
 const MIN_GAP_MS = Math.floor(1000 / Math.max(1, Math.min(60, MAX_FPS)))
+/* One repaint a second: fast enough to read as live, slow enough that a
+   headless browser is not being asked to render flat out for a side panel. */
+const POLL_MS = 1000
+/* Base64 length below which a screencast frame is taken to be the headless
+   blank rather than a picture. The measured blank was ~3,968 chars. */
+const BLANK_FRAME_MAX_B64 = 6_000
 
 /** Retry while a viewer is watching, backing off so a browser that is not
  *  running does not turn into a reconnect storm. */
@@ -60,6 +66,8 @@ export class BrowserMirror {
   private watchers = 0
   private status: BrowserMirrorStatus = 'off'
   private lastFrameAt = 0
+  /** Repaint pump. See startPolling — headless Chrome will not screencast. */
+  private poll: ReturnType<typeof setInterval> | null = null
   private retryMs = RETRY_START_MS
   private retryTimer: NodeJS.Timeout | null = null
   private closing = false
@@ -197,6 +205,7 @@ export class BrowserMirror {
       // is plainly showing something. One screenshot on connect fills it, and
       // the stream takes over from there.
       this.seed()
+      this.startPolling()
     }
 
     ws.onmessage = (ev) => {
@@ -221,6 +230,20 @@ export class BrowserMirror {
 
       const data = params.data
       if (typeof data !== 'string' || data.length === 0) return
+      /*
+       * Drop the blank frames headless Chrome sends.
+       *
+       * With --headless=new there is no surface being presented, and the
+       * screencast returns solid white: one measured out of the running app was
+       * 2,976 bytes for 806x457, which is about 0.05 bits a pixel. Anything with
+       * a page in it is an order of magnitude larger. Without this the strip
+       * flickers, because a white screencast frame and a good polled frame take
+       * turns painting.
+       *
+       * A page that really is blank loses nothing: the poll below supplies the
+       * same white picture a moment later, honestly.
+       */
+      if (data.length < BLANK_FRAME_MAX_B64) return
       const meta = (params.metadata ?? {}) as { deviceWidth?: number; deviceHeight?: number }
       this.o.onFrame({
         dataUrl: `data:image/jpeg;base64,${data}`,
@@ -231,6 +254,7 @@ export class BrowserMirror {
     }
 
     const drop = (): void => {
+      this.stopPolling()
       if (this.ws === ws) this.ws = null
       if (this.closing || this.watchers === 0) return
       this.setStatus('unavailable')
@@ -238,6 +262,43 @@ export class BrowserMirror {
     }
     ws.onclose = drop
     ws.onerror = drop
+  }
+
+  /**
+   * Ask for a repaint on a timer, because the screencast cannot be relied on.
+   *
+   * Page.startScreencast streams what the compositor is already presenting. The
+   * browser this attaches to runs --headless=new, where there is no surface
+   * being presented to anything, and the frames it sends back are BLANK — a
+   * 2,976-byte JPEG of solid white at 806x457, verified by decoding one out of
+   * the running app. Page.captureScreenshot is different in exactly the way
+   * that matters: it forces a render and returns what the page actually looks
+   * like, which is why the captured frames in the Browser tab were always
+   * perfect while the live strip beside them showed nothing.
+   *
+   * So the still that used to be a one-off seed becomes the stream. It costs a
+   * JPEG a second at quality 45 against a browser that is already resident, and
+   * only while somebody is watching — the mirror is reference counted and this
+   * stops with the last viewer.
+   *
+   * The screencast is left running. Where it works it is cheaper and smoother
+   * than this, its frames arrive on change rather than on a clock, and a real
+   * frame arriving between polls simply wins on recency.
+   */
+  private startPolling(): void {
+    this.stopPolling()
+    this.poll = setInterval(() => {
+      if (this.ws === null || this.watchers === 0) return
+      this.seed(true)
+    }, POLL_MS)
+    this.poll.unref?.()
+  }
+
+  private stopPolling(): void {
+    if (this.poll !== null) {
+      clearInterval(this.poll)
+      this.poll = null
+    }
   }
 
   /** One still, so the view is never empty while a page is up. */
