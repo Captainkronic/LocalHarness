@@ -8,6 +8,8 @@ import MetricsDrawer from './MetricsDrawer'
 import PayloadBudget from './PayloadBudget'
 import PrefillBar from './PrefillBar'
 import SpeedGauge from './SpeedGauge'
+import MetricChart from './MetricChart'
+import { PREFILL_CEILING_TPS } from '@renderer/lib/format'
 import './metrics.css'
 import { PHASE_TIP } from '@renderer/lib/phases'
 
@@ -21,6 +23,11 @@ import { PHASE_TIP } from '@renderer/lib/phases'
  */
 export function MetricsHud(): ReactElement {
   const [open, setOpen] = useState(false)
+  /* Which gauge's chart is showing, if any. One at a time: two 150px charts
+     stacked would push the transcript off the screen, which is the thing the
+     strip exists to sit above rather than replace. */
+  const [chart, setChart] = useState<'prefill' | 'decode' | null>(null)
+  const labHistory = useStore((s) => s.labHistory)
   const phase = useStore((s) => s.live.phase)
   const elapsedMs = useStore((s) => s.live.elapsedMs)
   const phaseElapsedMs = useStore((s) => s.live.phaseElapsedMs)
@@ -67,9 +74,17 @@ export function MetricsHud(): ReactElement {
         <PrefillBar />
 
         <span className="mx-sep" aria-hidden="true" />
-        <SpeedGauge kind="prefill" />
+        <SpeedGauge
+          kind="prefill"
+          expanded={chart === 'prefill'}
+          onToggle={() => setChart(chart === 'prefill' ? null : 'prefill')}
+        />
         <span className="mx-sep mx-sep-faint" aria-hidden="true" />
-        <SpeedGauge kind="decode" />
+        <SpeedGauge
+          kind="decode"
+          expanded={chart === 'decode'}
+          onToggle={() => setChart(chart === 'decode' ? null : 'decode')}
+        />
 
         <span className="mx-sep" aria-hidden="true" />
         <ContextMeter />
@@ -96,6 +111,14 @@ export function MetricsHud(): ReactElement {
           </svg>
         </button>
       </div>
+
+      {chart !== null ? (
+        <MetricChart
+          kind={chart}
+          rows={labHistory}
+          ceiling={chart === 'prefill' ? PREFILL_CEILING_TPS : undefined}
+        />
+      ) : null}
 
       {open && <MetricsDrawer onClose={() => setOpen(false)} />}
     </div>

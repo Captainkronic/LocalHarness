@@ -682,3 +682,112 @@
 .mx-gauge .mx-val.is-last {
   color: var(--fg-dim);
 }
+
+/* ---- Expandable metric chart ------------------------------------------- */
+/* The sparkline shows shape; this shows numbers. Opened by clicking a gauge. */
+
+.mx-gauge.is-clickable {
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  font: inherit;
+  color: inherit;
+}
+
+.mx-gauge.is-clickable:hover,
+.mx-gauge.is-clickable:focus-visible {
+  border-color: var(--line);
+  background: var(--bg-hover);
+}
+
+.mx-gauge.is-open {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.mx-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line-subtle);
+  background: var(--bg-panel);
+}
+
+.mx-chart-empty {
+  font-size: var(--fs-micro);
+  color: var(--fg-dim);
+}
+
+.mx-chart-svg {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+}
+
+.mx-chart-grid {
+  stroke: var(--line-subtle);
+  stroke-width: 1;
+}
+
+.mx-chart-axis {
+  fill: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.mx-chart-area {
+  opacity: 0.1;
+}
+
+.mx-chart-line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.mx-chart-dot {
+  transition: r 90ms ease-out;
+}
+
+.mx-chart-dot.is-on {
+  stroke: var(--bg-panel);
+  stroke-width: 1.5;
+}
+
+.mx-chart-cursor {
+  stroke: var(--fg-faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+/* Fixed height so hovering from point to point does not reflow the strip
+   underneath — a readout that jumps is one you stop trusting. */
+.mx-chart-read {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  min-height: 1.4em;
+  font-size: var(--fs-micro);
+}
+
+.mx-chart-val {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.mx-chart-meta {
+  color: var(--fg-dim);
+}
+
+.mx-chart-hint {
+  color: var(--fg-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mx-chart-dot {
+    transition: none;
+  }
+}

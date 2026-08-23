@@ -6,6 +6,10 @@ import Sparkline from './Sparkline'
 import './metrics.css'
 
 export interface SpeedGaugeProps {
+  /** Whether this gauge's chart is currently open. */
+  expanded?: boolean
+  /** Omit to render a plain, non-interactive gauge. */
+  onToggle?: () => void
   kind: 'prefill' | 'decode'
 }
 
@@ -31,7 +35,7 @@ const TIP: Record<SpeedGaugeProps['kind'], string> = {
  * requests, so the decay of throughput with context depth is visible rather
  * than something you have to remember between turns.
  */
-export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
+export function SpeedGauge({ kind, expanded = false, onToggle }: SpeedGaugeProps): ReactElement {
   const livePrefill = useStore((s) => s.live.prefillTps)
   /*
    * The sustained rate, not the two-second window.
@@ -105,8 +109,18 @@ export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
         `\nTrend: last ${values.length} request${values.length === 1 ? '' : 's'} from the Lab feed, oldest left.`
       : '\n\nNo completed requests recorded yet — the trend line appears once the Lab feed reports one.')
 
+  /* A button, because it opens something. The sparkline beside it can only
+     honestly show shape at 44x18; the chart underneath is where the numbers
+     live, and nothing said the strip was clickable. */
+  const Tag = onToggle ? 'button' : 'div'
   return (
-    <div className={`mx-slot mx-gauge is-${kind}`} title={tip}>
+    <Tag
+      type={onToggle ? 'button' : undefined}
+      className={`mx-slot mx-gauge is-${kind}${onToggle ? ' is-clickable' : ''}${expanded ? ' is-open' : ''}`}
+      title={onToggle ? `${tip}\n\nClick to open the full chart.` : tip}
+      onClick={onToggle}
+      aria-expanded={onToggle ? expanded : undefined}
+    >
       <span className="mx-label">{kind}</span>
       {/* Reserved glyph slot: marks the number as projected or as the last
           measured one, without shifting it. */}
@@ -124,7 +138,7 @@ export function SpeedGauge({ kind }: SpeedGaugeProps): ReactElement {
       <span className="mx-spark-slot">
         <Sparkline values={values} color={COLOR[kind]} width={44} height={18} />
       </span>
-    </div>
+    </Tag>
   )
 }
 
