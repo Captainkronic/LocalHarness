@@ -53,7 +53,7 @@ export const MCP_REGISTRY: McpServerSpec[] = [
       /* critique_image needs a VLM. It used to default to the sanitising proxy
          on :1235, which forwards to the Studio — and the Studio no longer runs
          LM Studio at all. Vision is local now; see the playwright entry. */
-      COMFY_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
+      COMFY_LMSTUDIO_URL: 'http://adams-mac-studio.tailc7bb1e.ts.net:8000/v1',
       COMFY_AUTOSTART: '1',
       COMFY_GEN_TIMEOUT: '900',
       // Don't hand finished images to another app. The server defaults to
@@ -143,20 +143,22 @@ export const MCP_REGISTRY: McpServerSpec[] = [
       PWMCP_PORT: '9333',
       PWMCP_DSF: '2',
       PWMCP_VISION_MAX_PX: '1024',
-      /* Vision runs HERE, not on the inference box.
+      /* Vision is served by oMLX on the Studio, beside the coding model, and
+       * costs nothing when it is not being used.
        *
-       * The screenshot is taken on this machine, so sending it to the Studio
-       * was a round trip that also competed for the one resource the coding
-       * model needs: the Studio has 39 GB behind a 32 GB wired limit, and the
-       * 27B already holds 26 GB of it. There is no room there for a VLM, and
-       * the default pointed at the Studio anyway — so every view_page came
-       * back "(no vision: no VLM is loaded)" and the model learned, once per
-       * session, to stop asking.
+       * The old default pointed at LM Studio through the sanitising proxy, and
+       * LM Studio had no VLM loaded — so every view_page came back "(no vision:
+       * no VLM is loaded)" and the model learned, once per session, to stop
+       * asking. LM Studio is now shut down on that box entirely.
        *
-       * Locally there is room, the picture is already here, and nothing it
-       * does can slow a run down. */
-      PWMCP_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
-      PWMCP_VISION_MODEL: 'google/gemma-4-12b-qat'
+       * What makes this affordable on a 39 GB machine already holding a 27B:
+       * the VLM is 2.9 GB and carries ttl_seconds=300 in ~/.omlx/
+       * model_settings.json, while the coding model carries none. oMLX loads a
+       * cold model on demand (EnginePool.get_engine is "get or load"), so the
+       * VLM is resident only in the five minutes after someone actually looks
+       * at something, and no non-vision workflow ever pays for it. */
+      PWMCP_LMSTUDIO_URL: 'http://adams-mac-studio.tailc7bb1e.ts.net:8000/v1',
+      PWMCP_VISION_MODEL: 'Qwen3-VL-4B-Instruct-MLX-4bit'
     },
     callTimeoutMs: 300_000,
     estimatedTokens: 839,
@@ -174,8 +176,8 @@ export const MCP_REGISTRY: McpServerSpec[] = [
       /* Same move as playwright and comfy-image: the critique model lives on
          this machine, not behind the proxy to a Studio that no longer runs
          LM Studio. */
-      UIREVIEW_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
-      UIREVIEW_VISION_MODEL: 'google/gemma-4-12b-qat'
+      UIREVIEW_LMSTUDIO_URL: 'http://adams-mac-studio.tailc7bb1e.ts.net:8000/v1',
+      UIREVIEW_VISION_MODEL: 'Qwen3-VL-4B-Instruct-MLX-4bit'
     },
     callTimeoutMs: 300_000,
     estimatedTokens: 806,
