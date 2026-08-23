@@ -21,7 +21,7 @@
  * values; this strip keeps the strictly-now story and holds no cache at all.
  */
 
-import { useEffect, useReducer, useRef, useState, type CSSProperties, type JSX } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type JSX } from 'react'
 
 import { formatChars, formatMs, formatTokens, usageColor } from '@renderer/lib/format'
 import { PHASE_TIP } from '@renderer/lib/phases'
@@ -30,6 +30,18 @@ import type { AppState } from '@renderer/state/store'
 import './chat.css'
 
 /** Silence from the main process before we say so. */
+/* A stable empty array, because `?? []` inside a store selector is a hang.
+ *
+ * useSyncExternalStore compares snapshots with Object.is. A selector that
+ * builds a fresh [] whenever the conversation is null therefore reports a
+ * changed store on every single read, and React re-renders until it gives up
+ * with "Maximum update depth exceeded" (#185). The window paints black, with
+ * no clue in it as to why.
+ *
+ * It only bites when there is NO conversation — which is exactly the state the
+ * app launches in, so it survived every test that started by opening one. */
+const NO_MESSAGES: never[] = []
+
 const STALE_PUSH_MS = 10_000
 /** Silence on the wire before the sentence mentions it. */
 const QUIET_WIRE_MS = 20_000
@@ -118,8 +130,16 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
    * length depends on the model, the backend and the size of what is being
    * written, and all three change.
    */
-  const stepRange = useStore((s) => {
-    const ms = s.conversation?.messages ?? []
+  /* Selected as a reference, computed in a memo, and NOT computed in the
+     selector — a selector that builds `{ lo, hi }` returns a new object on
+     every read, useSyncExternalStore compares snapshots with Object.is, and the
+     store therefore reports a change forever. That is React #185, and it paints
+     the window black with nothing in it to say why. The array reference is
+     stable until the messages actually change, which is exactly the dependency
+     this wants anyway. */
+  const stepMessages = useStore((s) => s.conversation?.messages)
+  const stepRange = useMemo(() => {
+    const ms = stepMessages ?? []
     const spans: number[] = []
     for (let i = ms.length - 1; i >= 0 && spans.length < 6; i--) {
       const m = ms[i]
@@ -129,7 +149,7 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
     }
     if (spans.length < 2) return null
     return { lo: Math.min(...spans), hi: Math.max(...spans) }
-  })
+  }, [stepMessages])
 
   const approvalName = useStore((s) => s.approvals[0]?.toolName ?? null)
   const approvalCount = useStore((s) => s.approvals.length)
@@ -740,7 +760,7 @@ function SessionStats({ onClose }: { onClose: () => void }): JSX.Element {
   const live = useStore((s) => s.live)
   const health = useStore((s) => s.health)
   const trimmed = useStore((s) => s.conversation?.trimmedMessages ?? 0)
-  const messages = useStore((s) => s.conversation?.messages ?? [])
+  const messages = useStore((s) => s.conversation?.messages ?? NO_MESSAGES)
 
   /* Whole-conversation totals, walked once. Cheap next to a render that only
      happens while the panel is open. */

@@ -450,8 +450,17 @@ console.log('\n\x1b[1mSilence has to be legible\x1b[0m')
     /earlier steps took/.test(strip),
     'a bare elapsed time cannot answer "is this normal"')
   check('and the yardstick comes from THIS conversation',
-    /const stepRange = useStore/.test(strip),
+    /const stepMessages = useStore\(\(s\) => s\.conversation\?\.messages\)/.test(strip) &&
+      /const stepRange = useMemo/.test(strip),
     'step length depends on model, backend and file size — a global average would mislead')
+  /* It is a memo and NOT a selector, and that is load-bearing. Computing
+     `{ lo, hi }` inside useStore returns a new object on every read;
+     useSyncExternalStore compares with Object.is, so the store reports a change
+     forever and React dies with #185 — a black window naming no component.
+     That shipped. See scripts/store-selector-test.mjs. */
+  check('and it is derived in a memo, not built inside the selector',
+    !/const stepRange = useStore/.test(strip),
+    'a selector that builds an object re-renders until React gives up')
   check('with a fallback when there is no history yet',
     /only once it is finished/.test(strip))
 
