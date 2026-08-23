@@ -158,9 +158,31 @@ export class BrowserMirror {
     let wsUrl: string | null = null
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/list`)
-      const targets = (await res.json()) as { type: string; webSocketDebuggerUrl?: string }[]
-      const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl)
-      wsUrl = page?.webSocketDebuggerUrl ?? null
+      const targets = (await res.json()) as {
+        type: string
+        url?: string
+        webSocketDebuggerUrl?: string
+      }[]
+      /*
+       * Pick the page with something ON it, not merely the first page.
+       *
+       * This browser routinely has two page targets — the one being driven and
+       * an about:blank left over from launch — and /json/list does not order
+       * them predictably. Taking the first match therefore attached to
+       * about:blank about half the time, and streamed a perfectly accurate
+       * screenshot of nothing. The strip showed solid white while the Browser
+       * tab beside it showed the real page, because the tab renders frames the
+       * TOOL captured from the page it had just driven.
+       *
+       * Hours went into treating that white as a rendering fault. It never was:
+       * the frame was honest and the target was wrong.
+       */
+      const pages = targets.filter((t) => t.type === 'page' && t.webSocketDebuggerUrl)
+      const real = pages.find((t) => {
+        const u = t.url ?? ''
+        return u !== '' && u !== 'about:blank' && !u.startsWith('chrome://') && !u.startsWith('devtools://')
+      })
+      wsUrl = (real ?? pages[0])?.webSocketDebuggerUrl ?? null
     } catch {
       wsUrl = null
     }
