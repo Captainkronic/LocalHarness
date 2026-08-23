@@ -508,7 +508,14 @@ export function TurnStrip({ activeModel, userTyping = false }: TurnStripProps): 
             p.phase === 'prefill' && p.total !== null
               ? `The server is reading ${formatTokens(p.processed)} of ` +
                 `${formatTokens(p.total)} tokens${rate}${left}`
-              : `The server is generating — ${formatTokens(p.processed)} tokens so far${rate}`,
+              : p.processed !== null
+                ? `The server is generating — ${formatTokens(p.processed)} tokens so far${rate}`
+                : /* The server says it is generating but will not say how much.
+                     Say the true thing — it is working, and for how long — rather
+                     than a zero that never moves. */
+                  `The server is generating${rate}${
+                    callOpenedAt !== null ? ` — ${formatMs(now - callOpenedAt)} so far` : ''
+                  }`,
           detail:
             'Reported by the inference server itself, not projected from earlier turns — this is ' +
             'the one progress figure on this line that is measured. Nothing arrives over the ' +

@@ -78,7 +78,9 @@ export function parseActivity(payload: unknown): ServerProgress | null {
          so the count is reported and no fraction is invented from it. */
       return {
         phase: 'generate',
-        processed: num(gen.processed) ?? num(gen.tokens) ?? 0,
+        /* No `?? 0`. oMLX sends this row with processed absent, and a fabricated
+           zero reads as "nothing is happening" for as long as generation lasts. */
+        processed: num(gen.processed) ?? num(gen.tokens),
         total: null,
         tps: num(gen.speed),
         etaMs: null

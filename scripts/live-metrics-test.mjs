@@ -470,6 +470,9 @@ console.log('\n\x1b[1mSilence has to be legible\x1b[0m')
   check('the tooltip describes the whole sequence',
     /A step of a turn runs in this order/.test(strip))
   check('and marks where you are in it', /k === at \? '▸ '/.test(strip))
+  check('the composer never claims a token count the server did not give',
+    /p\.processed !== null/.test(strip),
+    'the branch that prints "N tokens so far" must be guarded on N existing')
   check('it is attached to more than one phase',
     (strip.match(/turnSteps\(/g) ?? []).length >= 4,
     'the definition plus at least three phases using it')
@@ -498,6 +501,16 @@ console.log('\n\x1b[1mAsk the server what it is doing\x1b[0m')
   check('generation is reported as a count', g.phase === 'generate' && g.processed === 512)
   check('with no total invented for it', g.total === null,
     'max_tokens is a ceiling, not a plan — a fraction against it would be fiction')
+  /* oMLX publishes a generating row with NO count in it. Coercing that to 0 put
+     "The server is generating — 0 tokens so far" on the composer, frozen, for
+     3m39s while the machine was flat out. A missing number stays missing. */
+  const bare = parseActivity({
+    active_models: { models: [{ id: 'm', generating: [{ speed: 20.1 }] }] }
+  })
+  check('a generating row with no count yields null, not 0',
+    bare !== null && bare.phase === 'generate' && bare.processed === null,
+    'a fabricated zero reads as "nothing is happening" for the whole turn')
+  check('and the rate still comes through', bare?.tps === 20.1)
 
   console.log('\n\x1b[1mand every other backend is left alone\x1b[0m')
   check('an idle server yields nothing',

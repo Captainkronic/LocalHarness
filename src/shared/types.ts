@@ -1150,7 +1150,13 @@ export type InferencePhase = 'idle' | 'queued' | 'prefill' | 'decode' | 'tool'
  */
 export interface ServerProgress {
   phase: 'prefill' | 'generate'
-  processed: number
+  /**
+   * Null when the server will not say. oMLX publishes a `generating` row with no
+   * count in it, and coercing that to 0 produced "generating — 0 tokens so far"
+   * frozen on screen for minutes while the machine was flat out. A missing
+   * number has to stay missing; the line can say something true without it.
+   */
+  processed: number | null
   /** Null while generating: max_tokens is a ceiling, not a plan. */
   total: number | null
   tps: number | null
