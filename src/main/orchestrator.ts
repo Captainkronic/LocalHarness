@@ -1152,11 +1152,47 @@ export class Orchestrator {
 
       const calls = assistant.toolCalls ?? []
       if (!calls.length || controller.signal.aborted) {
-        if (finishReason === 'length' && !assistant.content.trim()) {
-          // Reasoning models can burn the entire budget on reasoning_content and
-          // return nothing. Say so rather than showing an empty reply.
-          assistant.error =
-            'The model hit its output cap while still reasoning and produced no answer. Raise max tokens for this workflow, or ask something narrower.'
+        /*
+         * A reply cut off at the output cap is a FAILED turn, whether or not it
+         * managed to say anything first.
+         *
+         * This used to check `!assistant.content.trim()`, so it only caught the
+         * model that spent everything on reasoning and returned nothing. The
+         * commoner and more expensive case walked straight through: asked to
+         * build a game, the model reasoned for 8,774 tokens and then wrote the
+         * entire program INTO THE REPLY — 44,948 characters, `finish_reason:
+         * length`, zero tool calls, nothing on disk. Because content was not
+         * empty, none of this fired, `error` stayed null, and the run simply
+         * ended. The server sat idle for three hours and the UI showed a
+         * finished turn with a long answer in it.
+         *
+         * So: mark it, say what happened, and tell the model the one thing it
+         * needs to do differently. The marker is what lets auto-continue pick
+         * the turn back up rather than leaving the run dead.
+         */
+        if (finishReason === 'length' && !controller.signal.aborted) {
+          const thinking = turnMetrics.reasoningTokens ?? 0
+          assistant.stoppedTruncated = true
+          assistant.error = assistant.content.trim()
+            ? `Cut off: the reply hit the ${usage.completionTokens}-token cap` +
+              (thinking ? ` after ${thinking} tokens of thinking` : '') +
+              ` and made no tool calls, so nothing was written.`
+            : 'The model hit its output cap while still reasoning and produced no answer. Raise max tokens for this workflow, or ask something narrower.'
+          /* Said in the transcript, not just on the message: `error` is not
+             forwarded to the model, and a turn that resumes without knowing why
+             it stopped repeats exactly what stopped it. */
+          conv.messages.push({
+            id: randomUUID(),
+            role: 'system',
+            content:
+              'Your last reply was cut off at the output cap before you finished, and it made no ' +
+              'tool calls, so nothing was saved.\n\n' +
+              'You were writing file contents into the reply. Do not do that — the reply has a ' +
+              'hard limit and anything in it is thrown away. Call write_file, one file per call, ' +
+              'and keep each call small enough to complete. Start with the smallest thing that ' +
+              'runs, save it, and build up from there.',
+            createdAt: Date.now()
+          })
           this.persist(conv, true)
         }
         finishedOnItsOwn = true

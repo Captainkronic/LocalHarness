@@ -484,6 +484,15 @@ export interface ChatMessage {
    * depend on matching a sentence that exists to be reworded.
    */
   stoppedLooping?: boolean
+  /**
+   * The turn ended because the reply hit the output cap, not because the model
+   * was done — `finish_reason: length` with no tool calls to show for it.
+   *
+   * Its own marker rather than `stoppedAtCap`, which means the STEP budget ran
+   * out. Conflating them would make the two indistinguishable in the one place
+   * it matters: what to tell the model when the turn resumes.
+   */
+  stoppedTruncated?: boolean
   error?: string
 }
 

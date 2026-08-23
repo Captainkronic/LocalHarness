@@ -584,13 +584,19 @@ export function loopAdvice(verdict: LoopVerdict, toolName: string): string {
  * regardless.
  */
 export function canAutoContinue(
-  last: { role?: string; stoppedAtCap?: boolean; stoppedLooping?: boolean } | undefined,
+  last:
+    | { role?: string; stoppedAtCap?: boolean; stoppedLooping?: boolean; stoppedTruncated?: boolean }
+    | undefined,
   left: number,
   aborted: boolean
 ): boolean {
   if (left <= 0 || aborted) return false
   if (last === undefined || last.role !== 'assistant') return false
-  return last.stoppedAtCap === true || last.stoppedLooping === true
+  /* stoppedTruncated joins the other two: a reply cut off at the output cap has
+     produced nothing executable, and leaving it there ends the run silently. */
+  return (
+    last.stoppedAtCap === true || last.stoppedLooping === true || last.stoppedTruncated === true
+  )
 }
 
 /**

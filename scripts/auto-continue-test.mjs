@@ -58,6 +58,15 @@ console.log('\n\x1b[1mIt continues only RECOVERABLE stops\x1b[0m')
    down. Here we only confirm the orchestrator still defers to it rather than
    growing a second, divergent copy of the rule. */
 check('the orchestrator asks canAutoContinue', /canAutoContinue\(/.test(block))
+check('a truncated turn is marked, not silently accepted',
+  /stoppedTruncated = true/.test(code),
+  'finish_reason length with no tool calls is a failed turn')
+check('and the marking does not require an empty reply',
+  !/finishReason === 'length' && !assistant\.content\.trim\(\)/.test(code),
+  'the expensive case writes 45KB into the reply first, then hits the cap')
+check('and the model is told why, in the transcript',
+  /Your last reply was cut off at the output cap/.test(src),
+  'error is not forwarded to the model; a resumed turn that does not know why it stopped repeats it')
 check('and does not re-implement the decision inline',
   !/const recoverable\s*=/.test(block),
   'two copies of this rule would drift, and the inline copy is the one that was dead')
@@ -158,6 +167,18 @@ console.log('\n\x1b[1mthe decision, executed rather than grepped\x1b[0m')
   check('a step-cap stop continues', canAutoContinue(cap, 5, false) === true,
     'this is the exact case that was dead for a 132-minute unattended run')
   check('a loop-breaker stop continues', canAutoContinue(loop, 5, false) === true)
+  /* Measured on an unattended overnight build: asked for a game, the model
+     reasoned for 8,774 tokens and then wrote the whole program INTO the reply —
+     44,948 characters, finish_reason "length", zero tool calls, nothing on
+     disk. Nothing marked it, so nothing resumed it, and the server sat idle for
+     three hours behind a UI showing a finished turn with a long answer in it. */
+  const cut = { role: 'assistant', stoppedTruncated: true }
+  check('a reply cut off at the output cap continues',
+    canAutoContinue(cut, 5, false) === true,
+    'without this the run just ends, and it ends looking successful')
+  check('and it still stops when the budget is gone',
+    canAutoContinue(cut, 0, false) === false)
+  check('and when Stop was pressed', canAutoContinue(cut, 5, true) === false)
   check('a turn that just finished normally does NOT',
     canAutoContinue({ role: 'assistant' }, 5, false) === false)
   check('an errored turn does NOT',
