@@ -252,10 +252,16 @@ console.log('\n\x1b[1mthe model is told what it has written\x1b[0m')
   const call = (name, path, result, status = 'ok') => ({
     id: `c${path}`, name, status, result, arguments: JSON.stringify({ path })
   })
+  const DATA = 'export const PIECES = []\nexport function leadTimeFor(p) { return 3 }\n' +
+    'export default PIECES\n'
+  const CSS = '.hero__glow { opacity: 1 }\n.hero__text { color: red }\n'
   const msgs = [
     { id: 'u', role: 'user', content: 'build it', createdAt: 1 },
     { id: 'a1', role: 'assistant', content: '', createdAt: 2, toolCalls: [
-      call('write_file', 'src/data.js', 'Created src/data.js (189 lines). 8.0 KB on disk, verified.'),
+      { ...call('write_file', 'src/data.js', 'Created src/data.js (189 lines). 8.0 KB on disk, verified.'),
+        arguments: JSON.stringify({ path: 'src/data.js', content: DATA }) },
+      { ...call('write_file', 'src/styles.css', 'Created src/styles.css (40 lines). 2.0 KB on disk, verified.'),
+        arguments: JSON.stringify({ path: 'src/styles.css', content: CSS }) },
       call('write_file', 'index.html', 'Created index.html (27 lines). 1.2 KB on disk, verified.')
     ] },
     { id: 'a2', role: 'assistant', content: '', createdAt: 3, toolCalls: [
@@ -265,6 +271,16 @@ console.log('\n\x1b[1mthe model is told what it has written\x1b[0m')
   ]
   const line = writtenFilesLine(msgs)
   check('every written file is listed', /src\/data\.js/.test(line) && /index\.html/.test(line))
+  /* The names are the point. Twelve read-only turns and ~90 minutes went on
+     rediscovering that a component imported `leadTime` while the module exported
+     `leadTimeFor`, and that `.hero__glow` did not exist in the stylesheet. Both
+     are NAMES, and the app was holding the text that defines them. */
+  check('a module lists what it exports',
+    /exports: .*leadTimeFor/.test(line),
+    'this is the fact those twelve reads were chasing')
+  check('and a stylesheet lists its classes',
+    /classes: .*hero__glow/.test(line))
+  check('a default export is named as such', /default/.test(line))
   check('with its size, so "did it work" is answerable without a read',
     /8\.0 kB/i.test(line) && /1\.2 kB/i.test(line))
   check('a file written twice appears once',

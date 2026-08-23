@@ -98,6 +98,7 @@ export function mergeModelLists(primary: ModelInfo[], extra: ModelInfo[]): Model
 export class ModelRegistry {
   private readonly opts: ModelRegistryOptions
   private models: ModelInfo[] = []
+  private readonly refusedWindows = new Map<string, number>()
   private readonly windows = new Map<string, WindowObservation>()
   private resident: string | null = null
   private running = false
@@ -244,11 +245,43 @@ export class ModelRegistry {
    * budget and the context meter alike — wants the effective number, so the
    * division belongs here rather than at each call site.
    */
+  /**
+   * Remember that the server refused a prompt of this size, and stay under it.
+   *
+   * A window the model advertises is not a window the machine can prefill. oMLX
+   * refuses with "Prefill context too large for available memory (preflight
+   * safety guard, kv_len=42322)" — it states the number it choked on, and until
+   * this existed the harness had no answer: the turn surfaced a 400 and ended,
+   * and a person had to lower contextCap by hand and restart. That happened on a
+   * live run and cost the rest of it.
+   *
+   * Clamped BELOW the refused size rather than at it, because the refusal is the
+   * first size known to fail and the true limit is somewhere under it. Kept for
+   * the session only: it is a fact about current memory pressure, not about the
+   * model, and it should not outlive the conditions that produced it.
+   */
+  noteWindowRefusal(modelId: string, refusedTokens: number): number | null {
+    if (modelId === '' || !Number.isFinite(refusedTokens) || refusedTokens <= 0) return null
+    const target = Math.max(4096, Math.floor(refusedTokens * 0.85))
+    const current = this.refusedWindows.get(modelId)
+    if (current !== undefined && current <= target) return current
+    this.refusedWindows.set(modelId, target)
+    this.opts.onLog?.(
+      'warn',
+      'models',
+      `${modelId} refused a ${refusedTokens}-token prompt; holding its window at ${target} for this session`
+    )
+    return target
+  }
+
   contextWindow(modelId: string): number | null {
     const raw = this.windows.get(modelId)?.contextLength ?? null
     if (raw === null || raw <= 0) return raw
     const settings = this.opts.getSettings()
-    return effectiveWindow(raw, settings.contextSlots, settings.contextCap)
+    const win = effectiveWindow(raw, settings.contextSlots, settings.contextCap)
+    /* A size the server has actually refused outranks anything configured. */
+    const refused = this.refusedWindows.get(modelId)
+    return refused !== undefined ? Math.min(win, refused) : win
   }
 
   health(): ServerHealth {

@@ -112,7 +112,7 @@ export interface BuildOptions {
  * on evidence rather than on anxiety.
  */
 export function writtenFilesLine(messages: readonly ChatMessage[]): string {
-  const seen = new Map<string, { lines: number; bytes: number }>()
+  const seen = new Map<string, { lines: number; bytes: number; shape: string }>()
   for (const msg of messages) {
     for (const call of msg.toolCalls ?? []) {
       if (call.name !== 'write_file' && call.name !== 'edit_file') continue
@@ -132,9 +132,14 @@ export function writtenFilesLine(messages: readonly ChatMessage[]): string {
       const lines = Number(/\((\d+) lines\)/.exec(result)?.[1] ?? 0)
       const bytes = sizeFromResult(result)
       const prev = seen.get(path)
+      /* The content is still on the ToolCall — elision only rewrites the copy
+         that goes on the wire — so the shape can be read without touching disk
+         and without a second source of truth to fall out of date. */
+      const shape = shapeOf(path, contentOf(call)) || (prev?.shape ?? '')
       seen.set(path, {
         lines: lines > 0 ? lines : (prev?.lines ?? 0),
-        bytes: bytes > 0 ? bytes : (prev?.bytes ?? 0)
+        bytes: bytes > 0 ? bytes : (prev?.bytes ?? 0),
+        shape
       })
     }
   }
@@ -142,16 +147,77 @@ export function writtenFilesLine(messages: readonly ChatMessage[]): string {
 
   const rows = [...seen.entries()].map(([path, f]) => {
     const size = f.bytes > 0 ? `${(f.bytes / 1024).toFixed(1)} kB` : f.lines > 0 ? `${f.lines} lines` : 'written'
-    return `  ${path} — ${size}`
+    return `  ${path} — ${size}${f.shape === '' ? '' : `\n      ${f.shape}`}`
   })
   return (
-    `Files you have already written in this conversation, with their size on disk:\n` +
+    `Files you have already written in this conversation, with their size and what they define:\n` +
     `${rows.join('\n')}\n` +
     `This list is the app's own record, not your memory of it. If a file is here it exists and ` +
     `is that size, whatever your earlier messages look like — their contents are trimmed out of ` +
     `the transcript to save room. Read one back only when you need its exact text; do not read ` +
     `it back to find out whether it worked.`
   )
+}
+
+/** The content that was written, from the call that wrote it. */
+function contentOf(call: { arguments: string }): string {
+  try {
+    const a: unknown = JSON.parse(call.arguments)
+    if (typeof a !== 'object' || a === null) return ''
+    const v = (a as Record<string, unknown>).content ?? (a as Record<string, unknown>).new_string
+    return typeof v === 'string' ? v : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * The names a file defines, so the model does not have to read it to find out.
+ *
+ * Measured on a live build: twelve consecutive read-only turns and about ninety
+ * minutes spent rediscovering that Home.jsx imported `leadTime` while data.js
+ * exported `leadTimeFor`, that piece ids "p1"/"w1"/"c1" did not exist, and that
+ * `.hero__glow` was referenced by a component and absent from the stylesheet.
+ * Every one of those is a NAME, and the app had the text that defines them.
+ *
+ * Names only, and capped. This is a index, not a copy — enough to spell an
+ * import correctly, not enough to reason about behaviour, because a file whose
+ * behaviour matters should still be read.
+ */
+function shapeOf(path: string, content: string): string {
+  if (content === '') return ''
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  const names: string[] = []
+  const push = (n: string | undefined): void => {
+    if (n !== undefined && n !== '' && !names.includes(n)) names.push(n)
+  }
+
+  if (/^\.(jsx?|tsx?|mjs|cjs)$/.test(ext)) {
+    for (const m of content.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) push(m[1])
+    for (const m of content.matchAll(/export\s+(?:const|let|var|class)\s+([A-Za-z_$][\w$]*)/g)) push(m[1])
+    for (const m of content.matchAll(/export\s*\{([^}]*)\}/g)) {
+      for (const part of (m[1] ?? '').split(',')) push(part.split(/\s+as\s+/)[0]?.trim())
+    }
+    if (/export\s+default/.test(content)) push('default')
+    if (names.length === 0) return ''
+    return `exports: ${cap(names)}`
+  }
+
+  if (ext === '.css') {
+    for (const m of content.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)) push(m[1])
+    if (names.length === 0) return ''
+    return `classes: ${cap(names)}`
+  }
+
+  return ''
+}
+
+/** Enough to be useful, not enough to become the prompt. */
+function cap(names: string[]): string {
+  const MAX = 14
+  return names.length <= MAX
+    ? names.join(', ')
+    : `${names.slice(0, MAX).join(', ')} … +${names.length - MAX} more`
 }
 
 /** "8.0 KB on disk, verified." / "4.4 kB" — whichever the executor phrased. */

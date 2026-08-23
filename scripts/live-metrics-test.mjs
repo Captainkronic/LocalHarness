@@ -31,7 +31,8 @@ await writeFile(join(dir, 'e.ts'),
   `export { mergeModelLists, effectiveWindow } from '${ROOT}/src/main/llm/models'\n` +
   `export { estimateTokens } from '${ROOT}/src/main/mcp/tokens'\n` +
   `export { parseModels } from '${ROOT}/src/main/llm/models'\n` +
-  `export { remapReasoningEffort } from '${ROOT}/src/main/llm/client'\n`)
+  `export { remapReasoningEffort } from '${ROOT}/src/main/llm/client'\n` +
+  `export { windowRefusal } from '${ROOT}/src/main/orchestrator'\n`)
 const shim = join(dir, 's.mjs')
 await writeFile(shim, `import{tmpdir}from'node:os'
 export const app={getPath:()=>tmpdir(),getVersion:()=>'0'}
@@ -44,7 +45,7 @@ await build({
   alias: { '@shared': join(ROOT, 'src/shared'), '@main': join(ROOT, 'src/main'),
            '@renderer': join(ROOT, 'src/renderer'), electron: shim }
 })
-const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels, remapReasoningEffort } =
+const { TurnMeter, demoteOrphanedCalls, toolOutcome, mergeModelLists, effectiveWindow, estimateTokens, parseModels, remapReasoningEffort, windowRefusal } =
   await import(pathToFileURL(out).href)
 
 console.log('\n\x1b[1mThe clock beside the phase word measures the phase\x1b[0m')
@@ -405,6 +406,30 @@ console.log('\n\x1b[1mWhen a server names the words it will accept, use them\x1b
   const LOWONLY = 'Unexpected reasoning effort high. Supported types are low and medium.'
   check('with nothing at or above, the highest available is used',
     remapReasoningEffort(LOWONLY, 'high') === 'medium')
+}
+
+console.log('\n\x1b[1mA server refusing the prompt for size is recoverable\x1b[0m')
+/* Live: oMLX answered an over-large prompt with the number it choked on, the
+   harness had no answer, the turn ended on a 400, and a person had to lower
+   contextCap by hand and restart — which cost the rest of that run. */
+{
+  const OMLX = 'Prefill context too large for available memory ' +
+    '(preflight safety guard, kv_len=42322, min_chunk=32)'
+  check('the refused size is read out of the message',
+    windowRefusal(OMLX) === 42322,
+    'the server states the number it choked on; there is no need to guess')
+
+  console.log('\n\x1b[1mand everything else is left to fail honestly\x1b[0m')
+  check('an out-of-memory model LOAD is not a window problem',
+    windowRefusal('Failed to load model: insufficient system resources') === null,
+    'retrying that with a smaller prompt would be a guess dressed as a recovery')
+  check('a template complaint is not a window problem',
+    windowRefusal('Chat template error: No user query found in messages') === null)
+  check('a size complaint with no number gives up',
+    windowRefusal('Prefill context too large for available memory') === null,
+    'better a clear error than a clamp pulled from nowhere')
+  check('a bare number in unrelated prose is ignored',
+    windowRefusal('wrote 12345 bytes to disk') === null)
 }
 
 await rm(dir, { recursive: true, force: true })

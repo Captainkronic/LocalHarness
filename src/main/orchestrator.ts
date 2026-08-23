@@ -230,6 +230,23 @@ function truncateValue(v: string | number | undefined): string {
   return text.length > 42 ? `${text.slice(0, 41)}…` : text
 }
 
+/**
+ * The prompt size a server refused, or null if this error is about something
+ * else.
+ *
+ * Deliberately narrow. Retrying a smaller prompt against an out-of-memory model
+ * load, or a template complaint, would be a guess dressed as a recovery — this
+ * only fires when the message is specifically about prefill or context size AND
+ * carries a number to clamp against.
+ */
+export function windowRefusal(message: string): number | null {
+  if (!/prefill|context too large|context length|kv_len/i.test(message)) return null
+  const m = /kv_len[=:\s]+(\d+)/i.exec(message) ?? /(\d{4,})\s*tokens?/i.exec(message)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export class Orchestrator {
   private readonly d: OrchestratorDeps
   private readonly calibrator = new RateCalibrator()
@@ -476,6 +493,31 @@ export class Orchestrator {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.log('error', 'turn', message)
+
+      /*
+       * A server refusing the prompt for size is recoverable, and says so.
+       *
+       * oMLX answers an over-large prompt with "Prefill context too large for
+       * available memory (preflight safety guard, kv_len=42322)". The number it
+       * choked on is right there. Until now the harness had no answer: the turn
+       * surfaced a 400 and ended, and a person had to lower contextCap by hand
+       * and restart — which is what happened on a live run and cost the rest of
+       * it.
+       *
+       * Recording the refusal clamps the window for the session, and marking the
+       * turn recoverable hands it to the auto-continue path, which rebuilds the
+       * prompt against the smaller window and carries on. Reusing that machinery
+       * rather than adding a second retry keeps one answer to "how does a turn
+       * resume", and it inherits its counter so this cannot loop.
+       */
+      const refused = windowRefusal(message)
+      if (refused !== null) {
+        const model = this.resolveModel(conv)
+        if (model) this.d.models.noteWindowRefusal(model.id, refused)
+        const failing = conv.messages[conv.messages.length - 1]
+        if (failing?.role === 'assistant') failing.stoppedAtCap = true
+      }
+
       const last = conv.messages[conv.messages.length - 1]
       if (last?.role === 'assistant' && last.streaming) {
         last.streaming = false
