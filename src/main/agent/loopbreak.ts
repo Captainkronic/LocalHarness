@@ -156,7 +156,32 @@ export function targetKeyFor(calls: LoopCall[]): string {
  * work, and the honest direction to be wrong in is to assume a shell command
  * did something.
  */
-const ACTING_TOOLS = new Set(['write_file', 'edit_file', 'run_shell'])
+const ACTING_TOOLS = new Set([
+  'write_file',
+  'edit_file',
+  'run_shell',
+  /*
+   * Driving a browser is acting, and leaving it out was expensive.
+   *
+   * browse_act clicks, types, drags and scrolls — it changes the state of the
+   * thing being worked on as surely as an edit changes a file. Counted as
+   * looking, it made whole categories of work indistinguishable from paralysis:
+   *
+   *   - a design review, which is READ-ONLY BY INSTRUCTION. Measured on one:
+   *     nine browse_act calls in, the breaker refused a click on the light-mode
+   *     toggle and told the model "you have enough to act, make the change now"
+   *     — on a prompt whose first line is "do not edit any files". The advice
+   *     was not just unhelpful, it was the opposite of the task.
+   *   - playing anything. A game is tested by pressing its buttons and reading
+   *     what happened; that loop is browse_act and page_eval and nothing else,
+   *     and it can legitimately run for dozens of calls.
+   *
+   * serve_dir is here for the same reason: it starts a server, which is a
+   * change to the world and not a question about it.
+   */
+  'browse_act',
+  'serve_dir'
+])
 
 /**
  * Argument names whose value is prose: reworded freely without changing what
@@ -266,7 +291,14 @@ export function callKeyFor(calls: LoopCall[]): string {
 }
 
 export function isActing(calls: LoopCall[]): boolean {
-  return calls.some((c) => ACTING_TOOLS.has(c.name))
+  /* Match the bare name too: tools reached through MCP arrive prefixed by their
+     server ("playwright__browse_act"), and an exact-Set lookup silently missed
+     every one of them. */
+  return calls.some((c) => {
+    if (ACTING_TOOLS.has(c.name)) return true
+    const bare = c.name.includes('__') ? c.name.slice(c.name.lastIndexOf('__') + 2) : c.name
+    return ACTING_TOOLS.has(bare)
+  })
 }
 
 /**

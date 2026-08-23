@@ -347,5 +347,28 @@ check('and it does eventually stop',
   /const spent = loopNudges > MAX_LOOP_NUDGES/.test(orch) && /if \(spent\)[\s\S]{0,400}break/.test(orch),
   'nothing ends the turn — a stuck model would nudge forever')
 
+console.log('\n\x1b[1mdriving a browser is acting, not looking\x1b[0m')
+/* Measured on a design review whose prompt began "do not edit any files": nine
+   browse_act calls in, the observing rule refused a click on the light-mode
+   toggle and told the model "you have enough to act, make the change now". The
+   advice was the opposite of the task, and the click it ate was the task.
+
+   The same misclassification would make any play-testing run unworkable — a
+   game is exercised with browse_act and page_eval and nothing else. */
+{
+  const act = (name) => L.isActing([{ name, arguments: '{}' }])
+  check('browse_act counts as acting', act('browse_act'))
+  check('and so does it via MCP, where the name arrives prefixed',
+    act('playwright__browse_act'),
+    'an exact-Set lookup misses every MCP tool, which is all of them here')
+  check('serve_dir counts as acting', act('serve_dir'),
+    'starting a server changes the world rather than asking about it')
+  check('editing still counts', act('write_file') && act('edit_file') && act('run_shell'))
+  check('but reading does not', !act('read_file') && !act('grep') && !act('list_dir'))
+  check('nor does looking at a page',
+    !act('playwright__view_page') && !act('playwright__page_eval'),
+    'a screenshot and a DOM read are questions, not changes')
+}
+
 console.log(failed === 0 ? '\n\x1b[32mall loop-breaker checks passed\x1b[0m' : `\n\x1b[31m${failed} failed\x1b[0m`)
 process.exit(failed === 0 ? 0 : 1)
