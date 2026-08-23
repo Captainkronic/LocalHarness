@@ -138,7 +138,21 @@ export const MCP_REGISTRY: McpServerSpec[] = [
     env: {
       PWMCP_PORT: '9333',
       PWMCP_DSF: '2',
-      PWMCP_VISION_MAX_PX: '1024'
+      PWMCP_VISION_MAX_PX: '1024',
+      /* Vision runs HERE, not on the inference box.
+       *
+       * The screenshot is taken on this machine, so sending it to the Studio
+       * was a round trip that also competed for the one resource the coding
+       * model needs: the Studio has 39 GB behind a 32 GB wired limit, and the
+       * 27B already holds 26 GB of it. There is no room there for a VLM, and
+       * the default pointed at the Studio anyway — so every view_page came
+       * back "(no vision: no VLM is loaded)" and the model learned, once per
+       * session, to stop asking.
+       *
+       * Locally there is room, the picture is already here, and nothing it
+       * does can slow a run down. */
+      PWMCP_LMSTUDIO_URL: 'http://127.0.0.1:1234/v1',
+      PWMCP_VISION_MODEL: 'google/gemma-4-12b-qat'
     },
     callTimeoutMs: 300_000,
     estimatedTokens: 839,
